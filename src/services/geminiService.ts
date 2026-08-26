@@ -1,20 +1,12 @@
 import { GoogleGenAI, Modality, Type, ThinkingLevel } from "@google/genai";
 
-let customApiKey: string | null = typeof window !== 'undefined' ? localStorage.getItem('gemini_custom_api_key') : null;
-
-export const setCustomApiKey = (key: string | null) => {
-  customApiKey = key;
-  if (typeof window !== 'undefined') {
-    if (key && key.trim()) {
-      localStorage.setItem('gemini_custom_api_key', key.trim());
-    } else {
-      localStorage.removeItem('gemini_custom_api_key');
-    }
+// API key is managed server-side only — no user-provided keys
+export const getAI = () => {
+  const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
+  if (!apiKey) {
+    console.warn("[Gemini Service] No Gemini API key configured in environment.");
   }
-};
-
-export const getCustomApiKey = (): string => {
-  return customApiKey || (typeof window !== 'undefined' ? localStorage.getItem('gemini_custom_api_key') || '' : '');
+  return new GoogleGenAI({ apiKey });
 };
 
 export const MODELS = {
@@ -30,16 +22,6 @@ export const MODELS = {
   TTS: 'gemini-2.5-flash-preview-tts',
 } as const;
 
-export const getAI = () => {
-  const envKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
-  const apiKey = customApiKey || envKey || "";
-
-  if (!apiKey) {
-    console.warn("[Gemini Service] No active Gemini API key configured.");
-  }
-
-  return new GoogleGenAI({ apiKey });
-};
 
 export function resizeImageIfNeeded(dataUrl: string, maxDim: number = 768): Promise<string> {
   return new Promise((resolve) => {
@@ -231,7 +213,7 @@ export async function generateHistoryTitle(prompt: string, gemName: string): Pro
   try {
     const ai = getAI();
     const response = await withRetry(() => ai.models.generateContent({
-      model: 'gemini-flash-latest',
+      model: 'gemini-2.5-flash',
       contents: `Generate a very short, clear, and descriptive title (max 5 words) for a creative task based on the following prompt and tool name. 
       Tool: ${gemName}
       Prompt: ${prompt}
@@ -478,7 +460,7 @@ export async function analyzeAsset(imageData: string): Promise<AssetAnalysis> {
   3. Ensure hex colors are accurate.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: 'gemini-flash-latest',
+    model: 'gemini-2.5-flash',
     contents: {
       parts: [
         { text: prompt },
@@ -542,7 +524,7 @@ export async function initializeBrandKit(
     try {
       // Find official logo URL using Google Search grounding
       const searchResponse = await withRetry(() => ai.models.generateContent({
-        model: 'gemini-flash-latest',
+        model: 'gemini-2.5-flash',
         contents: `Find the official logo URL or a high-quality public image URL for the brand "${guidelines.name}" (${guidelines.industry}). 
         The brand might already have a website or established online presence.
         
@@ -562,8 +544,7 @@ export async function initializeBrandKit(
               source: { type: Type.STRING, nullable: true }
             },
             required: ["found", "url"]
-          },
-          tools: [{ googleSearch: {} }]
+          }
         }
       }));
 
@@ -583,7 +564,7 @@ export async function initializeBrandKit(
     try {
       // Generating text documents does not require slow Google search grounding if we have core guidelines
       const docPromptsResponse = await withRetry(() => ai.models.generateContent({
-        model: 'gemini-flash-latest',
+        model: 'gemini-2.5-flash',
         contents: `Based on the brand identity for "${guidelines.name}" (${guidelines.industry}), generate 2 essential brand documents.
         1. A "Brand Manifesto" that captures the soul and mission of the brand.
         2. A "Market Context & Strategy" document that outlines the brand's position in the current market.
@@ -717,7 +698,7 @@ STRICT RULES:
   }
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: 'gemini-flash-latest',
+    model: 'gemini-2.5-flash',
     contents: { parts },
     config: {
       systemInstruction: "You are a Brand Identity Expert. Your task is to generate a concise, professional brand identity in JSON format. You MUST NOT include any internal monologue, thinking process, or conversational text. Return ONLY the JSON object. Keep all values extremely concise and avoid any repetitive or nonsensical strings. Under the 'location', 'voiceAccentStyle', and 'visualEthnicityStyle' fields, pay extremely close attention to regional descriptors in the brand prompt. For example, if the prompt uses terms like 'Indian', 'Vedic', 'Mumbai', 'Hinglish', 'Chai', 'Ayurveda', or describes localized services in India, you MUST set location to 'India', voiceAccentStyle to 'Indian English' (or 'Hinglish'), and visualEthnicityStyle to 'Indian'.",
@@ -760,8 +741,7 @@ STRICT RULES:
           }
         },
         required: ["name", "industry", "tone", "pillars", "colors", "typography", "logoDescription", "location", "voiceAccentStyle", "visualEthnicityStyle"]
-      },
-      tools: [{ googleSearch: {} }]
+      }
     }
   }));
 
@@ -1054,8 +1034,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
             }
           },
           required: ["copy", "imagePrompts"]
-        },
-        tools: [{ googleSearch: {} }]
+        }
       }
     }));
 
@@ -1092,7 +1071,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
 
   if (gem.type === 'text') {
     const ai = getAI();
-    const modelId = config?.model || 'gemini-flash-latest';
+    const modelId = config?.model || 'gemini-2.5-flash';
     const parts: any[] = [{ text: `${gem.systemInstruction}\n${guidelinesContext}\n\nPrompt: ${prompt}` }];
 
     if (config?.guidelines?.logo) {
@@ -1123,8 +1102,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
             copy: { type: Type.STRING }
           },
           required: ["copy"]
-        },
-        tools: [{ googleSearch: {} }]
+        }
       }
     }));
 
@@ -1152,7 +1130,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
     // Veo implementation
     const ai = getAI();
     const modelId = config?.model || 'veo-3.1-fast-generate-preview';
-    const logicModelId = config?.logicModel || 'gemini-flash-latest';
+    const logicModelId = config?.logicModel || 'gemini-2.5-flash';
 
     // Step 1: Generate the short and precise video concept
     const shotTypeInstruction = config?.videoShotType ? `\nShot Type: ${config.videoShotType}` : '';
@@ -1216,8 +1194,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
               cinematographyNotes: { type: Type.STRING }
             },
             required: ["visualPrompt", "voiceOver", "musicStyle", "cinematographyNotes"]
-          },
-          tools: [{ googleSearch: {} }]
+          }
         }
       }));
 
@@ -1293,7 +1270,6 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
           prompt: concept.visualPrompt,
           size: config?.aspectRatio || '16:9',
           engine: modelId,
-          falKey: customApiKey,
           guidelines: config?.guidelines,
         })
       });
@@ -1414,8 +1390,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
             }
           },
           required: ["slides"]
-        },
-        tools: [{ googleSearch: {} }]
+        }
       }
     }));
 
@@ -1500,8 +1475,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
             }
           },
           required: ["storyTitle", "scenes"]
-        },
-        tools: [{ googleSearch: {} }]
+        }
       }
     }));
 
@@ -1737,7 +1711,7 @@ export async function pollVideo(operation: any) {
     const res = await fetch("/api/campaign/video-poll", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operation, falKey: customApiKey })
+      body: JSON.stringify({ operation })
     });
     if (!res.ok) {
       const errorText = await res.text();

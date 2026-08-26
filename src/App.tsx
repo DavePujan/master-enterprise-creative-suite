@@ -73,7 +73,7 @@ import CurationQueuePanel from './components/CurationQueuePanel';
 import LandingPage from './components/LandingPage';
 import LegalPage from './components/LegalPage';
 import PricingPage from './components/PricingPage';
-import { GENERIC_GEMS, Gem, generateCreative, pollVideo, BrandGuidelines, generateImage, generateTTS, setCustomApiKey, getCustomApiKey, IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, getQuotaErrorMessage, generateBrandIdentity, generateHistoryTitle, initializeBrandKit, type Asset as ServiceAsset, generateFastPrompt, resizeImageIfNeeded, generateBrandLogoAI } from './services/geminiService';
+import { GENERIC_GEMS, Gem, generateCreative, pollVideo, BrandGuidelines, generateImage, generateTTS, IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, getQuotaErrorMessage, generateBrandIdentity, generateHistoryTitle, initializeBrandKit, type Asset as ServiceAsset, generateFastPrompt, resizeImageIfNeeded, generateBrandLogoAI } from './services/geminiService';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { auth, db, useAuth, uploadAssetToStorage } from './lib/firebase';
@@ -393,8 +393,7 @@ const BrandSetup = ({ onComplete, user, loading, login, loginWithEmail, register
   const [generatedGuidelines, setGeneratedGuidelines] = useState<BrandGuidelines | null>(null);
   const [generatedAssets, setGeneratedAssets] = useState<Asset[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [inlineApiKey, setInlineApiKey] = useState(getCustomApiKey());
-  const [apiKeySaved, setApiKeySaved] = useState(false);
+
 
   // Manual Onboarding flow states
   const [showManualPrompt, setShowManualPrompt] = useState(false);
@@ -995,57 +994,7 @@ const BrandSetup = ({ onComplete, user, loading, login, loginWithEmail, register
                         </p>
                       </div>
 
-                      {error && (
-                        <div className="space-y-3">
-                          <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-sm flex items-center gap-3 text-red-600 dark:text-red-400 text-xs font-medium">
-                            <AlertCircle size={16} className="shrink-0" />
-                            <span>{error}</span>
-                          </div>
 
-                          <div className="p-4 bg-rose-50/40 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-sm space-y-3">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[10px] font-bold text-slate-900 dark:text-slate-200 uppercase tracking-widest flex items-center gap-1.5">
-                                <Key size={12} className="text-rose-600 dark:text-rose-400" /> Enter Gemini API Key
-                              </label>
-                              {apiKeySaved && (
-                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                                  <Check size={11} /> Saved & Applied!
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              <input 
-                                type="password"
-                                value={inlineApiKey}
-                                onChange={(e) => {
-                                  setInlineApiKey(e.target.value);
-                                  setApiKeySaved(false);
-                                }}
-                                placeholder="Paste your Gemini API key (AIza...)"
-                                className="flex-1 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-sm px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-rose-500 font-mono"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (inlineApiKey.trim()) {
-                                    setCustomApiKey(inlineApiKey.trim());
-                                    setApiKeySaved(true);
-                                    setError(null);
-                                    console.log("[BrandInit] Saved custom API key to localStorage and active session.");
-                                  }
-                                }}
-                                disabled={!inlineApiKey.trim()}
-                                className="bg-rose-600 hover:bg-rose-700 text-white dark:bg-rose-500 dark:hover:bg-rose-400 px-4 py-2 rounded-sm text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer shrink-0 transition-colors"
-                              >
-                                Save & Apply Key
-                              </button>
-                            </div>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              Don't have a key? Get one instantly from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-rose-600 dark:text-rose-400 underline font-semibold">Google AI Studio</a>. Key is saved to your browser session.
-                            </p>
-                          </div>
-                        </div>
-                      )}
 
                       <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Optional Context</p>
@@ -2188,7 +2137,15 @@ export default function App() {
     const sync = async () => {
       setIsSyncing(true);
       try {
-        await updateDoc(doc(db, 'users', user.uid), { balance: credits, updatedAt: Date.now() });
+        const userDocRef = doc(db, 'users', user.uid);
+        const existing = await getDoc(userDocRef);
+        if (existing.exists()) {
+          // Update only the changed fields — satisfies the update rule
+          await updateDoc(userDocRef, { balance: credits, updatedAt: Date.now() });
+        } else {
+          // Create the full user doc — satisfies isValidUser (requires balance, createdAt, updatedAt)
+          await setDoc(userDocRef, { balance: credits, createdAt: Date.now(), updatedAt: Date.now() });
+        }
       } catch (e) {
         console.error("Credit sync failed:", e);
       } finally {
@@ -2291,10 +2248,7 @@ export default function App() {
   const [selectedVoice, setSelectedVoice] = useState('Kore');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [selectedModel, setSelectedModel] = useState<string>('');
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [customApiKey, setCustomApiKeyInput] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const selectedGemIdRef = useRef(selectedGem.id);
 
@@ -2408,12 +2362,6 @@ export default function App() {
       }
     };
     
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) {
-      setCustomApiKeyInput(savedKey);
-      setCustomApiKey(savedKey);
-    }
-    
     loadDefaultLogo();
   }, []);
 
@@ -2425,33 +2373,6 @@ export default function App() {
 
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const checkApiKey = async () => {
-      if (window.aistudio?.hasSelectedApiKey) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setHasApiKey(hasKey);
-      } else {
-        setHasApiKey(true); // Fallback for environments without the helper
-      }
-    };
-    checkApiKey();
-  }, []);
-
-  const handleSelectKey = async () => {
-    if (window.aistudio?.openSelectKey) {
-      await window.aistudio.openSelectKey();
-      setHasApiKey(true);
-    } else {
-      setShowSettings(true);
-    }
-  };
-
-  const saveApiKey = () => {
-    localStorage.setItem('gemini_api_key', customApiKey);
-    setCustomApiKey(customApiKey);
-    setShowSettings(false);
-    if (customApiKey) setHasApiKey(true);
-  };
 
   useEffect(() => {
     if (audioRef.current) {
@@ -3186,37 +3107,6 @@ export default function App() {
     }
   };
 
-  if (hasApiKey === false) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full glass-panel p-8 rounded-sm text-center space-y-6"
-        >
-          <div className="w-16 h-16 bg-slate-100 rounded-sm flex items-center justify-center mx-auto">
-            <Key className="w-8 h-8 text-slate-900" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-light tracking-tight text-slate-900">Welcome to Studio AI</h1>
-            <p className="text-slate-600 font-light">
-              To use advanced features like video generation and high-quality imagery, please select your System API key.
-            </p>
-          </div>
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm text-sm text-slate-600 text-left">
-            <p className="font-bold mb-1">Note:</p>
-            <p>You must select an API key from a paid Cloud project with sufficient quota. See official documentation for details.</p>
-          </div>
-          <button 
-            onClick={handleSelectKey}
-            className="w-full bg-slate-900 text-white py-3 text-sm font-bold tracking-widest uppercase rounded-sm hover:bg-slate-800 transition-colors"
-          >
-            Select API Key
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
 
   if (currentPath.startsWith('/legal')) {
     return (
@@ -3748,43 +3638,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        {!hasApiKey ? (
-          <div className="flex-1 flex items-center justify-center p-6">
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="max-w-md w-full bg-white dark:bg-slate-900 p-10 rounded-sm shadow-xl border border-slate-100 dark:border-slate-800 text-center"
-            >
-              <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-sm flex items-center justify-center mx-auto mb-6 text-slate-900 dark:text-white">
-                <Key size={32} />
-              </div>
-              <h2 className="text-2xl font-light text-slate-900 dark:text-slate-100 mb-4 tracking-tight">API Configuration</h2>
-              <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed font-light">
-                To initialize the creative suite, please provide a System API key. 
-                You can select a platform key or provide your own.
-              </p>
-              <div className="space-y-4">
-                <button 
-                  onClick={handleSelectKey}
-                  className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-sm font-bold tracking-widest uppercase text-sm hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors flex items-center justify-center gap-3"
-                >
-                  <Key size={18} />
-                  SELECT PLATFORM KEY
-                </button>
-                <button 
-                  onClick={() => setShowSettings(true)}
-                  className="w-full py-4 bg-transparent text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-sm font-bold tracking-widest uppercase text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-3"
-                >
-                  <Edit2 size={18} />
-                  PROVIDE CUSTOM KEY
-                </button>
-              </div>
-              <p className="mt-8 text-xs text-slate-400 dark:text-slate-500">
-                Need a key? Get one at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-slate-900 dark:text-white hover:underline font-bold">Google AI Studio</a>.
-              </p>
-            </motion.div>
-          </div>
-        ) : view === 'assets' ? (
+        {view === 'assets' ? (
           <AssetLibrary 
             assets={assets} 
             setAssets={setAssets} 
@@ -6367,44 +6221,28 @@ export default function App() {
             </div>
             
             <div className="p-8 space-y-6">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-2">
                   <Key size={14} />
-                  System Access API Key
+                  System AI Infrastructure
                 </label>
-                <div className="relative">
-                  <input 
-                    type={showApiKey ? "text" : "password"}
-                    value={customApiKey}
-                    onChange={(e) => setCustomApiKeyInput(e.target.value)}
-                    placeholder="Paste your API key here..."
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-sm p-3 pr-12 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-900 dark:focus:ring-white focus:border-slate-900 dark:focus:border-white font-mono"
-                  />
-                  <button 
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
-                  >
-                    {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
+                <div className="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-sm space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                    <Check size={14} />
+                    <span>Server-Side Engines Connected</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    AI generation models (Gemini 2.5 Flash, Gemini 3.1 Pro, Fal.ai FLUX & Video engines) are powered directly via server environment configuration.
+                  </p>
                 </div>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                  Your API key is stored locally in your browser and used for all AI generations. 
-                  Get one at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-slate-900 dark:text-white hover:underline font-bold">AI Studio</a>.
-                </p>
               </div>
 
-              <div className="pt-4 flex gap-3">
+              <div className="pt-4 flex justify-end">
                 <button 
                   onClick={() => setShowSettings(false)}
-                  className="flex-1 px-6 py-3 rounded-sm border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  className="px-6 py-3 rounded-sm bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-sm shadow-sm hover:opacity-90 transition-all cursor-pointer"
                 >
-                  CANCEL
-                </button>
-                <button 
-                  onClick={saveApiKey}
-                  className="flex-1 px-6 py-3 rounded-sm bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-sm shadow-sm hover:opacity-90 transition-all"
-                >
-                  SAVE KEY
+                  CLOSE
                 </button>
               </div>
             </div>

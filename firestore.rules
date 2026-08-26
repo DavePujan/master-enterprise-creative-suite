@@ -85,12 +85,13 @@ service cloud.firestore {
     }
 
     function isValidAdminSettings(data) {
-        return data.keys().hasAll(['enableAiRewrite', 'enableGuidelines', 'enablePhotoStyling', 'enableCinematicStoryboard'])
-         && data.keys().size() == 4
+        return data.keys().hasAll(['enableAiRewrite', 'enableGuidelines', 'enablePhotoStyling', 'enableCinematicStoryboard', 'allowTextOnAssets'])
+         && data.keys().size() == 5
          && data.enableAiRewrite is bool
          && data.enableGuidelines is bool
          && data.enablePhotoStyling is bool
-         && data.enableCinematicStoryboard is bool;
+         && data.enableCinematicStoryboard is bool
+         && data.allowTextOnAssets is bool;
     }
 
     function isValidSalesSubmission(data) {
@@ -109,8 +110,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
       allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
-      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && (
+      allow update: if isOwner(userId) && isValidId(userId) && (
         incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'updatedAt'])
+        && incoming().balance is number
+        && incoming().updatedAt is number
       );
       
       match /brand_guidelines/{guidelineId} {
