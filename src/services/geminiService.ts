@@ -162,10 +162,10 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 1000): Pr
 export type GemType = 'image' | 'video' | 'text' | 'slideshow' | 'campaign' | 'storyline' | 'audio' | 'campaign-deck';
 
 export const IMAGE_MODELS = [
-  { id: 'gemini-2.5-flash-image', name: 'Fast', modelName: 'Nano Banana', description: 'High-speed image generation', credits: 2, humanTouch: 20 },
-  { id: 'gemini-3.1-flash-image', name: 'Standard', modelName: 'Nano Banana 2', description: 'Standard expressive visual composition engine', credits: 3, humanTouch: 30 },
-  { id: 'gemini-3-pro-image', name: 'Pro', modelName: 'Nano Banana Pro', description: 'Advanced image generation supporting up to 4K clarity', credits: 4, humanTouch: 40 },
-  { id: 'openai/gpt-image-2', name: 'Plus', modelName: 'GPT Image 2', description: 'Commercial grade high-fidelity engine', credits: 5, humanTouch: 50 }
+  { id: 'openai/gpt-image-2', name: 'Fal Studio', modelName: 'GPT-Image-2 (Fal)', description: 'Commercial grade high-fidelity visual engine', credits: 3, humanTouch: 30 },
+  { id: 'fal-ai/flux/schnell', name: 'Fal FLUX Schnell', modelName: 'FLUX Schnell (Fal)', description: 'Ultra-fast photorealistic visual composition', credits: 2, humanTouch: 20 },
+  { id: 'fal-ai/flux/dev', name: 'Fal FLUX Pro', modelName: 'FLUX Dev Pro (Fal)', description: 'High-detail commercial advertising rendering', credits: 4, humanTouch: 40 },
+  { id: 'gemini-2.5-flash-image', name: 'Gemini Preview', modelName: 'Nano Banana', description: 'Standard preview draft generator', credits: 2, humanTouch: 20 }
 ];
 
 export const TEXT_MODELS = [
@@ -759,6 +759,26 @@ export async function generateBrandLogoAI(
   colors: string[],
   tone?: string
 ): Promise<string> {
+  try {
+    // Generate high-end logo using Fal AI rendering engine
+    const logoPrompt = `An iconic, world-class modern minimalist logo for brand "${name}", ${industry} industry, tone ${tone || 'Professional'}. Clean vector art, geometric silhouette, brand colors ${colors.join(', ')}, solid clean pure white background #ffffff. Single centered mark, award-winning graphic design.`;
+    const renderRes = await fetch("/api/campaign/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: logoPrompt,
+        size: "1:1",
+        engine: "fal-ai/flux/schnell"
+      })
+    });
+    if (renderRes.ok) {
+      const renderData = await renderRes.json();
+      if (renderData.url) return renderData.url;
+    }
+  } catch (err) {
+    console.warn("Fal logo generation fallback to AI client:", err);
+  }
+
   const ai = getAI();
   const logoResponse = await withRetry(() => ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
@@ -790,7 +810,7 @@ export async function generateBrandLogoAI(
       return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
     }
   }
-  throw new Error("No image data returned from Gemini");
+  throw new Error("No image data returned from image generator");
 }
 
 async function appendAssetsToParts(parts: any[], assets?: any[]) {
@@ -907,12 +927,11 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
       parts[0].text += "\n\nCRITICAL: DO NOT overlay or draw any logo, text, or brand name on the image. Generate only the clean background scene, leaving space if needed for a layout watermark to be added later on.";
     }
 
-    const ai = getAI();
-    const modelId = config?.model || 'gemini-2.5-flash-image';
-    const isImagen = modelId.startsWith('imagen-');
-    const isPollinations = modelId.startsWith('pollinations-');
+    const modelId = config?.model || 'openai/gpt-image-2';
+    const isFal = modelId.startsWith('fal-ai/') || modelId === 'openai/gpt-image-2' || !modelId.startsWith('gemini-');
 
-    if (modelId === 'openai/gpt-image-2') {
+    // Primary: Generate using Fal.ai server proxy
+    if (isFal) {
       const referenceImages: string[] = [];
       if (config?.assets) {
         config.assets.forEach((asset: any) => {
@@ -928,12 +947,15 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
         body: JSON.stringify({
           prompt: parts[0].text,
           size: config?.aspectRatio || '1:1',
-          engine: 'openai-gpt-image-2',
+          engine: modelId,
           guidelines: config?.guidelines,
           referenceImages: referenceImages
         })
       });
-      if (!renderRes.ok) throw new Error("Fal AI rendering error");
+      if (!renderRes.ok) {
+        const errText = await renderRes.text();
+        throw new Error(`Fal AI rendering error: ${errText}`);
+      }
       const renderData = await renderRes.json();
       return {
         type: 'image',
@@ -941,71 +963,43 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
       };
     }
 
-    if (isPollinations) {
-      const encodedPrompt = encodeURIComponent(`${parts[0].text}`);
-      const seed = Math.floor(Math.random() * 1000000);
-      let width = 1024, height = 1024;
-
-      if (config?.aspectRatio === '16:9') { width = 1280; height = 720; }
-      else if (config?.aspectRatio === '9:16') { width = 720; height = 1280; }
-      else if (config?.aspectRatio === '4:3') { width = 1024; height = 768; }
-
-      return {
-        type: 'image',
-        data: `https://pollinations.ai/p/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`
-      };
-    }
-
-    if (isImagen) {
-      const response = await withRetry(() => ai.models.generateImages({
+    // Fallback or explicit Gemini Image Model selection
+    const ai = getAI();
+    try {
+      const response = await withRetry(() => ai.models.generateContent({
         model: modelId,
-        prompt: `${parts[0].text}\n\nIMPORTANT: The image MUST be clean and professional. ABSOLUTELY NO text, labels, or boxy borders around the brand elements.`,
+        contents: { parts },
         config: {
-          numberOfImages: 1,
-          aspectRatio: (config?.aspectRatio as any) || "1:1",
-          outputMimeType: 'image/jpeg'
+          imageConfig: { aspectRatio: (config?.aspectRatio as any) || "1:1" }
         }
       }));
 
-      if (response.generatedImages?.[0]?.image?.imageBytes) {
+      const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+      if (imagePart?.inlineData) {
         return {
           type: 'image',
-          data: `data:image/jpeg;base64,${response.generatedImages[0].image.imageBytes}`
+          data: `data:image/png;base64,${imagePart.inlineData.data}`,
+          groundingMetadata: response.candidates?.[0]?.groundingMetadata
         };
       }
-      throw new Error("No image generated by Imagen");
-    }
-
-    const supportsSearch = modelId === 'gemini-3-pro-image-preview';
-    const supportsImageSize = supportsSearch;
-
-    const imageConfig: any = {};
-    imageConfig.aspectRatio = (config?.aspectRatio as any) || "1:1";
-    if (supportsImageSize) {
-      imageConfig.imageSize = "1K";
-    }
-
-    const tools: any[] = [];
-    if (supportsSearch) {
-      tools.push({ googleSearch: {} });
-    }
-
-    const response = await withRetry(() => ai.models.generateContent({
-      model: modelId,
-      contents: { parts },
-      config: {
-        imageConfig: Object.keys(imageConfig).length > 0 ? imageConfig : undefined,
-        tools: tools.length > 0 ? tools : undefined,
+    } catch (gErr: any) {
+      console.warn("Gemini image generation failed or quota reached, routing to Fal AI engine:", gErr.message);
+      // Auto-recover via Fal.ai rendering engine!
+      const renderRes = await fetch("/api/campaign/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: parts[0].text,
+          size: config?.aspectRatio || '1:1',
+          engine: 'openai-gpt-image-2',
+          guidelines: config?.guidelines
+        })
+      });
+      if (renderRes.ok) {
+        const renderData = await renderRes.json();
+        return { type: 'image', data: renderData.url };
       }
-    }));
-
-    const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-    if (imagePart?.inlineData) {
-      return {
-        type: 'image',
-        data: `data:image/png;base64,${imagePart.inlineData.data}`,
-        groundingMetadata: response.candidates?.[0]?.groundingMetadata
-      };
+      throw gErr;
     }
     throw new Error("No image generated");
   }
@@ -1538,12 +1532,10 @@ export async function generateImage(prompt: string, guidelines?: BrandGuidelines
 
   await appendAssetsToParts(parts, assets);
 
-  const ai = getAI();
-  const modelId = model || 'gemini-2.5-flash-image';
-  const isImagen = modelId.startsWith('imagen-');
-  const isPollinations = modelId.startsWith('pollinations-');
-
-  if (modelId === 'openai/gpt-image-2') {
+  const modelId = model || 'openai/gpt-image-2';
+  const isFal = modelId.startsWith('fal-ai/') || modelId === 'openai/gpt-image-2' || !modelId.startsWith('gemini-');
+  
+  if (isFal) {
     const referenceImages: string[] = [];
     if (assets) {
       assets.forEach((asset: any) => {
@@ -1559,90 +1551,57 @@ export async function generateImage(prompt: string, guidelines?: BrandGuidelines
       body: JSON.stringify({
         prompt: parts[0].text,
         size: aspectRatio,
-        engine: 'openai-gpt-image-2',
+        engine: modelId,
         guidelines: guidelines,
         referenceImages: referenceImages
       })
     });
-    if (!renderRes.ok) throw new Error("Fal AI rendering error");
+    if (!renderRes.ok) {
+      const errText = await renderRes.text();
+      throw new Error(`Fal AI rendering error: ${errText}`);
+    }
     const renderData = await renderRes.json();
     return {
       url: renderData.url
     };
   }
 
-  if (isPollinations) {
-    const encodedPrompt = encodeURIComponent(`${parts[0].text}`);
-    const seed = Math.floor(Math.random() * 1000000);
-    let width = 1024, height = 1024;
-
-    if (aspectRatio === '16:9') { width = 1280; height = 720; }
-    else if (aspectRatio === '9:16') { width = 720; height = 1280; }
-    else if (aspectRatio === '4:3') { width = 1024; height = 768; }
-
-    return {
-      url: `https://pollinations.ai/p/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`
-    };
-  }
-
-  if (isImagen) {
-    const response = await withRetry(() => ai.models.generateImages({
+  // Fallback if Gemini model is explicitly selected
+  const ai = getAI();
+  try {
+    const response = await withRetry(() => ai.models.generateContent({
       model: modelId,
-      prompt: `${parts[0].text}\n\nIMPORTANT: The image MUST be clean and professional. ABSOLUTELY NO text, labels, or boxy borders around the brand elements.`,
+      contents: { parts },
       config: {
-        numberOfImages: 1,
-        aspectRatio: (aspectRatio as any) || "16:9",
-        outputMimeType: 'image/jpeg'
+        imageConfig: { aspectRatio: (aspectRatio as any) || "1:1" }
       }
     }));
 
-    if (response.generatedImages?.[0]?.image?.imageBytes) {
+    const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+    if (imagePart?.inlineData) {
       return {
-        url: `data:image/jpeg;base64,${response.generatedImages[0].image.imageBytes}`
+        url: `data:image/png;base64,${imagePart.inlineData.data}`
       };
     }
-    throw new Error("No image generated by Imagen");
-  }
-
-  const supportsSearch = modelId === 'gemini-3-pro-image-preview' || modelId === 'gemini-3.1-flash-image-preview';
-  const supportsImageSize = supportsSearch;
-  const supportsImageSearch = modelId === 'gemini-3.1-flash-image-preview';
-
-  const imageConfig: any = {};
-  imageConfig.aspectRatio = (aspectRatio as any) || "16:9";
-  if (supportsImageSize) {
-    imageConfig.imageSize = "1K";
-  }
-
-  const tools: any[] = [];
-  if (supportsSearch) {
-    tools.push({
-      googleSearch: {
-        searchTypes: supportsImageSearch ? {
-          webSearch: {},
-          imageSearch: {}
-        } : undefined
-      }
+  } catch (gErr: any) {
+    console.warn("Gemini image generator failed, recovering with Fal AI:", gErr.message);
+    const renderRes = await fetch("/api/campaign/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: parts[0].text,
+        size: aspectRatio,
+        engine: 'openai-gpt-image-2',
+        guidelines: guidelines
+      })
     });
-  }
-
-  const response = await withRetry(() => ai.models.generateContent({
-    model: modelId,
-    contents: { parts },
-    config: {
-      imageConfig: Object.keys(imageConfig).length > 0 ? imageConfig : undefined,
-      tools: tools.length > 0 ? tools : undefined,
+    if (renderRes.ok) {
+      const renderData = await renderRes.json();
+      return { url: renderData.url };
     }
-  }));
-
-  const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-  if (imagePart?.inlineData) {
-    return {
-      url: `data:image/png;base64,${imagePart.inlineData.data}`,
-      groundingMetadata: response.candidates?.[0]?.groundingMetadata
-    };
+    throw gErr;
   }
-  throw new Error("No image generated");
+  throw new Error("Failed to generate image");
 }
 
 function pcmToWav(base64Pcm: string, sampleRate: number = 24000): string {

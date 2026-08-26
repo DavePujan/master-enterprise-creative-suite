@@ -26,9 +26,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`Rendering prompt on Vercel handler: "${prompt.slice(0, 40)}..." Engine: ${engine || 'default'}. References: ${referenceImages?.length || 0}`);
 
-    // Try calling fal.ai if specified or if a key exists
+    // Try calling fal.ai if a key exists
     const targetFalKey = falKey || process.env.FAL_API_KEY || process.env.FAL_KEY;
-    const useFal = engine === 'openai-gpt-image-2' && !!targetFalKey;
+    const useFal = !!targetFalKey;
 
     if (useFal) {
       try {
@@ -38,10 +38,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         else if (size === '4:3') sizeObj = "landscape_4_3";
         else if (size === '3:4') sizeObj = "portrait_4_3";
 
+        const falEndpoint = engine === 'openai-gpt-image-2' || engine === 'openai/gpt-image-2'
+          ? 'https://queue.fal.run/openai/gpt-image-2'
+          : engine === 'fal-ai/flux/dev'
+          ? 'https://queue.fal.run/fal-ai/flux/dev'
+          : 'https://queue.fal.run/fal-ai/flux/schnell';
+
         const falPayload: any = {
           prompt: prompt,
           image_size: sizeObj,
-          num_inference_steps: 28,
+          num_inference_steps: engine === 'fal-ai/flux/schnell' ? 4 : 28,
           guidance_scale: 3.5,
           sync_mode: true
         };
@@ -58,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           falPayload.reference_image = imageObjects[0];
         }
 
-        const falResponse = await fetch("https://queue.fal.run/openai/gpt-image-2", {
+        const falResponse = await fetch(falEndpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
