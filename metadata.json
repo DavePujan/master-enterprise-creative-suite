@@ -1,0 +1,6 @@
+{
+  "name": "MASTER: Enterprise Creative Suite",
+  "description": "Enterprise-grade creative generation engine for any brand. Generate brand identity and creative assets seamlessly.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

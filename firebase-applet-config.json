@@ -1,0 +1,10 @@
+{
+  "projectId": "writopedia-v2",
+  "appId": "1:951644217100:web:2d3537ca73c4c95e2c3329",
+  "apiKey": "AIzaSyD-4hYzHor3eIeLc6AlizXeUMya6BP01BU",
+  "authDomain": "writopedia-v2.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "writopedia-v2.firebasestorage.app",
+  "messagingSenderId": "951644217100",
+  "measurementId": "G-LSP7JFP3E7"
+}

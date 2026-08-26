@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "hardeep.pathak@gmail.com" || 
+        request.auth.token.email == "avdhesh.babaria@gmail.com"
+      );
+    }
+
+    // Users can only access their own folder, but admins can read and write to any user folder
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+    
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

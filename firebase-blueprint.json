@@ -1,0 +1,159 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing credits",
+      "type": "object",
+      "properties": {
+        "balance": { "type": "number", "description": "User credits balance" },
+        "createdAt": { "type": "number", "description": "Timestamp of creation" },
+        "updatedAt": { "type": "number", "description": "Timestamp of last update" }
+      },
+      "required": ["balance", "createdAt", "updatedAt"]
+    },
+    "BrandGuideline": {
+      "title": "Brand Guideline",
+      "description": "Brand guidelines for a user",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "mission": { "type": "string" },
+        "tone": { "type": "array", "items": { "type": "string" } },
+        "colors": { "type": "array", "items": { "type": "string" } },
+        "typography": { "type": "object" },
+        "logoUrl": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["name", "mission", "tone", "colors", "updatedAt"]
+    },
+    "Asset": {
+      "title": "Asset",
+      "description": "A generated creative asset",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["image", "text", "video", "audio"] },
+        "content": { "type": "string" },
+        "prompt": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "size": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "filename": { "type": "string" }
+      },
+      "required": ["type", "content", "prompt", "timestamp"]
+    },
+    "HistoryLog": {
+      "title": "History Log",
+      "description": "A generated history entry",
+      "type": "object",
+      "properties": {
+        "gemId": { "type": "string" },
+        "prompt": { "type": "string" },
+        "title": { "type": "string" },
+        "result": { "type": "object" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["gemId", "prompt", "title", "result", "timestamp"]
+    },
+    "HumanTouchRequest": {
+      "title": "Human Touch Request",
+      "description": "A last-mile professional edit request sent to Writopedia",
+      "type": "object",
+      "properties": {
+        "assetType": { "type": "string" },
+        "assetUrl": { "type": "string" },
+        "originalPrompt": { "type": "string" },
+        "modelsUsed": { "type": "string" },
+        "userComment": { "type": "string" },
+        "emailReceipt": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "completedAssetUrl": { "type": "string" },
+        "completedComment": { "type": "string" },
+        "completedTimestamp": { "type": "number" }
+      },
+      "required": ["assetType", "assetUrl", "originalPrompt", "modelsUsed", "userComment", "emailReceipt", "status", "timestamp"]
+    },
+    "GlobalHumanTouchRequest": {
+      "title": "Global Human Touch Request",
+      "description": "A last-mile professional edit request tracked globally for admin users",
+      "type": "object",
+      "properties": {
+        "assetType": { "type": "string" },
+        "assetUrl": { "type": "string" },
+        "originalPrompt": { "type": "string" },
+        "modelsUsed": { "type": "string" },
+        "userComment": { "type": "string" },
+        "emailReceipt": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "completedAssetUrl": { "type": "string" },
+        "completedComment": { "type": "string" },
+        "completedTimestamp": { "type": "number" }
+      },
+      "required": ["assetType", "assetUrl", "originalPrompt", "modelsUsed", "userComment", "emailReceipt", "status", "timestamp", "userId", "userEmail"]
+    },
+    "AdminSettings": {
+      "title": "Admin Settings",
+      "description": "Global customization toggles for prompt engine and generation behavior",
+      "type": "object",
+      "properties": {
+        "enableAiRewrite": { "type": "boolean" },
+        "enableGuidelines": { "type": "boolean" },
+        "enablePhotoStyling": { "type": "boolean" },
+        "enableCinematicStoryboard": { "type": "boolean" }
+      },
+      "required": ["enableAiRewrite", "enableGuidelines", "enablePhotoStyling", "enableCinematicStoryboard"]
+    },
+    "SalesSubmission": {
+      "title": "Sales Submission",
+      "description": "Enterprise plans sales query submitted by the user",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string" },
+        "contactName": { "type": "string" },
+        "email": { "type": "string" },
+        "teamSize": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["companyName", "contactName", "email", "teamSize", "message", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "users/{userId}/brand_guidelines/{guidelineId}": {
+      "schema": { "$ref": "#/entities/BrandGuideline" },
+      "description": "Brand guidelines for the user"
+    },
+    "users/{userId}/assets/{assetId}": {
+      "schema": { "$ref": "#/entities/Asset" },
+      "description": "Generated assets for the user"
+    },
+    "users/{userId}/historyLogs/{historyId}": {
+      "schema": { "$ref": "#/entities/HistoryLog" },
+      "description": "History logs for the user"
+    },
+    "users/{userId}/humanTouchRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/HumanTouchRequest" },
+      "description": "Last-mile professional human-touch request assigned to Writopedia"
+    },
+    "humanTouchRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/GlobalHumanTouchRequest" },
+      "description": "Global queue of all human-touch requests indexed and moderated by admins"
+    },
+    "adminSettings/{docId}": {
+      "schema": { "$ref": "#/entities/AdminSettings" },
+      "description": "Custom toggles for the AI Prompt engine features"
+    },
+    "salesSubmissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/SalesSubmission" },
+      "description": "Corporate sales inquiries and requests received from clients"
+    }
+  }
+}

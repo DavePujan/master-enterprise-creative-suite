@@ -1,0 +1,190 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-primary: var(--brand-primary, #0f172a);
+  --color-brand-secondary: var(--brand-secondary, #334155);
+  --color-crimson: #dd1a46;
+  
+  /* Alias rose shades to the brand crimson palette */
+  --color-rose-50: #fdf2f4;
+  --color-rose-100: #fce4e8;
+  --color-rose-200: #f9cbd2;
+  --color-rose-250: #f6b3be;
+  --color-rose-300: #f392a3;
+  --color-rose-400: #ee5b75;
+  --color-rose-500: #e52c4d;
+  --color-rose-600: #dd1a46;
+  --color-rose-700: #ba1235;
+  --color-rose-800: #9b102e;
+  --color-rose-900: #81112a;
+  --color-rose-950: #490412;
+}
+
+body {
+  @apply bg-white text-slate-950 font-sans transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100;
+}
+
+.glass-panel {
+  @apply bg-white/90 backdrop-blur-md border border-slate-100 shadow-sm dark:bg-slate-900/80 dark:border-slate-800/50;
+}
+
+.btn-primary {
+  @apply bg-rose-600 dark:bg-rose-500 text-white px-4 py-2 rounded-sm font-medium hover:bg-rose-700 dark:hover:bg-rose-400 border border-rose-600 dark:border-rose-500 transition-all disabled:opacity-50 shadow-sm shadow-rose-600/10;
+}
+
+.btn-secondary {
+  @apply border border-slate-200 bg-white text-slate-700 px-4 py-2 rounded-sm font-medium hover:bg-slate-50 transition-colors dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+}
+
+.svg-container svg {
+  width: 100%;
+  height: auto;
+  max-height: 600px;
+  display: block;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  border-radius: 0.125rem;
+  @apply bg-white dark:bg-slate-900;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+.dark .animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  background-size: 200% 100%;
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
+}
+
+.animate-scan {
+  animation: scanline 3s linear infinite;
+}
+
+.skeleton {
+  @apply bg-slate-200 dark:bg-slate-800 relative overflow-hidden rounded-sm;
+}
+
+.skeleton::after {
+  content: "";
+  @apply absolute inset-0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.dark .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+}
+
+/* Markdown Formatting & Typography Improvements */
+.markdown-body {
+  @apply relative max-w-none;
+  font-family: var(--brand-font-secondary, var(--font-sans));
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  font-family: var(--brand-font-primary, var(--font-sans));
+}
+
+.markdown-body h1 {
+  @apply text-3xl sm:text-4xl font-extrabold tracking-tight mt-10 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4;
+  color: var(--brand-color-0, #0f172a);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+[dark] .markdown-body h1 {
+  color: var(--brand-color-0, white);
+}
+
+.markdown-body h2 {
+  @apply text-xl sm:text-2xl font-bold tracking-tight mt-10 mb-4 flex items-center gap-2;
+  color: var(--brand-color-1, #1e293b);
+  letter-spacing: -0.01em;
+}
+
+[dark] .markdown-body h2 {
+  color: var(--brand-color-1, #f1f5f9);
+}
+
+.markdown-body h2::before {
+  content: "";
+  @apply w-1.5 h-6 inline-block rounded-sm;
+  background-color: var(--brand-color-0, #0f172a);
+}
+
+[dark] .markdown-body h2::before {
+  background-color: var(--brand-color-0, white);
+}
+
+.markdown-body h3 {
+  @apply text-lg sm:text-xl font-bold mt-8 mb-3 uppercase tracking-wide;
+  color: var(--brand-color-2, #334155);
+}
+
+[dark] .markdown-body h3 {
+  color: var(--brand-color-2, #e2e8f0);
+}
+
+.markdown-body p {
+  @apply leading-relaxed mb-6 text-base sm:text-lg font-light;
+  color: var(--brand-body-color, #475569);
+}
+
+[dark] .markdown-body p {
+  color: var(--brand-body-color, #94a3b8);
+}
+
+.markdown-body strong {
+  @apply font-bold;
+  color: var(--brand-color-0, #0f172a);
+}
+
+[dark] .markdown-body strong {
+  color: var(--brand-color-0, white);
+}
+
+.markdown-body ul, .markdown-body ol {
+  @apply my-6 space-y-3;
+}
+
+.markdown-body li {
+  @apply text-base sm:text-lg relative pl-6 font-light leading-relaxed;
+  color: var(--brand-body-color, #475569);
+}
+
+[dark] .markdown-body li {
+  color: var(--brand-body-color, #94a3b8);
+}
+
+.markdown-body ul li::before {
+  content: "•";
+  @apply absolute left-0 font-bold;
+  color: var(--brand-color-1, #94a3b8);
+}
+
+.markdown-body blockquote {
+  @apply border-l-4 pl-6 py-2 italic bg-slate-50/50 dark:bg-slate-800/50 rounded-r-sm;
+  border-color: var(--brand-color-2, #e2e8f0);
+  color: var(--brand-color-2, #64748b);
+}
+
+.markdown-body hr {
+  @apply my-10 border-slate-100 dark:border-slate-800;
+}
