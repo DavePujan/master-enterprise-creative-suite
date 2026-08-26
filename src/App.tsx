@@ -4029,8 +4029,8 @@ export default function App() {
                     <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
                     <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
                       Face Reference: 
-                      <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", (selectedModel === 'gemini-3.1-flash-image-preview' || selectedModel === 'gemini-3-pro-image-preview' || selectedModel === 'openai/gpt-image-2') ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                        {(selectedModel === 'gemini-3.1-flash-image-preview' || selectedModel === 'gemini-3-pro-image-preview' || selectedModel === 'openai/gpt-image-2') ? 'Supported' : 'Unsupported'}
+                      <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", (selectedModel.includes('gemini-3') || selectedModel === 'openai/gpt-image-2') ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
+                        {(selectedModel.includes('gemini-3') || selectedModel === 'openai/gpt-image-2') ? 'Supported' : 'Unsupported'}
                       </span>
                     </span>
                     <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
@@ -5630,7 +5630,7 @@ export default function App() {
                             <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">
                               Active Face Reference (Plus Model)
                             </span>
-                          ) : selectedModel !== 'gemini-3.1-flash-image-preview' && selectedModel !== 'gemini-3-pro-image-preview' ? (
+                          ) : !selectedModel.includes('gemini-3') ? (
                             <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider">
                               Reference Ignored by Active Model
                             </span>

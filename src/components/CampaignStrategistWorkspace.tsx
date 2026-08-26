@@ -238,7 +238,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
   // User Model Selections for Asset Generation
   const [selectedImageModel, setSelectedImageModel] = useState<string>('gemini-2.5-flash-image');
   const [selectedVideoModel, setSelectedVideoModel] = useState<string>('veo-3.1-generate-preview');
-  const [selectedTextModel, setSelectedTextModel] = useState<string>('gemini-flash-latest');
+  const [selectedTextModel, setSelectedTextModel] = useState<string>('gemini-2.5-flash');
 
   // Layout Studio Settings
   const containerRef = useRef<HTMLDivElement>(null);

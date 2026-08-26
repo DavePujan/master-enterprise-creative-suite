@@ -17,21 +17,25 @@ export const getCustomApiKey = (): string => {
   return customApiKey || (typeof window !== 'undefined' ? localStorage.getItem('gemini_custom_api_key') || '' : '');
 };
 
-const getAI = () => {
+export const MODELS = {
+  TEXT_FAST: 'gemini-2.5-flash',
+  TEXT_PRO: 'gemini-2.5-pro',
+  TEXT_STRATEGY: 'gemini-2.5-flash',
+  IMAGE_FAST: 'gemini-2.5-flash-image',
+  IMAGE_STANDARD: 'gemini-3.1-flash-image',
+  IMAGE_PRO: 'gemini-3-pro-image',
+  VIDEO_LITE: 'veo-3.1-lite-generate-preview',
+  VIDEO_FAST: 'veo-3.1-fast-generate-preview',
+  VIDEO_PRO: 'veo-3.1-generate-preview',
+  TTS: 'gemini-2.5-flash-preview-tts',
+} as const;
+
+export const getAI = () => {
   const envKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
   const apiKey = customApiKey || envKey || "";
 
-  console.log(`[Gemini Debug] Resolving API Key:`, {
-    hasCustomApiKey: Boolean(customApiKey),
-    customApiKeyLength: customApiKey ? customApiKey.length : 0,
-    hasProcessEnvKey: Boolean(process.env.GEMINI_API_KEY),
-    processEnvKeyLength: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0,
-    finalKeyLength: apiKey ? apiKey.length : 0,
-    finalKeyPreview: apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : "EMPTY (MISSING)"
-  });
-
   if (!apiKey) {
-    console.error("[Gemini Debug] ❌ GEMINI_API_KEY is empty! Please verify that your .env file is SAVED (Ctrl+S) or enter the key in App Settings.");
+    console.warn("[Gemini Service] No active Gemini API key configured.");
   }
 
   return new GoogleGenAI({ apiKey });
@@ -131,9 +135,9 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 1000): Pr
     const isPermissionDenied = errorStr.includes("PERMISSION_DENIED") || error?.status === "PERMISSION_DENIED" || error?.code === 403;
     const isSpendingCap = errorStr.includes("exceeded its spending cap");
 
-    if ((isNotFoundError || isPermissionDenied) && window.aistudio?.openSelectKey) {
+    if ((isNotFoundError || isPermissionDenied) && retries > 0 && typeof window !== 'undefined' && (window as any).aistudio?.openSelectKey) {
       // If the key is invalid/not found or permission denied, prompt to re-select
-      await window.aistudio.openSelectKey();
+      await (window as any).aistudio.openSelectKey();
       return withRetry(fn, retries - 1, delay * 2);
     }
 
@@ -152,15 +156,14 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 1000): Pr
         if (Array.isArray(details)) {
           const retryInfo = details.find((d: any) => d['@type']?.includes('RetryInfo') || d.retryDelay);
           if (retryInfo?.retryDelay) {
-            // retryDelay is often a string like "52s" or "52.068975207s"
             const seconds = parseFloat(retryInfo.retryDelay.replace('s', ''));
             if (!isNaN(seconds)) {
-              waitTime = (seconds + 1) * 1000; // Add 1s buffer
+              waitTime = (seconds + 1) * 1000;
             }
           }
         }
       } catch (e) {
-        // Fallback to exponential backoff if parsing fails
+        // Fallback to exponential backoff
       }
 
       console.warn(`Transient error or quota exceeded. Retrying in ${waitTime}ms... (${retries} retries left)`);
@@ -175,14 +178,14 @@ export type GemType = 'image' | 'video' | 'text' | 'slideshow' | 'campaign' | 's
 
 export const IMAGE_MODELS = [
   { id: 'gemini-2.5-flash-image', name: 'Fast', modelName: 'Nano Banana', description: 'High-speed image generation', credits: 2, humanTouch: 20 },
-  { id: 'gemini-3.1-flash-image-preview', name: 'Standard', modelName: 'Nano Banana 2', description: 'Standard expressive visual composition engine', credits: 3, humanTouch: 30 },
-  { id: 'gemini-3-pro-image-preview', name: 'Pro', modelName: 'Nano Banana Pro', description: 'Advanced image generation supporting up to 4K clarity', credits: 4, humanTouch: 40 },
+  { id: 'gemini-3.1-flash-image', name: 'Standard', modelName: 'Nano Banana 2', description: 'Standard expressive visual composition engine', credits: 3, humanTouch: 30 },
+  { id: 'gemini-3-pro-image', name: 'Pro', modelName: 'Nano Banana Pro', description: 'Advanced image generation supporting up to 4K clarity', credits: 4, humanTouch: 40 },
   { id: 'openai/gpt-image-2', name: 'Plus', modelName: 'GPT Image 2', description: 'Commercial grade high-fidelity engine', credits: 5, humanTouch: 50 }
 ];
 
 export const TEXT_MODELS = [
-  { id: 'gemini-flash-latest', name: 'Campaign Strategy', modelName: 'Gemini Pro', description: 'Deep conversational discovery workshop and copywriting', credits: 5, humanTouch: 50 },
-  { id: 'gemini-3.1-pro-preview', name: 'Premium Strategy', modelName: 'Gemini Pro', description: 'Rich strategic planners and complex brand alignment models', credits: 5, humanTouch: 50 }
+  { id: 'gemini-2.5-flash', name: 'Campaign Strategy', modelName: 'Gemini Pro', description: 'Deep conversational discovery workshop and copywriting', credits: 5, humanTouch: 50 },
+  { id: 'gemini-2.5-pro', name: 'Premium Strategy', modelName: 'Gemini Pro', description: 'Rich strategic planners and complex brand alignment models', credits: 5, humanTouch: 50 }
 ];
 
 export const VIDEO_MODELS = [
@@ -1026,11 +1029,11 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
 
   if (gem.type === 'campaign') {
     const ai = getAI();
-    const logicModelId = 'gemini-flash-latest';
-    const imageModelId = config?.model || 'gemini-2.5-flash-image';
+    const logicModelId = MODELS.TEXT_FAST;
+    const imageModelId = config?.model || MODELS.IMAGE_FAST;
     const parts: any[] = [{ text: `${gem.systemInstruction}\n${guidelinesContext}\n\nPrompt: ${prompt}` }];
 
-    await appendAssetsToParts(parts);
+    await appendAssetsToParts(parts, config?.assets);
 
     const response = await withRetry(() => ai.models.generateContent({
       model: logicModelId,
@@ -1045,6 +1048,8 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
             copy: { type: Type.STRING },
             imagePrompts: {
               type: Type.ARRAY,
+              minItems: 1,
+              maxItems: 6,
               items: { type: Type.STRING }
             }
           },
@@ -1349,7 +1354,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
 
   if (gem.type === 'slideshow') {
     const ai = getAI();
-    const logicModelId = 'gemini-flash-latest';
+    const logicModelId = MODELS.TEXT_FAST;
     const parts: any[] = [{
       text: `Generate a cohesive, highly professional deck of 4 presentation slides based on this prompt: ${prompt}.
       ${guidelinesContext}
@@ -1395,6 +1400,8 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
           properties: {
             slides: {
               type: Type.ARRAY,
+              minItems: 4,
+              maxItems: 4,
               items: {
                 type: Type.OBJECT,
                 properties: {
@@ -1428,7 +1435,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
 
   if (gem.type === 'audio') {
     const ai = getAI();
-    const logicModelId = 'gemini-flash-latest';
+    const logicModelId = MODELS.TEXT_FAST;
     const accentStyle = config?.guidelines?.voiceAccentStyle || 'Indian English';
 
     let audioScriptPrompt = `Generate a voice-over script or monologue for '${gem.name}' based on this user prompt: '${prompt}'. 
@@ -1458,7 +1465,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
 
   if (gem.type === 'storyline') {
     const ai = getAI();
-    const logicModelId = 'gemini-flash-latest';
+    const logicModelId = MODELS.TEXT_FAST;
     const parts: any[] = [{
       text: `Generate a 6-8 image progressive storyline based on this prompt: ${prompt}.
       ${guidelinesContext}
@@ -1479,6 +1486,8 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
             storyTitle: { type: Type.STRING },
             scenes: {
               type: Type.ARRAY,
+              minItems: 4,
+              maxItems: 8,
               items: {
                 type: Type.OBJECT,
                 properties: {
@@ -1783,20 +1792,19 @@ export async function generateFastPrompt(
 
   // Fallback defaults
   const location = guidelines?.location || 'India';
+  const tone = guidelines?.tone || 'Premium';
   const ethnicity = guidelines?.visualEthnicityStyle || 'Indian';
   const accent = guidelines?.voiceAccentStyle || 'Indian English';
-  const brandColors = guidelines?.colors && guidelines.colors.length > 0 ? guidelines.colors.join(', ') : '#0f172a, #334155';
-  const tone = guidelines?.tone || 'Professional';
-  const pillarsStr = guidelines?.pillars?.join(', ') || 'Innovation, Creativity';
-  const industryStr = guidelines?.industry || 'Modern Business';
-  const finalBrandName = brandName || guidelines?.name || 'our brand';
+  const brandColors = (guidelines?.colors && guidelines.colors.length > 0) ? guidelines.colors.join(', ') : '#e52c4d, #111827';
+  const pillarsStr = (guidelines?.pillars && guidelines.pillars.length > 0) ? guidelines.pillars.join(', ') : 'Innovation, Craftsmanship, Design';
+  const industryStr = guidelines?.industry || 'Creative Enterprise';
+  const finalBrandName = brandName || guidelines?.name || 'Brand Engine';
 
   let systemInstruction = '';
   let userMessage = '';
 
   if (regionType === 'brief') {
-    // Brand initial tagline / brief helper
-    systemInstruction = `You are an elite brand consultant and copywriter.
+    systemInstruction = `You are a visionary Startup Founder and Brand Director.
 Write an incredibly compelling, evocative, and modern single-sentence business description and brand tagline for a new company.
 The description must feel deeply human, authentic, inspiring, and highly specific to a premium niche.
 
@@ -1808,7 +1816,6 @@ STRICT FORMATTING RULE:
     userMessage = `Generate a brilliant startup concept and tagline for a modern brand.`;
 
   } else if (regionType === 'campaign-concept') {
-    // Campaign Deck concept helper
     systemInstruction = `You are a Chief Creative Officer overseeing premium branding campaigns.
 Write a rich, poetic, and highly creative marketing campaign concept and product focus for the brand "${finalBrandName}".
 The brand is in the "${industryStr}" space, has a "${tone}" tone, and is based in "${location}".
@@ -1822,8 +1829,7 @@ STRICT FORMATTING RULE:
 
     userMessage = `Develop a captivating visual campaign concept and product theme for "${finalBrandName}".`;
 
-  } else if (isVideoGem) {
-    // Video Gem Storyboard
+  } else if (isVideoGem && promptEngineSettings.enableCinematicStoryboard) {
     const productMention = hasProductContext ? "the active Product Context Image provided" : "the brand's core product";
     const characterMention = hasFaceContext ? "the active Model/Face Context Image provided" : "a central character";
 
@@ -1847,7 +1853,6 @@ STRICT RULES:
     userMessage = `Write a 5-line cinematic narrative story involving the product/context and a ${ethnicity} model in ${location}.`;
 
   } else if (isAudioGem) {
-    // Voiceover or sound design prompt
     systemInstruction = `You are a Radio Producer and Audio Sound Designer for the brand "${finalBrandName}" (${industryStr}) based in "${location}".
 Write a highly creative audio production design directive or descriptive voiceover layout.
 Specify vocal speed, emotional pacing congruent with "${tone}", the background score atmosphere, instrumentation (aligned with cultural location: ${location}), and a short 1-2 sentence peak storytelling script.
@@ -1861,7 +1866,6 @@ STRICT RULES:
     userMessage = `Design an executive audio vocal and sound design direction prompt for "${finalBrandName}" using accent: ${accent}.`;
 
   } else if (isTextGem) {
-    // Strategy & Captions
     systemInstruction = `You are an Expert Social Media Strategist and Cultural Consultant.
 Write a detailed strategy prompt focusing on targeted viral engagement for "${finalBrandName}".
 Connect it deeply with the brand's niche in "${industryStr}" and its local demographics matching "${location}".
@@ -1874,7 +1878,6 @@ STRICT RULES:
     userMessage = `Create a smart strategy direction request for an audience campaign of "${finalBrandName}".`;
 
   } else if (isCampaignDeckGem) {
-    // Campaign Deck trigger
     systemInstruction = `You are an Art Director designing a 5-asset visual marketing launch deck for "${finalBrandName}".
 Write a stunning multichannel production prompt outlining the creative theme, specified aesthetic color schemes matching: ${brandColors}, lighting parameters, and visual synergy.
 
@@ -1885,7 +1888,6 @@ STRICT RULES:
     userMessage = `Create a 5-asset marketing design layout brief for "${finalBrandName}".`;
 
   } else if (isSlideshowGem) {
-    // Corporate Presentations auto-write trigger
     systemInstruction = `You are an elite Chief Strategy Officer, Corporate Communications Director, and AI Prompt Engineer.
 Your objective is to generate an incredibly professional, highly creative, and detailed draft prompt for a corporate presentation / slideshow deck tailored to the brand "${finalBrandName}".
 
@@ -1914,7 +1916,7 @@ STRICT RULES:
 
     userMessage = `Develop a highly sophisticated, specific, and professionally written corporate presentation draft prompt for "${finalBrandName}".`;
 
-  } else if (isVideoGem && !promptEngineSettings.enableCinematicStoryboard) {
+  } else if (isVideoGem) {
     systemInstruction = `You are a professional copywriter. Write a simple, elegant sequence of 5 sentences describing direct steps of a scene for "${finalBrandName}" at "${location}" involving the product. Do NOT use fancy photographic, cinematographic or lighting buzzwords. No labels, prefixes, or line numbers.
 STRICT LENGTH BUDGET: Output exactly 5 short, elegant sentences (1 sentence per line).`;
     userMessage = `Write a clean, beautiful human-style narrative story direction for "${finalBrandName}".`;
