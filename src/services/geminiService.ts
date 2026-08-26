@@ -2,7 +2,10 @@ import { GoogleGenAI, Modality, Type, ThinkingLevel } from "@google/genai";
 
 // API key is managed server-side only — no user-provided keys
 export const getAI = () => {
-  const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
+  const apiKey =
+    (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
+    import.meta.env.VITE_GEMINI_API_KEY ||
+    '';
   if (!apiKey) {
     console.warn("[Gemini Service] No Gemini API key configured in environment.");
   }
