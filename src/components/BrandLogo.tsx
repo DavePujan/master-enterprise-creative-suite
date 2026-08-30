@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { motion } from 'motion/react';
@@ -22,6 +22,28 @@ export const BrandLogo = ({
   noReferrer?: boolean,
   autoColor?: boolean
 }) => {
+  const [imgError, setImgError] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState<string | undefined>(customLogo);
+  const [fallbackAttempt, setFallbackAttempt] = useState(0);
+
+  useEffect(() => {
+    setImgError(false);
+    setFallbackAttempt(0);
+    setCurrentSrc(customLogo || undefined);
+  }, [customLogo, brandName]);
+
+  const handleError = () => {
+    if (fallbackAttempt === 0 && brandName && brandName.trim()) {
+      const cleanName = brandName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanName) {
+        setFallbackAttempt(1);
+        setCurrentSrc(`https://www.google.com/s2/favicons?domain=${cleanName}.com&sz=256`);
+        return;
+      }
+    }
+    setImgError(true);
+  };
+
   const containerVariants = {
     initial: { opacity: 0, scale: 0.9, y: 5 },
     animate: { 
@@ -45,19 +67,21 @@ export const BrandLogo = ({
     }
   };
 
-  if (!customLogo && !collapsed) {
+  const showMonogram = !currentSrc || imgError;
+
+  if (showMonogram) {
     return (
       <motion.div 
         variants={containerVariants}
         initial="initial"
         animate="animate"
         whileHover="hover"
-        className={cn("flex items-center gap-3", className)}
+        className={cn("flex items-center justify-center", collapsed ? "h-10 w-10" : "gap-3", className)}
       >
         <div className="relative group">
           <div className="absolute -inset-1 bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
           <div className="relative w-10 h-10 bg-slate-900 dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-slate-900 font-bold text-xl shadow-lg border border-white/10 dark:border-slate-900/10">
-            {brandName.charAt(0)}
+            {brandName ? brandName.charAt(0).toUpperCase() : 'S'}
           </div>
         </div>
         {!collapsed && (
@@ -69,8 +93,6 @@ export const BrandLogo = ({
       </motion.div>
     );
   }
-
-  const logoSrc = customLogo || "/logo.png";
 
   return (
     <motion.div 
@@ -89,8 +111,9 @@ export const BrandLogo = ({
       <div className="absolute inset-0 bg-gradient-to-tr from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       
       <img 
-        src={logoSrc} 
+        src={currentSrc} 
         alt={brandName} 
+        onError={handleError}
         className={cn(
           "relative z-10 w-full h-full object-contain p-1.5 transition-transform duration-500 group-hover:scale-110", 
           autoColor ? "brightness-0 dark:invert" : "dark:drop-shadow-none drop-shadow-[0_0_1px_rgba(0,0,0,0.05)]"
@@ -100,3 +123,4 @@ export const BrandLogo = ({
     </motion.div>
   );
 };
+
