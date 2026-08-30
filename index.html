@@ -10,10 +10,30 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-title" content="MyWebSite" />
 <link rel="manifest" href="/site.webmanifest" />
+    <script>
+      (function() {
+        try {
+          var cookieTheme = document.cookie.match(/(?:^|;\s*)(?:writo_pref_theme|theme)=([^;]+)/);
+          var theme = cookieTheme ? decodeURIComponent(cookieTheme[1]) : null;
+          if (!theme) {
+            var raw = localStorage.getItem('writopedia_user_preferences_v1');
+            if (raw) {
+              var parsed = JSON.parse(raw);
+              theme = parsed.theme;
+            }
+          }
+          var isDark = theme === 'dark' || (theme !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
