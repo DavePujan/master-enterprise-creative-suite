@@ -79,6 +79,12 @@ import { twMerge } from 'tailwind-merge';
 import { auth, db, useAuth, uploadAssetToStorage } from './lib/firebase';
 import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { cn, downloadFile, compressBase64Image } from './lib/utils';
+import { 
+  loadPreferences, 
+  savePreferences, 
+  resolveIsDark, 
+  applyThemeToDocument 
+} from './lib/preferences';
 
 declare global {
   interface Window {
@@ -1053,7 +1059,8 @@ interface TextWordLayer {
 }
 
 export default function App() {
-  const [brandSetupComplete, setBrandSetupComplete] = useState(false);
+  const [brandSetupComplete, setBrandSetupComplete] = useState<boolean>(() => loadPreferences().brandSetupComplete ?? false);
+  const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
   const [selectedGem, setSelectedGem] = useState<Gem>(GENERIC_GEMS[0]);
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -1062,7 +1069,7 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [view, setView] = useState<'tools' | 'assets' | 'plan' | 'admin' | 'curation' | 'topup'>('tools');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => loadPreferences().sidebarOpen);
   
   // Real-time user curation requests and notifications state
   const [userCurationRequests, setUserCurationRequests] = useState<any[]>([]);
@@ -1087,7 +1094,7 @@ export default function App() {
   }>>([]);
   const [selectedAdminRequestId, setSelectedAdminRequestId] = useState<string | null>(null);
   const [videoStatus, setVideoStatus] = useState<string>('');
-  const [aspectRatio, setAspectRatio] = useState('1:1');
+  const [aspectRatio, setAspectRatio] = useState(() => loadPreferences().aspectRatio);
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [showAssetLibrary, setShowAssetLibrary] = useState(false);
   const [credits, setCredits] = useState(50);
@@ -1103,18 +1110,23 @@ export default function App() {
 
   const [brandProfiles, setBrandProfiles] = useState<any[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const isInitialDataLoadedRef = useRef(false);
 
-  const [brandGuidelines, setBrandGuidelines] = useState<BrandGuidelines>({
-    name: 'Studio AI',
-    industry: 'Creative Technology',
-    tone: 'Professional & Innovative',
-    pillars: ['Innovation', 'Creativity', 'Efficiency'],
-    colors: ['#0f172a', '#334155'],
-    typography: { primary: 'Outfit', secondary: 'Inter' },
-    logo: '',
-    location: 'India',
-    voiceAccentStyle: 'Indian English',
-    visualEthnicityStyle: 'Indian'
+  const [brandGuidelines, setBrandGuidelines] = useState<BrandGuidelines>(() => {
+    const cached = loadPreferences().brandGuidelines;
+    if (cached && cached.name) return cached;
+    return {
+      name: 'Studio AI',
+      industry: 'Creative Technology',
+      tone: 'Professional & Innovative',
+      pillars: ['Innovation', 'Creativity', 'Efficiency'],
+      colors: ['#0f172a', '#334155'],
+      typography: { primary: 'Outfit', secondary: 'Inter' },
+      logo: '',
+      location: 'India',
+      voiceAccentStyle: 'Indian English',
+      visualEthnicityStyle: 'Indian'
+    };
   });
   const [editingGuidelines, setEditingGuidelines] = useState<BrandGuidelines | null>(null);
   const [newProfileNameOrURL, setNewProfileNameOrURL] = useState('');
@@ -1248,9 +1260,11 @@ export default function App() {
       }
       
       // Force setup screen & reset guidelines
+      isInitialDataLoadedRef.current = false;
       setBrandSetupComplete(false);
       setBrandProfiles([]);
       setActiveProfileId(null);
+      savePreferences({ brandGuidelines: null, brandSetupComplete: false });
       setResult(null);
       setHistory([]);
       setAssets([]);
@@ -1272,6 +1286,7 @@ export default function App() {
       });
       setShowGuidelines(false);
       setShowAssetLibrary(false);
+      navigateTo('/brand-init');
     } catch (e) {
       console.error("Failed to erase brand identity:", e);
     } finally {
@@ -1514,16 +1529,17 @@ export default function App() {
     }
   };
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [themePreference, setThemePreference] = useState<'dark' | 'light' | 'system'>(() => loadPreferences().theme);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => resolveIsDark(loadPreferences().theme));
   const [fetchedResultData, setFetchedResultData] = useState<string | null>(null);
   const [isFetchingResult, setIsFetchingResult] = useState(false);
   const [isRefineModalOpen, setIsRefineModalOpen] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState('');
   const [isRefining, setIsRefining] = useState(false);
-  const [bakeLogoOnGeneration, setBakeLogoOnGeneration] = useState(true);
-  const [logoPosition, setLogoPosition] = useState({ x: 15, y: 15 });
-  const [logoScale, setLogoScale] = useState(15);
-  const [logoInverted, setLogoInverted] = useState(false);
+  const [bakeLogoOnGeneration, setBakeLogoOnGeneration] = useState(() => loadPreferences().bakeLogoOnGeneration);
+  const [logoPosition, setLogoPosition] = useState(() => loadPreferences().logoPosition);
+  const [logoScale, setLogoScale] = useState(() => loadPreferences().logoScale);
+  const [logoInverted, setLogoInverted] = useState(() => loadPreferences().logoInverted);
   const [isDraggingLogo, setIsDraggingLogo] = useState(false);
 
   const [textLayers, setTextLayers] = useState<TextWordLayer[]>([]);
@@ -1980,13 +1996,37 @@ export default function App() {
     }
   };
 
+  // Synchronize theme with document & persistence layer
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    applyThemeToDocument(isDarkMode);
+    savePreferences({ theme: isDarkMode ? 'dark' : 'light' });
   }, [isDarkMode]);
+
+  // Synchronize UI preferences to cookies/storage
+  useEffect(() => {
+    savePreferences({
+      sidebarOpen,
+      aspectRatio,
+      bakeLogoOnGeneration,
+      logoPosition,
+      logoScale,
+      logoInverted
+    });
+  }, [sidebarOpen, aspectRatio, bakeLogoOnGeneration, logoPosition, logoScale, logoInverted]);
+
+  // Listen to system preference changes if in system mode
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = (e: MediaQueryListEvent) => {
+      const prefs = loadPreferences();
+      if (prefs.theme === 'system') {
+        setIsDarkMode(e.matches);
+      }
+    };
+    media.addEventListener('change', listener);
+    return () => media.removeEventListener('change', listener);
+  }, []);
 
   // Dynamic CSS variables for brand colors.
   useEffect(() => {
@@ -2056,7 +2096,12 @@ export default function App() {
           }
         }
 
-        if (activeData) {
+        const isValidBrand = activeData && 
+          activeData.name && 
+          activeData.name.trim() !== '' && 
+          activeData.name !== 'Studio AI';
+
+        if (isValidBrand) {
           let mappedTone = 'Professional';
           if (activeData.tone) {
             if (Array.isArray(activeData.tone)) {
@@ -2068,19 +2113,19 @@ export default function App() {
           const profile = {
             id: 'default',
             name: activeData.name || '',
-            industry: activeData.mission || '',
+            industry: activeData.mission || activeData.industry || '',
             tone: mappedTone,
             pillars: activeData.pillars || [],
             colors: activeData.colors || [],
             typography: activeData.typography || { primary: 'Outfit', secondary: 'Inter' },
-            logo: activeData.logoUrl || '',
+            logo: activeData.logoUrl || activeData.logo || '',
             location: activeData.location || 'India',
             voiceAccentStyle: activeData.voiceAccentStyle || 'Indian English',
             visualEthnicityStyle: activeData.visualEthnicityStyle || 'Indian'
           };
           setBrandProfiles([profile]);
           setActiveProfileId('default');
-          setBrandGuidelines({
+          const loadedGuidelines = {
             name: profile.name,
             industry: profile.industry,
             tone: profile.tone,
@@ -2091,8 +2136,15 @@ export default function App() {
             location: profile.location,
             voiceAccentStyle: profile.voiceAccentStyle,
             visualEthnicityStyle: profile.visualEthnicityStyle
-          });
+          };
+          setBrandGuidelines(loadedGuidelines);
           setBrandSetupComplete(true);
+          savePreferences({ brandGuidelines: loadedGuidelines, brandSetupComplete: true });
+        } else {
+          setBrandProfiles([]);
+          setActiveProfileId(null);
+          setBrandSetupComplete(false);
+          savePreferences({ brandGuidelines: null, brandSetupComplete: false });
         }
 
         // 3. Assets
@@ -2125,6 +2177,9 @@ export default function App() {
         }));
       } catch (e) {
         console.error("Firebase load error:", e);
+      } finally {
+        isInitialDataLoadedRef.current = true;
+        setIsInitialDataLoading(false);
       }
     };
 
@@ -2157,7 +2212,8 @@ export default function App() {
 
   // Sync Brand Guidelines
   useEffect(() => {
-    if (!user || !brandSetupComplete) return;
+    if (!user || !brandSetupComplete || !isInitialDataLoadedRef.current) return;
+    if (!brandGuidelines.name || brandGuidelines.name === 'Studio AI') return;
     
     const sync = async () => {
       setIsSyncing(true);
@@ -2241,16 +2297,24 @@ export default function App() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isTTSLoading, setIsTTSLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [audioVolume, setAudioVolume] = useState(1);
+  const [audioVolume, setAudioVolume] = useState(() => loadPreferences().audioVolume);
   const [audioProgress, setAudioProgress] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [selectedVoice, setSelectedVoice] = useState('Kore');
+  const [selectedVoice, setSelectedVoice] = useState(() => loadPreferences().audioVoice);
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const selectedGemIdRef = useRef(selectedGem.id);
+
+  // Synchronize audio preferences to cookies/storage
+  useEffect(() => {
+    savePreferences({
+      audioVolume,
+      audioVoice: selectedVoice
+    });
+  }, [audioVolume, selectedVoice]);
 
   useEffect(() => {
     selectedGemIdRef.current = selectedGem.id;
@@ -3040,7 +3104,9 @@ export default function App() {
     try {
       await logout();
       // Reset state and kick user back to landing/login
+      isInitialDataLoadedRef.current = false;
       setBrandSetupComplete(false);
+      savePreferences({ brandGuidelines: null, brandSetupComplete: false });
       setResult(null);
       setHistory([]);
       setAssets([]);
@@ -3169,6 +3235,15 @@ export default function App() {
     );
   }
 
+  // Prevent flashing login or brand-init during auth loading or initial workspace data hydration
+  if (loading || (user && isInitialDataLoading && (currentPath === '/workspace' || currentPath === '/brand-init'))) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
+        <GenerationLoader title="Loading Creative Suite..." subtitle="Authenticating workspace and brand parameters" />
+      </div>
+    );
+  }
+
   if (currentPath === '/login' || currentPath === '/brand-init' || !brandSetupComplete) {
     return (
       <BrandSetup 
@@ -3193,15 +3268,19 @@ export default function App() {
               ? await Promise.all(assets.map(a => sanitizeResultForFirebase(a, user.uid)))
               : assets;
 
+            isInitialDataLoadedRef.current = true;
             setBrandGuidelines(sanitizedGuidelines);
             setAssets(sanitizedAssets);
             setBrandSetupComplete(true);
+            savePreferences({ brandGuidelines: sanitizedGuidelines, brandSetupComplete: true });
             navigateTo('/workspace');
           } catch (e) {
             console.error("Failed to sanitize initial brand kit:", e);
+            isInitialDataLoadedRef.current = true;
             setBrandGuidelines(guidelines);
             setAssets(assets);
             setBrandSetupComplete(true);
+            savePreferences({ brandGuidelines: guidelines, brandSetupComplete: true });
             navigateTo('/workspace');
           } finally {
             setIsSyncing(false);
@@ -6198,6 +6277,48 @@ export default function App() {
             </div>
             
             <div className="p-8 space-y-6">
+              {/* Theme Preference Option */}
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <Sun size={14} />
+                  Interface Theme
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDarkMode(false);
+                      setThemePreference('light');
+                    }}
+                    className={cn(
+                      "flex items-center justify-center gap-2 py-2.5 px-3 rounded-sm border text-xs font-semibold transition-all cursor-pointer",
+                      !isDarkMode 
+                        ? "border-rose-600 bg-rose-50/40 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 shadow-sm"
+                        : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <Sun size={14} />
+                    <span>Light Mode</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDarkMode(true);
+                      setThemePreference('dark');
+                    }}
+                    className={cn(
+                      "flex items-center justify-center gap-2 py-2.5 px-3 rounded-sm border text-xs font-semibold transition-all cursor-pointer",
+                      isDarkMode 
+                        ? "border-rose-600 bg-rose-50/40 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 shadow-sm"
+                        : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <Moon size={14} />
+                    <span>Dark Mode</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-3">
                 <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-2">
                   <Key size={14} />
