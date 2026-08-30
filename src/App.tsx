@@ -2341,29 +2341,6 @@ export default function App() {
     return selectedGem.cost;
   };
 
-  useEffect(() => {
-    const loadDefaultLogo = async () => {
-      try {
-        const response = await fetch('/logo.svg');
-        if (response.ok) {
-          const svgText = await response.text();
-          
-          // Use SVG directly as data URL
-          const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            setBrandGuidelines(prev => ({ ...prev, logo: result }));
-          };
-          reader.readAsDataURL(svgBlob);
-        }
-      } catch (error) {
-        console.error("Failed to load default logo:", error);
-      }
-    };
-    
-    loadDefaultLogo();
-  }, []);
 
   useEffect(() => {
     if (audioRef.current) {

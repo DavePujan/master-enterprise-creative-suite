@@ -4,7 +4,7 @@ import { GoogleGenAI, Modality, Type, ThinkingLevel } from "@google/genai";
 export const getAI = () => {
   const apiKey =
     (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
-    import.meta.env.VITE_GEMINI_API_KEY ||
+    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
     '';
   if (!apiKey) {
     console.warn("[Gemini Service] No Gemini API key configured in environment.");
@@ -516,47 +516,26 @@ export async function initializeBrandKit(
       return;
     }
 
-    // Only search Google if the input appears to contain a URL or website domain indicator
-    const hasDomainOrUrl = /https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i.test(description) || description.includes('.com') || description.includes('.in') || description.includes('.org') || description.includes('.net') || description.includes('.co');
-
-    if (!hasDomainOrUrl) {
-      guidelines.logo = '';
-      return;
-    }
-
     try {
-      // Find official logo URL using Google Search grounding
-      const searchResponse = await withRetry(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Find the official logo URL or a high-quality public image URL for the brand "${guidelines.name}" (${guidelines.industry}). 
-        The brand might already have a website or established online presence.
-        
-        Return a JSON object with:
-        - found: boolean (true if a specific, high-confidence URL was found)
-        - url: string (the direct image URL if found, otherwise null)
-        - source: string (where you found it)
-        
-        Return ONLY the JSON object.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              found: { type: Type.BOOLEAN },
-              url: { type: Type.STRING, nullable: true },
-              source: { type: Type.STRING, nullable: true }
-            },
-            required: ["found", "url"]
-          }
-        }
-      }));
+      // 1. Try to extract domain directly from the user's description (e.g. www.google.com -> google.com)
+      const domainMatch = description.match(/(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,})/i);
+      let domain = domainMatch ? domainMatch[1].toLowerCase().replace(/\/.*$/, '').trim() : null;
 
-      const searchResult = parseJSON(searchResponse.text);
-      if (searchResult.found && searchResult.url) {
-        guidelines.logo = searchResult.url;
-      } else {
-        guidelines.logo = '';
+      // 2. If no domain in description but guidelines.name is available, derive domain
+      if (!domain && guidelines.name) {
+        const cleanName = guidelines.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanName) {
+          domain = `${cleanName}.com`;
+        }
       }
+
+      if (domain) {
+        // High-resolution, reliable Google Favicons / Brand Icon API (sz=256)
+        guidelines.logo = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
+        return;
+      }
+
+      guidelines.logo = '';
     } catch (e) {
       console.error("Failed to discover logo in initialization:", e);
       guidelines.logo = '';
@@ -1497,7 +1476,7 @@ export async function generateCreative(gem: Gem, prompt: string, config?: {
   }
 }
 
-export async function generateImage(prompt: string, guidelines?: BrandGuidelines, aspectRatio: string = "16:9", model?: string, assets?: any[], bakeLogo: boolean = true) {
+export async function generateImage(prompt: string, guidelines?: BrandGuidelines, aspectRatio: string = "16:9", model?: string, assets?: any[], bakeLogo: boolean = true): Promise<{ url: string; groundingMetadata?: any }> {
   const guidelinesContext = (guidelines && promptEngineSettings.enableGuidelines) ? `
     Current Brand Guidelines for ${guidelines.name}:
     - Pillars: ${guidelines.pillars.join(', ')}
