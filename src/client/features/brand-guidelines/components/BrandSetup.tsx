@@ -68,21 +68,8 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
   const [manualPillars, setManualPillars] = useState('');
   const [manualColors, setManualColors] = useState('');
 
-  // Routing sync inside BrandSetup
-  useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      if (currentPath === '/brand-init') {
-        navigateTo('/');
-      }
-    } else {
-      if (currentPath === '/') {
-        navigateTo('/brand-init');
-      }
-    }
-  }, [user, loading, currentPath, navigateTo]);
-
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
