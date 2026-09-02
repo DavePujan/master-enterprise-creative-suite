@@ -730,7 +730,7 @@ Generate a fresh, highly diverse prompt that fits the visual identity of "${fina
   try {
     const response = await withRetry(() =>
       ai.models.generateContent({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-2.5-flash',
         contents: userMessage,
         config: {
           systemInstruction: systemInstruction,

@@ -10,7 +10,26 @@ import { getServerAI } from "../../infrastructure/gemini/serverGeminiClient.js";
 
 export const aiRouter = Router();
 
-// Secure Content Generation Gateway
+const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+
+function isTransientError(err: any): boolean {
+  const status = err?.status || err?.code || 0;
+  const message = String(err?.message || "").toUpperCase();
+  return (
+    status === 503 ||
+    status === 429 ||
+    status === 404 ||
+    message.includes("UNAVAILABLE") ||
+    message.includes("HIGH DEMAND") ||
+    message.includes("RESOURCE_EXHAUSTED") ||
+    message.includes("TEMPORARY") ||
+    message.includes("OVERLOADED") ||
+    message.includes("NOT FOUND") ||
+    message.includes("NOT_FOUND")
+  );
+}
+
+// Secure Content Generation Gateway with Resilience & Model Fallback
 aiRouter.post("/generate-content", async (req, res) => {
   try {
     const { model, contents, config } = req.body;
@@ -19,34 +38,69 @@ aiRouter.post("/generate-content", async (req, res) => {
     }
 
     const ai = getServerAI();
-    const modelId = model || "gemini-2.5-flash";
+    const primaryModel = model || "gemini-2.5-flash";
+    const modelsToTry = [primaryModel, ...FALLBACK_MODELS.filter(m => m !== primaryModel)];
 
-    console.log(`[Server AI] Processing generate-content (model: ${modelId}, user: ${req.user?.email || req.user?.uid || 'authenticated'})`);
+    let lastError: any = null;
 
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents,
-      config
+    for (const currentModel of modelsToTry) {
+      try {
+        console.log(`[Server AI] Attempting generate-content (model: ${currentModel}, user: ${req.user?.email || req.user?.uid || 'authenticated'})`);
+
+        const response = await ai.models.generateContent({
+          model: currentModel,
+          contents,
+          config
+        });
+
+        if (currentModel !== primaryModel) {
+          console.log(`[Server AI] ✅ Successfully recovered with fallback model: ${currentModel}`);
+        }
+
+        return res.json({
+          text: response.text,
+          candidates: response.candidates,
+          modelUsed: currentModel
+        });
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Server AI Warning] Model "${currentModel}" failed:`, err?.message || err);
+
+        // If error is not a transient capacity/model error (e.g. 400 Bad Request / invalid schema), fail immediately
+        if (!isTransientError(err)) {
+          break;
+        }
+
+        // Brief jitter delay before trying next fallback model
+        await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
+      }
+    }
+
+    console.error("[Server AI generate-content all models failed]:", {
+      message: lastError?.message || lastError,
+      status: lastError?.status,
+      code: lastError?.code
     });
 
-    return res.json({
-      text: response.text,
-      candidates: response.candidates
+    const status = lastError?.status || lastError?.code || 500;
+    const statusCode = typeof status === "number" && status >= 400 && status < 600 ? status : 503;
+    const userMessage = isTransientError(lastError)
+      ? "AI service is temporarily experiencing high demand. Please try again shortly."
+      : lastError?.message || "Failed to generate AI content";
+
+    return res.status(statusCode).json({
+      error: userMessage,
+      code: lastError?.code || "AI_GENERATION_FAILED"
     });
   } catch (err: any) {
-    console.error("[Server AI generate-content error]:", {
-      message: err?.message || err,
-      status: err?.status,
-      code: err?.code
-    });
-    const status = err?.status || err?.code || 500;
-    const statusCode = typeof status === "number" && status >= 400 && status < 600 ? status : 500;
-    return res.status(statusCode).json({
-      error: err?.message || "Failed to generate AI content",
-      code: err?.code || "AI_GENERATION_FAILED"
+    console.error("[Server AI unexpected error]:", err);
+    return res.status(500).json({
+      error: "Unexpected server error during content generation",
+      code: "INTERNAL_SERVER_ERROR"
     });
   }
 });
+
 
 
 // Secure Veo Video Generation Gateway

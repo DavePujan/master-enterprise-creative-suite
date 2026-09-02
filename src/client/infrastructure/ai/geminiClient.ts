@@ -46,7 +46,7 @@ export function parseJSON(text: string) {
   }
 }
 
-export async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 1000): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, retries = 1, delay = 800): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
@@ -62,20 +62,15 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 10
     }
 
     if ((isQuotaError || isInternalError || isServiceUnavailable || isDeadlineExceeded) && retries > 0) {
-      let waitTime = delay;
-      if (errorStr.includes("Please retry in")) {
-        const match = errorStr.match(/Please retry in ([\d\.]+)s/);
-        if (match && match[1]) {
-          waitTime = Math.ceil(parseFloat(match[1]) * 1000) + 1000;
-        }
-      }
+      const waitTime = delay + Math.floor(Math.random() * 200);
       console.warn(`Transient API error. Retrying in ${waitTime}ms... (${retries} attempts left). Error:`, errorStr);
       await new Promise(resolve => setTimeout(resolve, waitTime));
-      return withRetry(fn, retries - 1, delay * 2);
+      return withRetry(fn, retries - 1, delay);
     }
     throw error;
   }
 }
+
 
 export function getQuotaErrorMessage(error: any): string {
   const errorStr = typeof error === 'string' ? error : (error?.message || JSON.stringify(error));

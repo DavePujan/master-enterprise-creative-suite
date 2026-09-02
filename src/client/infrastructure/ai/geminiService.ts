@@ -943,7 +943,7 @@ export async function generateCampaignStrategistCampaign(
 
   const response = await withRetry(() =>
     ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1119,7 +1119,7 @@ export async function generateCampaignStrategistAsset(
 
   const response = await withRetry(() =>
     ai.models.generateContent({
-      model: model || 'gemini-3.5-flash',
+      model: model || 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction:
@@ -1173,9 +1173,10 @@ Return as a JSON object matching this schema:
 
   const response = await withRetry(() =>
     ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
+
         responseMimeType: "application/json",
         systemInstruction: "You are a master Creative Director at a top agency. Output strictly valid JSON with zero conversational fluff.",
         responseSchema: {
