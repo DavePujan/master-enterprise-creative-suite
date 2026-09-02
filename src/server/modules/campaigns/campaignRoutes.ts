@@ -78,7 +78,7 @@ Construct a gorgeous JSON response matching the precise structure schema request
 
     const gClient = getServerAI();
     const promptResponse = await gClient.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: userTonePrompt,
       config: {
         responseMimeType: "application/json",

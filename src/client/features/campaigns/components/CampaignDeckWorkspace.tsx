@@ -689,7 +689,7 @@ export function CampaignDeckWorkspace({
                     <div className="p-2 border border-slate-200 dark:border-slate-700 rounded-sm flex items-center justify-between bg-slate-50 dark:bg-slate-950">
                       <div className="flex items-center gap-2 overflow-hidden">
                         <img src={productContext.data} alt="Product context reference" className="w-9 h-9 object-cover rounded-xs border dark:border-slate-700 bg-white" referrerPolicy="no-referrer" />
-                        <span className="text-xs text-slate-600 dark:text-slate-350 truncate max-w-[120px]">{productContext.name}</span>
+                        <span className="text-xs text-slate-600 dark:text-slate-350 truncate max-w-30">{productContext.name}</span>
                       </div>
                       <button onClick={() => setProductContext(null)} className="p-1 hover:text-red-500 cursor-pointer text-slate-400"><X size={14} /></button>
                     </div>
@@ -731,11 +731,12 @@ export function CampaignDeckWorkspace({
                     <div className="p-2 border border-slate-200 dark:border-slate-700 rounded-sm flex items-center justify-between bg-slate-50 dark:bg-slate-950">
                       <div className="flex items-center gap-2 overflow-hidden">
                         <img src={faceContext.data} alt="Character face model reference" className="w-9 h-9 object-cover rounded-xs border dark:border-slate-700 bg-white" referrerPolicy="no-referrer" />
-                        <span className="text-xs text-slate-600 dark:text-slate-350 truncate max-w-[120px]">{faceContext.name}</span>
+                        <span className="text-xs text-slate-600 dark:text-slate-350 truncate max-w-30">{faceContext.name}</span>
                       </div>
                       <button onClick={() => setFaceContext(null)} className="p-1 hover:text-red-500 cursor-pointer text-slate-400"><X size={14} /></button>
                     </div>
                   ) : (
+
                     <label className="border border-dashed border-slate-200 dark:border-slate-800 p-3 h-14 rounded-sm flex items-center justify-center gap-2 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer bg-slate-50/20 hover:bg-slate-50 transition-colors">
                       <Upload size={14} className="text-slate-400" />
                       <span>Attach Character Face Reference</span>
@@ -980,7 +981,7 @@ export function CampaignDeckWorkspace({
                 return (
                   <div 
                     key={role}
-                    className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-sm flex flex-col justify-between shadow-sm relative group hover:border-slate-350 dark:hover:border-slate-600 transition-all cursor-pointer overflow-hidden h-[340px]"
+                    className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-sm flex flex-col justify-between shadow-sm relative group hover:border-slate-350 dark:hover:border-slate-600 transition-all cursor-pointer overflow-hidden h-85"
                     onClick={() => {
                       setRefinementRole(role);
                       setRefinementPrompt(item.prompt);
@@ -1033,7 +1034,8 @@ export function CampaignDeckWorkspace({
 
                     {/* Footer export/detail strip */}
                     <div className="px-4 py-3 border-t border-slate-50 dark:border-slate-800/80 flex items-center justify-between bg-slate-50/60 dark:bg-slate-950/60 text-[9px] text-slate-400">
-                      <span className="truncate max-w-[80px] font-mono shrink-0">{item.warning ? 'Flux Fallback' : 'GPT Image 2'}</span>
+                      <span className="truncate max-w-20 font-mono shrink-0">{item.warning ? 'Flux Fallback' : 'GPT Image 2'}</span>
+
                       {item.imageUrl && (
                         <div className="flex items-center gap-2.5">
                           <button

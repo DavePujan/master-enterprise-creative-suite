@@ -231,10 +231,15 @@ export function App() {
         setBrandGuidelines(cloudGuidelines as BrandGuidelines);
         setBrandSetupComplete(true);
         savePreferences({ brandGuidelines: cloudGuidelines, brandSetupComplete: true });
+      } else {
+        // If authenticated user has no cloud guidelines, reset onboarding state
+        setBrandSetupComplete(false);
+        savePreferences({ brandGuidelines: null, brandSetupComplete: false });
       }
       setIsInitialDataLoading(false);
       isInitialDataLoadedRef.current = true;
     });
+
 
     // 5. Subscribe to Human Touch Queue (if Admin)
     let unsubQueue = () => {};
@@ -404,14 +409,17 @@ export function App() {
   };
 
   const handleBrandSetupComplete = async (guidelines: BrandGuidelines, initialAssets: any[]) => {
+    if (!user) {
+      setAuthError("Authentication required to save your brand parameters.");
+      return;
+    }
+
     setIsSyncing(true);
     try {
-      if (user) {
-        await saveBrandGuidelines(user.uid, guidelines, 'default');
-        await Promise.all(
-          initialAssets.map(a => saveUserAsset(user.uid, a.id || `init-asset-${Date.now()}`, a.name, a.data, a.type || 'image'))
-        );
-      }
+      await saveBrandGuidelines(user.uid, guidelines, 'default');
+      await Promise.all(
+        initialAssets.map(a => saveUserAsset(user.uid, a.id || `init-asset-${Date.now()}`, a.name, a.data, a.type || 'image'))
+      );
 
       isInitialDataLoadedRef.current = true;
       setBrandGuidelines(guidelines);
@@ -419,18 +427,17 @@ export function App() {
       setBrandSetupComplete(true);
       savePreferences({ brandGuidelines: guidelines, brandSetupComplete: true });
       navigateTo('/workspace');
-    } catch (e) {
-      console.error("Failed to save initial brand kit:", e);
-      isInitialDataLoadedRef.current = true;
+    } catch (e: any) {
+      console.error("Failed to save initial brand kit to cloud:", e);
+      setAuthError(e?.message || "Failed to persist brand kit to cloud database. Please retry.");
       setBrandGuidelines(guidelines);
       setAssets(initialAssets);
-      setBrandSetupComplete(true);
-      savePreferences({ brandGuidelines: guidelines, brandSetupComplete: true });
-      navigateTo('/workspace');
     } finally {
       setIsSyncing(false);
     }
   };
+
+
 
   return (
     <AppRouter

@@ -347,10 +347,11 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
         
         {/* Header Section */}
         <div className="text-center space-y-4 max-w-4xl mx-auto">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 text-xs font-semibold text-slate-600 dark:text-slate-400 border border-slate-200 / border-slate-800 dark:border-slate-800">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 text-xs font-semibold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
             <Coins size={12} className="text-indigo-500 animate-bounce" />
             <span>INSTANT CREDIT TOP-UP BOOSTER</span>
           </div>
+
           <h1 className="text-4xl md:text-5xl font-light text-slate-900 dark:text-white tracking-tight leading-none">
             Inject More <span className="text-indigo-600 dark:text-indigo-400 font-semibold">Creative Credits</span>
           </h1>
@@ -452,7 +453,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
                       </div>
                       <div>
                         <span className="text-slate-400">Total Authorized</span>
-                        <p className="font-bold text-slate-950 dark:text-white mt-0.5 mt-0.5">
+                        <p className="font-bold text-slate-950 dark:text-white mt-0.5">
                           {currency === 'INR' ? '₹' : '$'}{paymentStatus.amountPaid?.toLocaleString() || '0'}
                         </p>
                       </div>
@@ -494,12 +495,13 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
                 key={index}
                 onMouseEnter={() => setHoveredCard(index)}
                 onMouseLeave={() => setHoveredCard(null)}
-                className={`bg-white dark:bg-slate-900 border rounded-lg transition-all duration-300 relative flex flex-col justify-between overflow-hidden min-h-[480px] ${getBgClass(plan.bgType, isHovered || plan.popular)}`}
+                className={`bg-white dark:bg-slate-900 border rounded-lg transition-all duration-300 relative flex flex-col justify-between overflow-hidden min-h-120 ${getBgClass(plan.bgType, isHovered || plan.popular)}`}
               >
                 {/* Visual Accent Rim */}
                 {plan.popular && (
-                  <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+                  <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-indigo-500 via-purple-500 to-pink-500" />
                 )}
+
 
                 {/* Card Main Interior Body */}
                 <div className="p-6 md:p-8 space-y-6">

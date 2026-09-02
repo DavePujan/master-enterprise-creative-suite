@@ -604,11 +604,12 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
                       </div>
 
                       <div className="flex items-center justify-between mt-1 pt-1 border-t border-dashed border-slate-100 dark:border-slate-850 shrink-0">
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 truncate max-w-[150px]">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 truncate max-w-37.5">
                           {queryItem.email}
                         </span>
                         {getStatusBadge(queryItem.status)}
                       </div>
+
                     </button>
                   );
                 })
@@ -750,10 +751,11 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
 
                     <div className="space-y-1.5 pt-2">
                       <p className="text-[10px] uppercase tracking-widest text-slate-400 font-mono">Original Generation Prompt</p>
-                      <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xs text-xs text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-900/50 break-words leading-relaxed font-mono">
+                      <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xs text-xs text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-900/50 wrap-break-word leading-relaxed font-mono">
                         {selectedRequest.originalPrompt}
                       </div>
                     </div>
+
 
                     {/* Asset Preview Frame */}
                     <div className="space-y-2 pt-2">

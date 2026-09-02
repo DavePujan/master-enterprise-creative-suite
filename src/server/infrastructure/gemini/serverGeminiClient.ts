@@ -12,7 +12,11 @@ export function getServerAI(): GoogleGenAI {
   if (!aiClient) {
     const key = serverConfig.geminiApiKey;
     if (!key) {
-      console.warn("GEMINI_API_KEY environment variable is not defined");
+      console.error("[Server AI Error] GEMINI_API_KEY environment variable is not defined on server!");
+      const err: any = new Error("GEMINI_API_KEY is not configured on the server. Please ensure GEMINI_API_KEY is set in your environment.");
+      err.status = 503;
+      err.code = "GEMINI_API_KEY_MISSING";
+      throw err;
     }
     aiClient = new GoogleGenAI({
       apiKey: key,
@@ -25,3 +29,4 @@ export function getServerAI(): GoogleGenAI {
   }
   return aiClient;
 }
+

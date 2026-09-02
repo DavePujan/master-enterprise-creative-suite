@@ -388,7 +388,7 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
 
       <AnimatePresence>
         {viewingAsset && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 lg:p-12 bg-slate-950/80 backdrop-blur-sm">
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 lg:p-12 bg-slate-950/80 backdrop-blur-sm">
             <div 
               className="absolute inset-0" 
               onClick={() => setViewingAsset(null)} 
@@ -457,8 +457,9 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
             <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-white dark:bg-slate-900">
                 <button 
                   onClick={() => downloadAsset(viewingAsset)}
-                  className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white px-6 py-2 rounded-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-bold text-xs uppercase tracking-widest"
+                  className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white px-6 py-2 rounded-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-bold text-xs uppercase tracking-widest"
                 >
+
                   <Download size={16} />
                   Download
                 </button>

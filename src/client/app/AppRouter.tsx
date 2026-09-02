@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { LegalPage } from '../../components/LegalPage.js';
 import { PricingPage } from '../../components/PricingPage.js';
 import { LandingPage } from '../../components/LandingPage.js';
@@ -43,6 +43,41 @@ export const AppRouter: React.FC<AppRouterProps> = ({
   handleBrandSetupComplete,
   children
 }) => {
+  // Centralized Authentication and Onboarding Routing Authority
+  useEffect(() => {
+    // 1. While auth state or initial cloud data is resolving, do not redirect
+    if (loading || (user && isInitialDataLoading)) {
+      return;
+    }
+
+    // 2. Unauthenticated user
+    if (!user) {
+      const isPublicRoute = 
+        currentPath === '/' || 
+        currentPath === '/login' || 
+        currentPath === '/pricing' || 
+        currentPath.startsWith('/legal');
+
+      if (!isPublicRoute) {
+        navigateTo('/login');
+      }
+      return;
+    }
+
+    // 3. Authenticated user
+    if (user) {
+      if (currentPath === '/login') {
+        if (brandSetupComplete) {
+          navigateTo('/workspace');
+        } else {
+          navigateTo('/brand-init');
+        }
+      } else if (currentPath === '/brand-init' && brandSetupComplete) {
+        navigateTo('/workspace');
+      }
+    }
+  }, [user, loading, isInitialDataLoading, brandSetupComplete, currentPath, navigateTo]);
+
   if (currentPath.startsWith('/legal')) {
     return (
       <LegalPage 
@@ -128,7 +163,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
   }
 
   // Prevent flashing login or brand-init during auth loading or initial workspace data hydration
-  if (loading || (user && isInitialDataLoading && (currentPath === '/workspace' || currentPath === '/brand-init'))) {
+  if (loading || (user && isInitialDataLoading)) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
         <GenerationLoader title="Loading Creative Suite..." subtitle="Authenticating workspace and brand parameters" />

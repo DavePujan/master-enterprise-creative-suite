@@ -259,7 +259,7 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                     <img 
                       src={result.data} 
                       alt="Generated Creative" 
-                      className="max-w-full max-h-[500px] pointer-events-none block rounded-sm"
+                      className="max-w-full max-h-125 pointer-events-none block rounded-sm"
                       referrerPolicy="no-referrer"
                     />
 
@@ -295,13 +295,14 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                              setRefinePrompt('');
                              setIsRefineModalOpen(true);
                            }}
-                           className="bg-white text-slate-900 px-6 py-3 rounded-sm font-bold shadow-xl flex items-center gap-2 transform translate-y-4 hover:translate-y-0 transition-transform cursor-pointer hover:bg-slate-50 transition-colors"
+                           className="bg-white text-slate-900 px-6 py-3 rounded-sm font-bold shadow-xl flex items-center gap-2 transform translate-y-4 hover:translate-y-0 transition-all cursor-pointer hover:bg-slate-50"
                          >
                            <Sparkles size={18} />
                            Refine with AI
                          </button>
                       </div>
                     )}
+
                   </div>
                   
                   {/* AI refinement action under the image layout */}
@@ -752,8 +753,9 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                       controls 
                       autoPlay 
                       loop 
-                      className="w-full max-h-[500px] rounded-sm shadow-xl border border-slate-200 dark:border-slate-800 bg-black"
+                      className="w-full max-h-125 rounded-sm shadow-xl border border-slate-200 dark:border-slate-800 bg-black"
                     />
+
                   </div>
                 </div>
                 {result.concept && (
@@ -1072,7 +1074,7 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                     >
                       <div className={cn(
                         "relative overflow-hidden rounded-sm shadow-lg border border-slate-100 dark:border-slate-800 bg-slate-100 dark:bg-slate-800",
-                        aspectRatio === '1:1' ? 'aspect-square' : (aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video')
+                        aspectRatio === '1:1' ? 'aspect-square' : (aspectRatio === '9:16' ? 'aspect-9/16' : 'aspect-video')
                       )}>
                         {scene.image ? (
                           <>
@@ -1129,11 +1131,12 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
                                   Generating Scene {index + 1}
                                 </p>
-                                <p className="text-[9px] text-slate-400 dark:text-slate-500 italic max-w-[150px] mx-auto line-clamp-2">
+                                <p className="text-[9px] text-slate-400 dark:text-slate-500 italic max-w-37.5 mx-auto line-clamp-2">
                                   {scene.narrative}
                                 </p>
                               </div>
                             </div>
+
                             
                             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                               <div className="w-full h-0.5 bg-slate-900/10 dark:bg-white/10 absolute top-0 left-0 animate-scan" />

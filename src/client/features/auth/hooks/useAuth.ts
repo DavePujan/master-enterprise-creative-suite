@@ -76,7 +76,12 @@ export function useAuth() {
   const loginWithEmail = async (email: string, password?: string) => {
     try {
       setAuthError(null);
-      await signInWithEmailAndPassword(auth, email, password || "defaultPassword123!");
+      if (!email || !password) {
+        const err = "Email and password are required.";
+        setAuthError(err);
+        throw new Error(err);
+      }
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (e: any) {
       console.error("Email login error:", e);
       const errMsg = parseAuthError(e, "Failed to sign in with Email");
@@ -88,7 +93,17 @@ export function useAuth() {
   const registerWithEmail = async (email: string, password?: string, displayName?: string) => {
     try {
       setAuthError(null);
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password || "defaultPassword123!");
+      if (!email || !password) {
+        const err = "Email and password are required.";
+        setAuthError(err);
+        throw new Error(err);
+      }
+      if (password.length < 6) {
+        const err = "Password must be at least 6 characters.";
+        setAuthError(err);
+        throw new Error(err);
+      }
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       if (displayName && userCredential.user) {
         await updateProfile(userCredential.user, { displayName });
       }
@@ -99,6 +114,7 @@ export function useAuth() {
       throw new Error(errMsg);
     }
   };
+
 
   const logout = async () => {
     try {

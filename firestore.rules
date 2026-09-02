@@ -37,21 +37,48 @@ service cloud.firestore {
     }
 
     function isValidBrandGuideline(data) {
-       return data.keys().hasAll(['name', 'mission', 'tone', 'colors', 'updatedAt'])
+       return data.keys().hasAll(['name', 'industry', 'tone', 'colors', 'updatedAt'])
+        && data.keys().hasOnly([
+          'name',
+          'industry',
+          'tone',
+          'pillars',
+          'colors',
+          'typography',
+          'logo',
+          'logoDescription',
+          'location',
+          'voiceAccentStyle',
+          'visualEthnicityStyle',
+          'mission',
+          'updatedAt'
+        ])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
-        && data.mission is string && data.mission.size() <= 1000
-        && data.tone is list && data.tone.size() <= 20 && (data.tone.size() == 0 || data.tone[0] is string)
+        && data.industry is string && data.industry.size() <= 200
+        && data.tone is string && data.tone.size() <= 500
         && data.colors is list && data.colors.size() <= 20 && (data.colors.size() == 0 || data.colors[0] is string)
+        && (!('pillars' in data) || (data.pillars is list && data.pillars.size() <= 20 && (data.pillars.size() == 0 || data.pillars[0] is string)))
+        && (!('typography' in data) || data.typography is map)
+        && (!('logo' in data) || (data.logo is string && data.logo.size() <= 2000000))
+        && (!('logoDescription' in data) || (data.logoDescription is string && data.logoDescription.size() <= 2000))
+        && (!('location' in data) || (data.location is string && data.location.size() <= 200))
+        && (!('voiceAccentStyle' in data) || (data.voiceAccentStyle is string && data.voiceAccentStyle.size() <= 200))
+        && (!('visualEthnicityStyle' in data) || (data.visualEthnicityStyle is string && data.visualEthnicityStyle.size() <= 200))
+        && (!('mission' in data) || (data.mission is string && data.mission.size() <= 2000))
         && data.updatedAt is number;
     }
 
     function isValidAsset(data) {
         return data.keys().hasAll(['type', 'content', 'prompt', 'timestamp'])
+         && data.keys().hasOnly(['id', 'name', 'title', 'type', 'content', 'prompt', 'timestamp', 'data', 'analysis', 'selected'])
          && data.type is string && data.type.size() <= 50
-         && data.content is string && data.content.size() <= 1000000 // 1MB limit check
-         && data.prompt is string && data.prompt.size() <= 10000
+         && data.content is string && data.content.size() <= 2000000
+         && data.prompt is string && data.prompt.size() <= 20000
+         && (!('name' in data) || (data.name is string && data.name.size() <= 200))
+         && (!('title' in data) || (data.title is string && data.title.size() <= 200))
          && data.timestamp is number;
     }
+
 
     function isValidHistoryLog(data) {
         return data.keys().hasAll(['gemId', 'prompt', 'title', 'result', 'timestamp'])

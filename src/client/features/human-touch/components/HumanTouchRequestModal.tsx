@@ -33,8 +33,9 @@ export const HumanTouchRequestModal: React.FC<HumanTouchRequestModalProps> = ({
   if (!isOpen || !item) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[110] p-4 animate-in fade-in">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-110 p-4 animate-in fade-in">
       <div className="bg-white dark:bg-slate-900 max-w-xl w-full border border-slate-200 dark:border-slate-800 rounded-sm shadow-2xl relative overflow-hidden flex flex-col">
+
         
         <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">

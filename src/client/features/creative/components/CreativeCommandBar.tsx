@@ -221,9 +221,10 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                   )}
                 >
                   <div 
-                    className="absolute top-0 left-0 right-0 h-[3px]" 
+                    className="absolute top-0 left-0 right-0 h-0.75" 
                     style={{ background: theme.lineStyle }}
                   />
+
                   
                   <div className="flex items-center justify-between w-full mt-1.5">
                     <span className={cn(

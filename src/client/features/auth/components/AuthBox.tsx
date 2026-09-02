@@ -144,7 +144,7 @@ export const AuthBox: React.FC<AuthBoxProps> = ({
             <div>{formError || authError}</div>
             {isDomainError && currentHostname && (
               <div className="pt-1.5 border-t border-rose-200/60 dark:border-rose-900/60 flex items-center justify-between gap-2">
-                <span className="font-mono text-[10px] bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 text-slate-800 dark:text-slate-200 truncate max-w-[200px]">
+                <span className="font-mono text-[10px] bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 text-slate-800 dark:text-slate-200 truncate max-w-50">
                   {currentHostname}
                 </span>
                 <button
@@ -178,10 +178,11 @@ export const AuthBox: React.FC<AuthBoxProps> = ({
 
       {/* Divider */}
       <div className="relative flex items-center py-1">
-        <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-        <span className="flex-shrink mx-3 text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-widest">or continue with</span>
-        <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+        <div className="grow border-t border-slate-200 dark:border-slate-800"></div>
+        <span className="shrink mx-3 text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-widest">or continue with</span>
+        <div className="grow border-t border-slate-200 dark:border-slate-800"></div>
       </div>
+
 
       {/* Google Button */}
       <button 

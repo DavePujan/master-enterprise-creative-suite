@@ -7,42 +7,28 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const BrandLogo = ({ 
+export interface BrandLogoProps {
+  className?: string;
+  collapsed?: boolean;
+  customLogo?: string;
+  brandName?: string;
+  noReferrer?: boolean;
+  autoColor?: boolean;
+}
+
+export const BrandLogo: React.FC<BrandLogoProps> = ({ 
   className, 
   collapsed = false, 
   customLogo, 
   brandName = "STUDIO AI",
   noReferrer = true,
   autoColor = false
-}: { 
-  className?: string, 
-  collapsed?: boolean, 
-  customLogo?: string, 
-  brandName?: string,
-  noReferrer?: boolean,
-  autoColor?: boolean
 }) => {
   const [imgError, setImgError] = useState(false);
-  const [currentSrc, setCurrentSrc] = useState<string | undefined>(customLogo);
-  const [fallbackAttempt, setFallbackAttempt] = useState(0);
 
   useEffect(() => {
     setImgError(false);
-    setFallbackAttempt(0);
-    setCurrentSrc(customLogo || undefined);
   }, [customLogo, brandName]);
-
-  const handleError = () => {
-    if (fallbackAttempt === 0 && brandName && brandName.trim()) {
-      const cleanName = brandName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (cleanName) {
-        setFallbackAttempt(1);
-        setCurrentSrc(`https://www.google.com/s2/favicons?domain=${cleanName}.com&sz=256`);
-        return;
-      }
-    }
-    setImgError(true);
-  };
 
   const containerVariants = {
     initial: { opacity: 0, scale: 0.9, y: 5 },
@@ -58,18 +44,16 @@ export const BrandLogo = ({
       }
     },
     hover: { 
-      scale: 1.1,
-      rotate: [0, -1, 1, 0],
+      scale: 1.05,
       transition: { 
-        scale: { duration: 0.2 },
-        rotate: { duration: 0.4, repeat: Infinity }
+        duration: 0.2
       }
     }
   };
 
-  const showMonogram = !currentSrc || imgError;
+  const hasLogo = Boolean(customLogo && customLogo.trim() && !imgError);
 
-  if (showMonogram) {
+  if (!hasLogo) {
     return (
       <motion.div 
         variants={containerVariants}
@@ -78,18 +62,12 @@ export const BrandLogo = ({
         whileHover="hover"
         className={cn("flex items-center justify-center", collapsed ? "h-10 w-10" : "gap-3", className)}
       >
-        <div className="relative group">
-          <div className="absolute -inset-1 bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+        <div className="relative group w-full h-full flex items-center justify-center">
+          <div className="absolute -inset-1 bg-linear-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
           <div className="relative w-10 h-10 bg-slate-900 dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-slate-900 font-bold text-xl shadow-lg border border-white/10 dark:border-slate-900/10">
             {brandName ? brandName.charAt(0).toUpperCase() : 'S'}
           </div>
         </div>
-        {!collapsed && (
-          <div className="flex flex-col">
-            <span className="font-bold text-slate-900 dark:text-white tracking-tight leading-none">{brandName}</span>
-            <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mt-1">Brand Identity</span>
-          </div>
-        )}
       </motion.div>
     );
   }
@@ -102,25 +80,26 @@ export const BrandLogo = ({
       whileHover="hover"
       className={cn(
         "relative group flex items-center justify-center overflow-hidden transition-all duration-500", 
-        collapsed ? "h-10 w-10 rounded-lg" : "h-12 px-2 rounded-xl",
+        collapsed ? "h-10 w-10 rounded-lg" : "h-12 w-12 rounded-xl",
         "bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-md",
         className
       )}
     >
       {/* Subtle background glow on hover */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      <div className="absolute inset-0 bg-linear-to-tr from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       
       <img 
-        src={currentSrc} 
+
+        src={customLogo} 
         alt={brandName} 
-        onError={handleError}
+        onError={() => setImgError(true)}
         className={cn(
           "relative z-10 w-full h-full object-contain p-1.5 transition-transform duration-500 group-hover:scale-110", 
           autoColor ? "brightness-0 dark:invert" : "dark:drop-shadow-none drop-shadow-[0_0_1px_rgba(0,0,0,0.05)]"
         )} 
         {...(noReferrer ? { referrerPolicy: "no-referrer" } : {})}
+        crossOrigin="anonymous"
       />
     </motion.div>
   );
 };
-
