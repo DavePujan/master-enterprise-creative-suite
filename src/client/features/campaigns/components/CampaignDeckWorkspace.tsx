@@ -28,7 +28,7 @@ import { type BrandGuidelines, generateFastPrompt, resizeImageIfNeeded } from '.
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { db, useAuth } from '../../../../lib/firebase.js';
-import { doc, setDoc } from 'firebase/firestore';
+import { submitHumanTouchRequest } from '../../../infrastructure/firebase/repositories/humanTouchRepository.js';
 import { compressBase64Image } from '../../../../lib/utils.js';
 
 interface AssetDetail {
@@ -168,20 +168,7 @@ export function CampaignDeckWorkspace({
 
       if (user && user.uid !== "offline-guest-99") {
         const requestId = Math.random().toString(36).substring(7);
-        // User-specific collection
-        await setDoc(doc(db, 'users', user.uid, 'humanTouchRequests', requestId), {
-          assetType: 'image',
-          assetUrl: compressedImageUrl,
-          originalPrompt: humanTouchItem.prompt,
-          modelsUsed: humanTouchItem.modelsUsed,
-          userComment: humanTouchComment,
-          emailReceipt: 'business@writopedia.com',
-          status: 'pending',
-          timestamp: Date.now()
-        });
-
-        // Global collection
-        await setDoc(doc(db, 'humanTouchRequests', requestId), {
+        await submitHumanTouchRequest(requestId, {
           assetType: 'image',
           assetUrl: compressedImageUrl,
           originalPrompt: humanTouchItem.prompt,

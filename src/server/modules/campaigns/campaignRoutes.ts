@@ -175,12 +175,12 @@ campaignRouter.post("/render", async (req, res) => {
       }`
     );
 
-    const targetFalKey = resolveFalKey(falKey);
+    const targetFalKey = resolveFalKey();
     const useFal = !!targetFalKey;
 
     if (useFal) {
       try {
-        const imageUrl = await renderFalImage(prompt, size, engine, targetFalKey, referenceImages);
+        const imageUrl = await renderFalImage(prompt, size, engine, undefined, referenceImages);
         return res.json({
           url: imageUrl,
           engine: 'openai/gpt-image-2',
@@ -203,19 +203,19 @@ campaignRouter.post("/render", async (req, res) => {
 // Secure Video Generation proxy endpoint calling Fal AI
 campaignRouter.post("/video", async (req, res) => {
   try {
-    const { prompt, size, engine, falKey } = req.body;
+    const { prompt, size, engine } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: "Missing video generation prompt text" });
     }
 
     console.log(`Starting Fal Video Generation: "${prompt.slice(0, 40)}..." Engine: ${engine}. Size: ${size}`);
 
-    const targetFalKey = resolveFalKey(falKey);
+    const targetFalKey = resolveFalKey();
     if (!targetFalKey) {
       return res.status(400).json({ error: "FAL_API_KEY environment variable is required for ByteDance/Kling video generation" });
     }
 
-    const jobResult = await createFalVideoJob(prompt, size, engine, targetFalKey);
+    const jobResult = await createFalVideoJob(prompt, size, engine);
     return res.json(jobResult);
   } catch (e: any) {
     console.error("Error setting up Fal video generation queue:", e);
@@ -226,17 +226,17 @@ campaignRouter.post("/video", async (req, res) => {
 // Polling endpoint for Fal AI video queue status
 campaignRouter.post("/video-poll", async (req, res) => {
   try {
-    const { operation, falKey } = req.body;
+    const { operation } = req.body;
     if (!operation || !operation.status_url) {
       return res.status(400).json({ error: "Missing status tracking descriptors in payload" });
     }
 
-    const targetFalKey = resolveFalKey(falKey);
+    const targetFalKey = resolveFalKey();
     if (!targetFalKey) {
       return res.status(400).json({ error: "FAL_API_KEY is required to check status" });
     }
 
-    const pollResult = await pollFalVideoJob(operation, targetFalKey);
+    const pollResult = await pollFalVideoJob(operation);
     return res.json(pollResult);
   } catch (e: any) {
     console.error("Error polling Fal video status:", e);

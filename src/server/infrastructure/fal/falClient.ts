@@ -5,18 +5,18 @@
 
 import { serverConfig } from "../../config/env.js";
 
-export function resolveFalKey(customKey?: string): string {
-  return (customKey || serverConfig.falApiKey).trim();
+export function resolveFalKey(): string {
+  return serverConfig.falApiKey.trim();
 }
 
 export async function renderFalImage(
   prompt: string,
   size?: string,
   engine?: string,
-  targetFalKey?: string,
+  _ignoredKey?: string,
   referenceImages?: string[]
 ): Promise<string> {
-  const falKey = resolveFalKey(targetFalKey);
+  const falKey = resolveFalKey();
   if (!falKey) {
     throw new Error("No Fal API key provided");
   }
@@ -140,9 +140,9 @@ export async function createFalVideoJob(
   prompt: string,
   size?: string,
   engine?: string,
-  customFalKey?: string
+  _customFalKey?: string
 ): Promise<{ status_url: string; response_url: string; request_id: string; done: boolean; url?: string }> {
-  const falKey = resolveFalKey(customFalKey);
+  const falKey = resolveFalKey();
   if (!falKey) {
     throw new Error("FAL_API_KEY environment variable is required for ByteDance/Kling video generation");
   }
@@ -199,9 +199,9 @@ export async function createFalVideoJob(
 
 export async function pollFalVideoJob(
   operation: { status_url: string; response_url: string; request_id?: string; engine?: string },
-  customFalKey?: string
+  _customFalKey?: string
 ): Promise<{ done: boolean; response?: any; operation?: any; status_url?: string; response_url?: string; request_id?: string; engine?: string }> {
-  const falKey = resolveFalKey(customFalKey);
+  const falKey = resolveFalKey();
   if (!falKey) {
     throw new Error("FAL_API_KEY is required to check status");
   }

@@ -205,8 +205,12 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
     }
 
     const price = currency === 'INR' ? plan.rawAmountInr : plan.rawAmountUsd;
-    const amountInSubunits = Math.round(price * 100);
-    const creditsToApply = plan.rawCredits;
+    const planIdMap: Record<string, string> = {
+      'Starter Booster': 'booster-starter',
+      'Power Booster': 'booster-power',
+      'Super Booster': 'booster-super'
+    };
+    const planId = planIdMap[plan.name] || 'booster-starter';
 
     // 1. Call backend to register and retrieve Razorpay Order ID securely
     let orderData;
@@ -217,7 +221,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          amount: amountInSubunits,
+          planId,
           currency: currency
         })
       });
@@ -237,7 +241,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
 
     const options: any = {
       key: rzpKeyId,
-      amount: orderData.amount || amountInSubunits,
+      amount: orderData.amount || Math.round(price * 100),
       currency: orderData.currency || currency,
       name: "Writopedia",
       description: `Writopedia Booster Top-up: ${plan.credits}`,
@@ -252,12 +256,12 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
               status: 'success',
               paymentId: response.razorpay_payment_id || 'pay_test_' + Math.random().toString(36).substring(7),
               planName: plan.name,
-              creditsAdded: creditsToApply,
+              creditsAdded: plan.rawCredits,
               amountPaid: price
             });
 
             if (setCredits) {
-              setCredits(prev => prev + creditsToApply);
+              setCredits(prev => prev + plan.rawCredits);
             }
             return;
           }
@@ -265,36 +269,37 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
           // 2. Transmit payment tokens to server for cryptographic handshake signature verification
           const verifyResponse = await fetch('/api/payment/razorpay-verify', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id || orderData.id,
+              razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
+              razorpay_signature: response.razorpay_signature,
+              planId
             })
           });
 
           if (!verifyResponse.ok) {
-            throw new Error("Cryptographic signature mismatch");
+            throw new Error(await verifyResponse.text());
           }
+
+          const verifyData = await verifyResponse.json();
+          const granted = verifyData.creditsGranted || plan.rawCredits;
 
           setPaymentStatus({
             status: 'success',
-            paymentId: response.razorpay_payment_id || 'pay_test_' + Math.random().toString(36).substring(7),
+            paymentId: response.razorpay_payment_id,
             planName: plan.name,
-            creditsAdded: creditsToApply,
+            creditsAdded: granted,
             amountPaid: price
           });
 
           if (setCredits) {
-            setCredits(prev => prev + creditsToApply);
+            setCredits(prev => prev + granted);
           }
-        } catch (verifyErr: any) {
-          console.error("Cryptographic signature authorization failed:", verifyErr);
+        } catch (err: any) {
           setPaymentStatus({
             status: 'failed',
-            message: 'Razorpay transaction verification failed. The payment signature could not be verified by the backend.'
+            message: err.message || "Payment signature verification rejected."
           });
         }
       },
@@ -307,7 +312,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
         platform: "Writopedia Production App",
         purchassetype: "Credit Top-Up Booster",
         plan: plan.name,
-        targetCredits: String(creditsToApply)
+        targetCredits: String(plan.rawCredits)
       },
       theme: {
         color: "#6366F1" // matches indigo-500/600 brand accent

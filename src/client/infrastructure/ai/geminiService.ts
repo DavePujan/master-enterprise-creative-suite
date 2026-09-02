@@ -870,25 +870,18 @@ export async function generateTTS(
   voice: string = 'Kore',
   emotion: string = 'Professional'
 ): Promise<string> {
-  const ai = getAI();
-  const response = await withRetry(() =>
-    ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Say in a natural, ${emotion} accent: ${text}` }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voice as any }
-          }
-        }
-      }
-    })
-  );
-
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (base64Audio) {
-    return pcmToWav(base64Audio);
+  const res = await fetch("/api/ai/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice, emotion })
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(errData.error || "Failed to generate audio");
+  }
+  const data = await res.json();
+  if (data.audioPcmBase64) {
+    return pcmToWav(data.audioPcmBase64);
   }
   throw new Error("Failed to generate audio");
 }

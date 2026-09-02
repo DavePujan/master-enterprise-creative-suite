@@ -3,7 +3,7 @@
  * Collection: `salesSubmissions/{submissionId}`
  */
 
-import { doc, collection, onSnapshot, setDoc, query, orderBy, db, handleFirestoreError } from '../firestore.js';
+import { doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, db, handleFirestoreError } from '../firestore.js';
 import type { SalesSubmission } from '../../../../shared/types/user.js';
 
 export async function submitSalesInquiry(
@@ -38,4 +38,14 @@ export function subscribeSalesSubmissions(
       if (onError) onError(err);
     }
   );
+}
+
+export async function updateSalesSubmissionStatus(submissionId: string, status: string): Promise<void> {
+  const submissionRef = doc(db, 'salesSubmissions', submissionId);
+  await updateDoc(submissionRef, { status });
+}
+
+export async function deleteSalesSubmission(submissionId: string): Promise<void> {
+  const submissionRef = doc(db, 'salesSubmissions', submissionId);
+  await deleteDoc(submissionRef);
 }
