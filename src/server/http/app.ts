@@ -33,12 +33,14 @@ export function createExpressApp(): Express {
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
 
     if (req.method === "OPTIONS") {
       return res.status(204).end();
     }
     next();
   });
+
 
   // 2. JSON and URL-encoded payload parsers
   app.use(express.json({ limit: "50mb" }));
