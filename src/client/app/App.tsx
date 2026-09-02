@@ -231,10 +231,15 @@ export function App() {
         setBrandGuidelines(cloudGuidelines as BrandGuidelines);
         setBrandSetupComplete(true);
         savePreferences({ brandGuidelines: cloudGuidelines, brandSetupComplete: true });
+      } else {
+        // If authenticated user has no cloud guidelines, reset onboarding state
+        setBrandSetupComplete(false);
+        savePreferences({ brandGuidelines: null, brandSetupComplete: false });
       }
       setIsInitialDataLoading(false);
       isInitialDataLoadedRef.current = true;
     });
+
 
     // 5. Subscribe to Human Touch Queue (if Admin)
     let unsubQueue = () => {};
@@ -404,14 +409,17 @@ export function App() {
   };
 
   const handleBrandSetupComplete = async (guidelines: BrandGuidelines, initialAssets: any[]) => {
+    if (!user) {
+      setAuthError("Authentication required to save your brand parameters.");
+      return;
+    }
+
     setIsSyncing(true);
     try {
-      if (user) {
-        await saveBrandGuidelines(user.uid, guidelines, 'default');
-        await Promise.all(
-          initialAssets.map(a => saveUserAsset(user.uid, a.id || `init-asset-${Date.now()}`, a.name, a.data, a.type || 'image'))
-        );
-      }
+      await saveBrandGuidelines(user.uid, guidelines, 'default');
+      await Promise.all(
+        initialAssets.map(a => saveUserAsset(user.uid, a.id || `init-asset-${Date.now()}`, a.name, a.data, a.type || 'image'))
+      );
 
       isInitialDataLoadedRef.current = true;
       setBrandGuidelines(guidelines);
@@ -428,6 +436,7 @@ export function App() {
       setIsSyncing(false);
     }
   };
+
 
 
   return (

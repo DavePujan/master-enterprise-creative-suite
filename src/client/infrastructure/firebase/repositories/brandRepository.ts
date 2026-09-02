@@ -4,6 +4,7 @@
  */
 
 import { doc, onSnapshot, setDoc, db, handleFirestoreError } from '../firestore.js';
+import { uploadAssetToStorage } from '../storage.js';
 import type { BrandGuidelines } from '../../../../shared/types/brand.js';
 
 export function subscribeBrandGuidelines(
@@ -34,10 +35,21 @@ export async function saveBrandGuidelines(
   guidelines: BrandGuidelines,
   guidelineId: string = 'default'
 ): Promise<void> {
+  let logoUrl = guidelines.logo;
+  if (logoUrl && logoUrl.startsWith('data:')) {
+    try {
+      logoUrl = await uploadAssetToStorage(userId, `brand_logo_${guidelineId}`, logoUrl, 'image');
+    } catch (e) {
+      console.warn("Storage upload fallback for brand logo:", e);
+    }
+  }
+
   const guidelineRef = doc(db, 'users', userId, 'brand_guidelines', guidelineId);
   const dataToSave = {
     ...guidelines,
+    ...(logoUrl ? { logo: logoUrl } : {}),
     updatedAt: Date.now()
   };
   await setDoc(guidelineRef, dataToSave, { merge: true });
 }
+
