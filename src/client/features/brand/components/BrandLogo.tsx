@@ -1,10 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { motion } from 'motion/react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function getLogoCandidates(customLogo?: string, brandName?: string): string[] {
+  const candidates: string[] = [];
+
+  // 1. Direct custom logo (data URL, blob, remote URL)
+  if (customLogo && customLogo.trim()) {
+    candidates.push(customLogo.trim());
+  }
+
+  // 2. Multi-tier brand logo discovery from brand domain name
+  if (brandName && brandName.trim()) {
+    const cleanName = brandName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const isGeneric = !cleanName || cleanName === 'studioai' || cleanName === 'brand' || cleanName === 'untitled';
+
+    if (!isGeneric) {
+      const domain = `${cleanName}.com`;
+      const googleFavicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
+      const clearbit = `https://logo.clearbit.com/${domain}`;
+      const iconHorse = `https://icon.horse/icon/${domain}`;
+      const unavatar = `https://unavatar.io/${domain}`;
+
+      if (!candidates.includes(googleFavicon)) candidates.push(googleFavicon);
+      if (!candidates.includes(clearbit)) candidates.push(clearbit);
+      if (!candidates.includes(iconHorse)) candidates.push(iconHorse);
+      if (!candidates.includes(unavatar)) candidates.push(unavatar);
+    }
+  }
+
+  return candidates;
 }
 
 export const BrandLogo = ({ 
@@ -22,26 +52,18 @@ export const BrandLogo = ({
   noReferrer?: boolean,
   autoColor?: boolean
 }) => {
-  const [imgError, setImgError] = useState(false);
-  const [currentSrc, setCurrentSrc] = useState<string | undefined>(customLogo);
-  const [fallbackAttempt, setFallbackAttempt] = useState(0);
+  const [attemptIndex, setAttemptIndex] = useState(0);
+  const candidates = useMemo(() => getLogoCandidates(customLogo, brandName), [customLogo, brandName]);
 
   useEffect(() => {
-    setImgError(false);
-    setFallbackAttempt(0);
-    setCurrentSrc(customLogo || undefined);
+    setAttemptIndex(0);
   }, [customLogo, brandName]);
 
+  const currentSrc = candidates[attemptIndex];
+  const isExhausted = !currentSrc;
+
   const handleError = () => {
-    if (fallbackAttempt === 0 && brandName && brandName.trim()) {
-      const cleanName = brandName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (cleanName) {
-        setFallbackAttempt(1);
-        setCurrentSrc(`https://www.google.com/s2/favicons?domain=${cleanName}.com&sz=256`);
-        return;
-      }
-    }
-    setImgError(true);
+    setAttemptIndex(prev => prev + 1);
   };
 
   const containerVariants = {
@@ -58,18 +80,14 @@ export const BrandLogo = ({
       }
     },
     hover: { 
-      scale: 1.1,
-      rotate: [0, -1, 1, 0],
+      scale: 1.05,
       transition: { 
-        scale: { duration: 0.2 },
-        rotate: { duration: 0.4, repeat: Infinity }
+        duration: 0.2
       }
     }
   };
 
-  const showMonogram = !currentSrc || imgError;
-
-  if (showMonogram) {
+  if (isExhausted) {
     return (
       <motion.div 
         variants={containerVariants}
@@ -78,18 +96,12 @@ export const BrandLogo = ({
         whileHover="hover"
         className={cn("flex items-center justify-center", collapsed ? "h-10 w-10" : "gap-3", className)}
       >
-        <div className="relative group">
+        <div className="relative group w-full h-full flex items-center justify-center">
           <div className="absolute -inset-1 bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
           <div className="relative w-10 h-10 bg-slate-900 dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-slate-900 font-bold text-xl shadow-lg border border-white/10 dark:border-slate-900/10">
             {brandName ? brandName.charAt(0).toUpperCase() : 'S'}
           </div>
         </div>
-        {!collapsed && (
-          <div className="flex flex-col">
-            <span className="font-bold text-slate-900 dark:text-white tracking-tight leading-none">{brandName}</span>
-            <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mt-1">Brand Identity</span>
-          </div>
-        )}
       </motion.div>
     );
   }
@@ -102,7 +114,7 @@ export const BrandLogo = ({
       whileHover="hover"
       className={cn(
         "relative group flex items-center justify-center overflow-hidden transition-all duration-500", 
-        collapsed ? "h-10 w-10 rounded-lg" : "h-12 px-2 rounded-xl",
+        collapsed ? "h-10 w-10 rounded-lg" : "h-12 w-12 rounded-xl",
         "bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-md",
         className
       )}
@@ -119,8 +131,8 @@ export const BrandLogo = ({
           autoColor ? "brightness-0 dark:invert" : "dark:drop-shadow-none drop-shadow-[0_0_1px_rgba(0,0,0,0.05)]"
         )} 
         {...(noReferrer ? { referrerPolicy: "no-referrer" } : {})}
+        crossOrigin="anonymous"
       />
     </motion.div>
   );
 };
-

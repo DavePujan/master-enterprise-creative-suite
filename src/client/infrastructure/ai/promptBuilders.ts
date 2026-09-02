@@ -230,8 +230,27 @@ STRICT RULES:
   );
 
   const guidelines = parseJSON(response.text);
-  guidelines.logo = context?.logo || '';
+  if (context?.logo) {
+    guidelines.logo = context.logo;
+  } else {
+    const domainMatch = description.match(
+      /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,})/i
+    );
+    let domain = domainMatch ? domainMatch[1].toLowerCase().replace(/\/.*$/, '').trim() : null;
+    if (!domain && guidelines.name) {
+      const cleanName = guidelines.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanName && cleanName !== 'studioai' && cleanName !== 'brand') {
+        domain = `${cleanName}.com`;
+      }
+    }
+    if (domain) {
+      guidelines.logo = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
+    } else {
+      guidelines.logo = '';
+    }
+  }
   return guidelines;
+
 }
 
 export async function initializeBrandKit(
