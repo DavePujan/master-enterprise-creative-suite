@@ -229,28 +229,90 @@ STRICT RULES:
     })
   );
 
+
   const guidelines = parseJSON(response.text);
-  if (context?.logo) {
-    guidelines.logo = context.logo;
-  } else {
-    const domainMatch = description.match(
-      /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,})/i
-    );
-    let domain = domainMatch ? domainMatch[1].toLowerCase().replace(/\/.*$/, '').trim() : null;
-    if (!domain && guidelines.name) {
-      const cleanName = guidelines.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (cleanName && cleanName !== 'studioai' && cleanName !== 'brand') {
-        domain = `${cleanName}.com`;
+  guidelines.logo = context?.logo || '';
+  return guidelines;
+}
+
+export async function crawlBrandLogoFromUrl(urlOrDomain: string): Promise<string | null> {
+
+  try {
+    let targetUrl = urlOrDomain.trim();
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = `https://www.${targetUrl.replace(/^www\./, '')}`;
+    }
+
+    const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+    const response = await fetch(proxyUrl);
+    if (!response.ok) {
+      return null;
+    }
+
+    const html = await response.text();
+    if (!html || html.length < 50) return null;
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // 1. Apple Touch Icon (high-res PNG 180x180 / 192x192)
+    const appleTouchIcon = doc.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href') ||
+                           doc.querySelector('link[rel="apple-touch-icon-precomposed"]')?.getAttribute('href');
+
+    // 2. OpenGraph / Twitter Image
+    const ogImage = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') ||
+                    doc.querySelector('meta[name="og:image"]')?.getAttribute('content') ||
+                    doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content');
+
+    // 3. SVG or High-res Vector Icon
+    const svgIcon = doc.querySelector('link[rel="icon"][type="image/svg+xml"]')?.getAttribute('href');
+    const highResIcon = doc.querySelector('link[rel="icon"][sizes="192x192"]')?.getAttribute('href') ||
+                        doc.querySelector('link[rel="icon"][sizes="512x512"]')?.getAttribute('href') ||
+                        doc.querySelector('link[rel="icon"][sizes="128x128"]')?.getAttribute('href');
+
+    // 4. In-page Brand Logo Image (Header / Nav / Logo class or alt)
+    const logoImg = doc.querySelector('header img[class*="logo" i]')?.getAttribute('src') ||
+                    doc.querySelector('header img[alt*="logo" i]')?.getAttribute('src') ||
+                    doc.querySelector('nav img[class*="logo" i]')?.getAttribute('src') ||
+                    doc.querySelector('img[class*="logo" i]')?.getAttribute('src') ||
+                    doc.querySelector('img[id*="logo" i]')?.getAttribute('src') ||
+                    doc.querySelector('img[alt*="logo" i]')?.getAttribute('src') ||
+                    doc.querySelector('header img')?.getAttribute('src');
+
+    // 5. Standard Favicon
+    const standardIcon = doc.querySelector('link[rel="icon"]')?.getAttribute('href') ||
+                         doc.querySelector('link[rel="shortcut icon"]')?.getAttribute('href');
+
+    const candidates = [appleTouchIcon, svgIcon, highResIcon, ogImage, logoImg, standardIcon].filter(Boolean) as string[];
+
+    for (const candidate of candidates) {
+      try {
+        const absoluteUrl = new URL(candidate, targetUrl).href;
+        const imgCheck = await fetch(`/api/proxy?url=${encodeURIComponent(absoluteUrl)}`);
+        if (imgCheck.ok) {
+          const contentType = imgCheck.headers.get('content-type') || '';
+          if (contentType.startsWith('image/')) {
+            const blob = await imgCheck.blob();
+            if (blob.size > 100) {
+              return await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = () => resolve(absoluteUrl);
+                reader.readAsDataURL(blob);
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[Logo Crawler] Candidate failed: ${candidate}`, err);
       }
     }
-    if (domain) {
-      guidelines.logo = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
-    } else {
-      guidelines.logo = '';
-    }
-  }
-  return guidelines;
 
+    return null;
+  } catch (e) {
+    console.error(`[Logo Crawler] Failed to crawl logo for ${urlOrDomain}:`, e);
+    return null;
+  }
 }
 
 export async function initializeBrandKit(
@@ -262,11 +324,13 @@ export async function initializeBrandKit(
   const assets: Asset[] = [];
 
   const discoverLogoTask = async () => {
+    // 1. Manual user uploaded logo
     if (context?.logo) {
       guidelines.logo = context.logo;
       return;
     }
 
+    // 2. Web Crawl / URL extraction from description or brand domain
     try {
       const domainMatch = description.match(
         /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,})/i
@@ -275,22 +339,26 @@ export async function initializeBrandKit(
 
       if (!domain && guidelines.name) {
         const cleanName = guidelines.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanName) {
+        if (cleanName && cleanName !== 'studioai' && cleanName !== 'brand') {
           domain = `${cleanName}.com`;
         }
       }
 
       if (domain) {
-        guidelines.logo = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
-        return;
+        const crawledLogo = await crawlBrandLogoFromUrl(domain);
+        if (crawledLogo) {
+          guidelines.logo = crawledLogo;
+          return;
+        }
       }
 
       guidelines.logo = '';
     } catch (e) {
-      console.error("Failed to discover logo in initialization:", e);
+      console.error("Failed to crawl brand logo during initialization:", e);
       guidelines.logo = '';
     }
   };
+
 
   const generateDocsTask = async () => {
     try {
