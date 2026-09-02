@@ -66,7 +66,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
 
     // 3. Authenticated user
     if (user) {
-      if (currentPath === '/login') {
+      if (currentPath === '/login' || currentPath === '/') {
         if (brandSetupComplete) {
           navigateTo('/workspace');
         } else {
@@ -74,6 +74,8 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         }
       } else if (currentPath === '/brand-init' && brandSetupComplete) {
         navigateTo('/workspace');
+      } else if (currentPath === '/workspace' && !brandSetupComplete) {
+        navigateTo('/brand-init');
       }
     }
   }, [user, loading, isInitialDataLoading, brandSetupComplete, currentPath, navigateTo]);
@@ -182,12 +184,13 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         logout={handleLogout}
         authError={authError}
         setAuthError={setAuthError}
-        currentPath={currentPath}
+        currentPath={user && !brandSetupComplete ? '/brand-init' : currentPath}
         navigateTo={navigateTo}
         onComplete={handleBrandSetupComplete} 
       />
     );
   }
+
 
   return <>{children}</>;
 };

@@ -559,7 +559,7 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 className="w-full max-w-md space-y-8"
               >
-                {currentPath !== '/brand-init' ? (
+                {(!user && currentPath !== '/brand-init') ? (
                   <div className="space-y-6">
                     <div className="space-y-3">
                       <div className="relative inline-block pb-1">
