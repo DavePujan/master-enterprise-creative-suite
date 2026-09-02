@@ -21,6 +21,6 @@ export const serverConfig: ServerConfig = {
   nodeEnv: process.env.NODE_ENV || "development",
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   falApiKey: process.env.FAL_API_KEY || process.env.FAL_KEY || "",
-  razorpayKeyId: process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "rzp_live_T14b6zHpE5w3ow",
-  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || "6yL6IKWl1LRynSbXRLYKCQ4f",
+  razorpayKeyId: process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "",
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || "",
 };
