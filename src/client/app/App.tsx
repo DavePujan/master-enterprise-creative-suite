@@ -225,20 +225,32 @@ export function App() {
       }
     });
 
-    // 4. Subscribe to Brand Guidelines
-    const unsubBrand = subscribeBrandGuidelines(user.uid, 'default', (cloudGuidelines) => {
-      if (cloudGuidelines) {
-        setBrandGuidelines(cloudGuidelines as BrandGuidelines);
-        setBrandSetupComplete(true);
-        savePreferences({ brandGuidelines: cloudGuidelines, brandSetupComplete: true });
-      } else {
-        // If authenticated user has no cloud guidelines, reset onboarding state
-        setBrandSetupComplete(false);
-        savePreferences({ brandGuidelines: null, brandSetupComplete: false });
+    // 4. Subscribe to Brand Guidelines with explicit exist/missing/error distinction
+    const unsubBrand = subscribeBrandGuidelines(
+      user.uid,
+      'default',
+      (cloudGuidelines) => {
+        if (cloudGuidelines) {
+          // Document exists in Firestore
+          setBrandGuidelines(cloudGuidelines as BrandGuidelines);
+          setBrandSetupComplete(true);
+          savePreferences({ brandGuidelines: cloudGuidelines, brandSetupComplete: true });
+        } else {
+          // Document genuinely does NOT exist in Firestore
+          setBrandSetupComplete(false);
+          savePreferences({ brandGuidelines: null, brandSetupComplete: false });
+        }
+        setIsInitialDataLoading(false);
+        isInitialDataLoadedRef.current = true;
+      },
+      (err) => {
+        // Read error (e.g. offline, security rule error) - DO NOT clear local session state
+        console.warn("[App] Failed to read cloud brand guidelines from Firestore:", err);
+        setIsInitialDataLoading(false);
+        isInitialDataLoadedRef.current = true;
       }
-      setIsInitialDataLoading(false);
-      isInitialDataLoadedRef.current = true;
-    });
+    );
+
 
 
     // 5. Subscribe to Human Touch Queue (if Admin)
