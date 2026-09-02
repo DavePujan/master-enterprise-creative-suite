@@ -46,17 +46,19 @@ Writopedia Platform
 │   │   └── utils/logger.ts         # Structured logging with sensitive data redaction
 │   │
 │   └── client/                     # Feature-sliced React 19 Frontend
-│       ├── infrastructure/         # Typed Firebase repositories & AI adapters
-│       │   ├── ai/                 # geminiClient.ts, geminiService.ts, modelRegistry.ts
-│       │   └── firebase/           # Typed repositories (user, brand, asset, admin, sales, humanTouch)
-│       └── features/               # Domain feature modules (zero direct Firebase SDK imports)
-│           ├── brand/              # Brand setup, logo display
-│           ├── campaigns/          # Campaign strategist & deck workspace
-│           ├── slideshow/          # Slideshow display & Google grounding
-│           ├── assets/             # Asset library & curation panel
-│           ├── billing/            # CreditTopUp, PricingPage, EnterprisePlan
-│           ├── admin/              # AdminPanel (human touch queue, sales leads)
-│           └── marketing/          # LandingPage, LegalPage
+│       ├── app/                    # Composition root (App.tsx), AppRouter.tsx, AppShell.tsx
+│       ├── features/               # Domain feature modules (zero direct Firebase SDK imports)
+│       │   ├── auth/               # AuthBox, useAuth hook
+│       │   ├── brand-guidelines/   # BrandSetup onboarding, BrandGuidelinesDrawer
+│       │   ├── campaigns/          # Campaign strategist & deck workspace
+│       │   ├── canvas/             # InteractiveLogoOverlay, InteractiveTextCanvas, useCanvasEditor
+│       │   ├── creative/           # CreativeWorkspace, OutputCanvas, CommandBar, useCreativeExecution
+│       │   ├── human-touch/        # HumanTouchRequestModal, CurationToasters
+│       │   └── layout/             # AppHeader, AppSidebar
+│       ├── shared/                 # Shared UI primitives (Skeleton, GenerationLoader)
+│       └── infrastructure/         # Typed Firebase repositories & AI adapters
+│           ├── ai/                 # geminiClient.ts, geminiService.ts, modelRegistry.ts
+│           └── firebase/           # Typed repositories (user, brand, asset, admin, sales, humanTouch)
 │
 ├── api/
 │   └── index.ts                    # Unified Vercel serverless entry point
