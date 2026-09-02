@@ -1056,9 +1056,10 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
   };
 
   return (
-    <div className="w-full flex flex-col lg:flex-row gap-8 items-start min-h-[600px] animate-in fade-in duration-300">
+    <div className="w-full flex flex-col lg:flex-row gap-8 items-start min-h-150 animate-in fade-in duration-300">
       
       {/* Discovery Guided Chat/Onboarding Wizard Panel */}
+
       <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-sm p-6 w-full relative overflow-hidden self-stretch flex flex-col justify-between">
         
         {/* Step Indicator Header */}
@@ -1387,8 +1388,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-2 text-left">
                   {/* Localized Campaign Language Selector */}
                   <div className="space-y-2.5">
-                    <label className="text-xs font-bold text-slate-450 dark:text-slate-550 uppercase tracking-widest block font-sans">Campaign Language</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-[170px] overflow-y-auto pr-1">
+                    <label className="text-xs font-bold text-slate-450 dark:text-slate-555 uppercase tracking-widest block font-sans">Campaign Language</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-42.5 overflow-y-auto pr-1">
                       {LANGUAGES_LIST.map(lang => (
                         <button
                           key={lang}
@@ -1418,7 +1419,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                   {/* Target Geographic Region/Country Selector */}
                   <div className="space-y-2.5">
                     <label className="text-xs font-bold text-slate-455 dark:text-slate-555 uppercase tracking-widest block font-sans">Target Country / Region</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-[170px] overflow-y-auto pr-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-42.5 overflow-y-auto pr-1">
                       {REGIONS_LIST.map(reg => (
                         <button
                           key={reg}
@@ -1452,11 +1453,12 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                   <button 
                     disabled={!answers.campaignLanguage || !answers.countryRegion}
                     onClick={() => setCurrentStep('deliverables')} 
-                    className="px-5 py-2 bg-slate-950 dark:bg-white text-white dark:text-slate-950 text-xs font-bold uppercase tracking-widest rounded-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer font-sans font-bold"
+                    className="px-5 py-2 bg-slate-950 dark:bg-white text-white dark:text-slate-950 text-xs font-bold uppercase tracking-widest rounded-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer font-sans"
                   >
                     Next Step <ChevronRight size={16}/>
                   </button>
                 </div>
+
               </motion.div>
             )}
 
@@ -1579,7 +1581,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                         >
                           <Minus size={10} />
                         </button>
-                        <span className="text-xs font-bold font-mono w-4 text-center text-slate-900 dark:text-white font-sans">
+                        <span className="text-xs font-bold font-mono w-4 text-center text-slate-900 dark:text-white">
                           {answers.numVideos}
                         </span>
                         <button
@@ -1612,7 +1614,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                         >
                           <Minus size={10} />
                         </button>
-                        <span className="text-xs font-bold font-mono w-4 text-center text-slate-900 dark:text-white font-sans">
+                        <span className="text-xs font-bold font-mono w-4 text-center text-slate-900 dark:text-white">
                           {answers.numCopy}
                         </span>
                         <button
@@ -1633,11 +1635,12 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                   <button 
                     disabled={!answers.selectedAesthetic || answers.selectedDeliverables.length === 0}
                     onClick={() => setCurrentStep('scale')} 
-                    className="px-5 py-2 bg-slate-950 dark:bg-white text-white dark:text-slate-950 text-xs font-bold uppercase tracking-widest rounded-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer font-bold font-sans"
+                    className="px-5 py-2 bg-slate-950 dark:bg-white text-white dark:text-slate-950 text-xs font-bold uppercase tracking-widest rounded-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer font-sans"
                   >
                     Next Step <ChevronRight size={16}/>
                   </button>
                 </div>
+
               </motion.div>
               )}
 
@@ -1814,7 +1817,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
 
                 {activeSecondaryTab === 'strategy' ? (
                   /* GORGEOUS TWELVE-PART strategic representation */
-                  <div className="space-y-6 max-h-[600px] overflow-y-auto pr-2">
+                  <div className="space-y-6 max-h-150 overflow-y-auto pr-2">
+
                   
                   {/* Section 1: The Big Idea Manifest */}
                   <div className="p-5 border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 rounded-sm space-y-3">
@@ -2178,7 +2182,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                       </div>
 
                      {/* Assets Grid */}
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[550px] overflow-y-auto pr-2">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-137.5 overflow-y-auto pr-2">
+
                        {generatedAssets.map((asset) => (
                          <div
                            key={asset.id}
@@ -2424,9 +2429,10 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                   <div className="space-y-4">
                     
                     {/* Render Beautiful Markdown Asset Content */}
-                    <div className="p-6 bg-slate-50/70 dark:bg-slate-900/80 border border-slate-150 dark:border-slate-800/85 rounded-sm max-h-[500px] overflow-y-auto font-sans leading-relaxed text-sm select-text text-slate-800 dark:text-slate-200 markdown-body">
+                    <div className="p-6 bg-slate-50/70 dark:bg-slate-900/80 border border-slate-150 dark:border-slate-800/85 rounded-sm max-h-125 overflow-y-auto font-sans leading-relaxed text-sm select-text text-slate-800 dark:text-slate-200 markdown-body">
                       <ReactMarkdown>{generatedAssetOutput}</ReactMarkdown>
                     </div>
+
 
                     {/* Operational Actions */}
                     <div className="flex flex-wrap items-center gap-3 justify-end">
@@ -2573,7 +2579,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md"
+            className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md"
           >
             <motion.div
               initial={{ scale: 0.95, y: 15 }}
@@ -2607,7 +2613,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
               </div>
 
               {/* Main Content Area */}
-              <div className="p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-slate-950 dark:bg-slate-950/80 min-h-[300px]">
+              <div className="p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-slate-950 dark:bg-slate-950/80 min-h-75">
                 {previewAsset.type === 'copy' && previewAsset.content && (
                   <div className="w-full bg-white dark:bg-slate-900 p-6 rounded border border-slate-150 dark:border-slate-850 overflow-y-auto max-h-[50vh] text-left">
                     <div className="text-xs text-slate-700 dark:text-slate-250 leading-relaxed font-sans prose dark:prose-invert max-w-none select-all whitespace-pre-wrap markdown-body">
@@ -2661,7 +2667,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                             <img
                               src={brandGuidelines.logo}
                               alt="Brand Logo"
-                              className={`h-20 w-auto object-contain max-w-[120px] select-none pointer-events-none ${
+                              className={`h-20 w-auto object-contain max-w-30 select-none pointer-events-none ${
+
                                 logoColorMode === 'black'
                                   ? 'brightness-0'
                                   : logoColorMode === 'white'
@@ -2835,7 +2842,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                                   value={newTextWordInput}
                                   onChange={(e) => setNewTextWordInput(e.target.value)}
                                   placeholder="e.g. ULTRA LUXURY"
-                                  className="flex-1 bg-slate-950 border border-slate-800 px-2 px-2.5 py-1.5 text-xs text-white rounded-sm focus:outline-none focus:ring-1 focus:ring-rose-500 font-sans"
+                                  className="flex-1 bg-slate-950 border border-slate-800 px-2.5 py-1.5 text-xs text-white rounded-sm focus:outline-none focus:ring-1 focus:ring-rose-500 font-sans"
+
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                       e.preventDefault();
@@ -2944,7 +2952,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                                           const c = e.target.value;
                                           setTextLayers(prev => prev.map(w => w.id === selectedTextWordId ? { ...w, color: c } : w));
                                         }}
-                                        className="w-full h-[32px] bg-slate-900 border border-slate-800 p-0.5 rounded cursor-pointer"
+                                        className="w-full h-8 bg-slate-900 border border-slate-800 p-0.5 rounded cursor-pointer"
                                       />
                                     </div>
                                   </div>
@@ -3083,7 +3091,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
 
       {/* Refine with AI modal */}
       {showRefineModal && refiningAsset && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center z-[110] p-4 animate-in fade-in" id="refine-ai-modal">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center z-110 p-4 animate-in fade-in" id="refine-ai-modal">
+
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -3129,12 +3138,13 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
               <div className="space-y-1.5">
                 <label className="text-[10px] text-slate-550 dark:text-slate-400 font-bold uppercase tracking-wider block">Refinement instructions</label>
                 <textarea
-                  className="w-full text-xs p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-850 rounded-sm focus:border-rose-500 outline-none font-sans text-slate-800 dark:text-slate-200 placeholder-slate-400 leading-relaxed min-h-[90px]"
+                  className="w-full text-xs p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-850 rounded-sm focus:border-rose-500 outline-none font-sans text-slate-800 dark:text-slate-200 placeholder-slate-400 leading-relaxed min-h-22.5"
                   placeholder="e.g., Make the background mood dark blue, increase the cinematic backlighting on the products, correct lighting..."
                   value={refiningPromptText}
                   onChange={(e) => setRefiningPromptText(e.target.value)}
                 />
                 <div className="flex items-center justify-between mt-1 text-[9px] uppercase tracking-wide text-rose-505 font-extrabold">
+
                   <span className="text-rose-600 dark:text-rose-455">✨ 2 credits will be deducted</span>
                   <span className="text-slate-400 dark:text-slate-505">System: Model {selectedImageModel?.split('-')[0] || 'AI'}</span>
                 </div>

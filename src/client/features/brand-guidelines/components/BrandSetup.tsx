@@ -195,8 +195,9 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
               className="mb-8"
             >
               <div className="relative group">
-                <div className="absolute -inset-8 bg-gradient-to-r from-emerald-200 to-emerald-100 dark:from-emerald-950/40 dark:to-emerald-900/10 rounded-full blur-2xl opacity-75 animate-pulse"></div>
+                <div className="absolute -inset-8 bg-linear-to-r from-emerald-200 to-emerald-100 dark:from-emerald-950/40 dark:to-emerald-900/10 rounded-full blur-2xl opacity-75 animate-pulse"></div>
                 <div className="w-32 h-32 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-800 flex items-center justify-center relative z-10 mx-auto">
+
                   <CheckCircle2 size={64} className="text-emerald-500 animate-bounce" />
                 </div>
               </div>
@@ -489,7 +490,7 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
               className="mb-8 mt-4"
             >
               <div className="relative group">
-                <div className="absolute -inset-8 bg-gradient-to-r from-rose-200 to-rose-100 dark:from-rose-950/40 dark:to-rose-900/10 rounded-full blur-2xl opacity-75 animate-pulse"></div>
+                <div className="absolute -inset-8 bg-linear-to-r from-rose-200 to-rose-100 dark:from-rose-950/40 dark:to-rose-900/10 rounded-full blur-2xl opacity-75 animate-pulse"></div>
                 <BrandLogo 
                   customLogo={generatedGuidelines.logo} 
                   brandName={generatedGuidelines.name} 
@@ -548,15 +549,16 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
             {/* Left Side - Premium Visual */}
             <div className="hidden lg:flex lg:w-1/2 relative bg-rose-950 overflow-hidden items-end p-16">
               <div className="absolute inset-0">
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-rose-950/80 to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-slate-950 via-rose-950/80 to-transparent" />
                 {/* Visual ambient crimson light */}
                 <div className="absolute top-1/3 left-1/4 w-96 h-96 bg-rose-600/20 rounded-full blur-3xl animate-pulse" />
               </div>
               
               <div className="relative z-10 max-w-lg">
                 <h1 className="text-4xl font-light text-white tracking-tight mb-4 leading-tight">
-                  Enterprise <br/><span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-rose-500 to-rose-300">Creative Suite</span>
+                  Enterprise <br/><span className="font-extrabold text-transparent bg-clip-text bg-linear-to-r from-rose-400 via-rose-500 to-rose-300">Creative Suite</span>
                 </h1>
+
                 <p className="text-base text-slate-400 font-light leading-relaxed">
                   Powered by advanced creative intelligence. Define your brand's strategic parameters to unlock tailored, high-impact campaigns and visual assets.
                 </p>

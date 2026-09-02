@@ -246,8 +246,9 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
 
         {selectedGem.type === 'image' && (
           <>
-            <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm flex-1 min-w-[200px] max-w-sm">
+            <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm flex-1 min-w-50 max-w-sm">
               <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider shrink-0">Style</span>
+
               <input 
                 type="text"
                 value={imageStyle}

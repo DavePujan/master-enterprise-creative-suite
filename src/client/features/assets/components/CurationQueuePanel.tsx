@@ -256,15 +256,16 @@ export default function CurationQueuePanel({
                         <p className="text-[10px] uppercase font-mono tracking-widest text-slate-400 block font-bold">Curated Assets Preview</p>
                         
                         {activeRequest.assetType === 'image' ? (
-                          <div className="relative border border-emerald-500/20 rounded-sm overflow-hidden bg-slate-100 dark:bg-slate-900 flex items-center justify-center max-h-[350px]">
+                          <div className="relative border border-emerald-500/20 rounded-sm overflow-hidden bg-slate-100 dark:bg-slate-900 flex items-center justify-center max-h-87.5">
                             <img 
                               src={activeRequest.completedAssetUrl} 
                               alt="Writopedia Curation release" 
-                              className="object-contain max-h-[350px] w-full"
+                              className="object-contain max-h-87.5 w-full"
                               referrerPolicy="no-referrer"
                             />
                           </div>
                         ) : (
+
                           <div className="p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-sm text-center flex flex-col items-center justify-center gap-2">
                             <FileText className="w-10 h-10 text-emerald-600" />
                             <p className="text-xs font-mono font-medium">{activeRequest.completedAssetUrl}</p>
@@ -351,10 +352,11 @@ export default function CurationQueuePanel({
 
                     <div className="space-y-1.5 pt-2">
                       <p className="text-[10px] uppercase font-mono tracking-widest text-slate-400">Original Creative Prompt</p>
-                      <div className="p-3 bg-slate-50 dark:bg-slate-900 font-mono rounded-sm text-xs text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-900/50 break-words leading-relaxed">
+                      <div className="p-3 bg-slate-50 dark:bg-slate-900 font-mono rounded-sm text-xs text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-900/50 wrap-break-word leading-relaxed">
                         {activeRequest.originalPrompt}
                       </div>
                     </div>
+
 
                     <div className="space-y-2 pt-2">
                       <p className="text-[10px] uppercase font-mono tracking-widest text-slate-400">Original Raw Asset</p>

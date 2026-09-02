@@ -328,8 +328,9 @@ export const SlideshowDisplay: React.FC<SlideshowDisplayProps> = ({
                   </div>
                   <div className="space-y-1 text-center">
                     <span className="text-xs font-bold uppercase tracking-[0.2em] text-slate-300">Generating Canvas Asset</span>
-                    <p className="text-[10px] opacity-60 italic max-w-[200px] mx-auto line-clamp-1">{slide.imagePrompt}</p>
+                    <p className="text-[10px] opacity-60 italic max-w-50 mx-auto line-clamp-1">{slide.imagePrompt}</p>
                   </div>
+
                 </div>
               </div>
             )}
@@ -459,7 +460,8 @@ export const SlideshowDisplay: React.FC<SlideshowDisplayProps> = ({
                           alt="Layout framed" 
                           className="w-full h-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                        <div className="absolute inset-0 bg-linear-to-t from-black/50 to-transparent" />
+
                       </div>
                     )}
                   </div>

@@ -709,16 +709,17 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
                 key={plan.name}
                 onMouseEnter={() => setHoveredCard(index)}
                 onMouseLeave={() => setHoveredCard(null)}
-                className={`bg-white dark:bg-slate-900 border rounded-lg transition-all duration-300 relative flex flex-col justify-between overflow-hidden min-h-[520px] ${getBgClass(plan.bgType, isHovered || plan.popular)}`}
+                className={`bg-white dark:bg-slate-900 border rounded-lg transition-all duration-300 relative flex flex-col justify-between overflow-hidden min-h-130 ${getBgClass(plan.bgType, isHovered || plan.popular)}`}
               >
                 {/* Popular Corner Star Badge */}
                 {plan.popular && (
                   <div className="absolute right-0 top-0 h-16 w-16 overflow-hidden">
-                    <div className="absolute top-[18px] right-[-21px] rotate-45 bg-rose-600 text-white text-[9px] font-black uppercase text-center w-24 py-1 tracking-widest shadow-sm">
+                    <div className="absolute top-4.5 -right-5.25 rotate-45 bg-rose-600 text-white text-[9px] font-black uppercase text-center w-24 py-1 tracking-widest shadow-sm">
                       POPULAR
                     </div>
                   </div>
                 )}
+
 
                 <div className="p-6 space-y-5">
                   <div className="space-y-1">
@@ -1182,8 +1183,9 @@ document.getElementById('rzp-button-pilot').onclick = function(e){
                   <select 
                     value={salesFormData.teamSize}
                     onChange={(e) => setSalesFormData({...salesFormData, teamSize: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none dark:text-slate-200 focus:ring-rose-600"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none dark:text-slate-200"
                   >
+
                     <option value="1-10">1 - 10 Users (Small Studio)</option>
                     <option value="10-50">10 - 50 Users (Mid-Size Agency)</option>
                     <option value="50-200">50 - 200 Users (Enterprise Division)</option>

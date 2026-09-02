@@ -32,8 +32,9 @@ export const GenerationLoader: React.FC<GenerationLoaderProps> = ({
       
       {/* Scanning effect */}
       <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
-        <div className="w-full h-1 bg-gradient-to-r from-transparent via-slate-900/20 dark:via-white/20 to-transparent absolute top-0 left-0 animate-scan" />
+        <div className="w-full h-1 bg-linear-to-r from-transparent via-slate-900/20 dark:via-white/20 to-transparent absolute top-0 left-0 animate-scan" />
       </div>
+
     </div>
     
     <div className="space-y-3 text-center max-w-sm">

@@ -63,7 +63,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
         className={cn("flex items-center justify-center", collapsed ? "h-10 w-10" : "gap-3", className)}
       >
         <div className="relative group w-full h-full flex items-center justify-center">
-          <div className="absolute -inset-1 bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
+          <div className="absolute -inset-1 bg-linear-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
           <div className="relative w-10 h-10 bg-slate-900 dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-slate-900 font-bold text-xl shadow-lg border border-white/10 dark:border-slate-900/10">
             {brandName ? brandName.charAt(0).toUpperCase() : 'S'}
           </div>
@@ -86,9 +86,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       )}
     >
       {/* Subtle background glow on hover */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      <div className="absolute inset-0 bg-linear-to-tr from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       
       <img 
+
         src={customLogo} 
         alt={brandName} 
         onError={() => setImgError(true)}

@@ -399,8 +399,9 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               {sidebarOpen && (
                 <div className="flex flex-col">
                   <span>Cloud Synced</span>
-                  <span className="text-[8px] opacity-70 truncate max-w-[120px] normal-case tracking-normal">{user.email}</span>
+                  <span className="text-[8px] opacity-70 truncate max-w-30 normal-case tracking-normal">{user.email}</span>
                 </div>
+
               )}
             </>
           ) : (

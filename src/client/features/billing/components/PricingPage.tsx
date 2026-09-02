@@ -466,7 +466,8 @@ export default function PricingPage({
   return (
     <div className="min-h-screen bg-[#fafafc] text-slate-800 font-sans relative overflow-x-hidden selection:bg-crimson/10 selection:text-crimson">
       {/* Subtle Dot Matrix Background Accent */}
-      <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] opacity-70 pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] bg-size-[16px_16px] opacity-70 pointer-events-none" />
+
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-4">
@@ -643,7 +644,7 @@ export default function PricingPage({
                 key={plan.name}
                 onMouseEnter={() => setHoveredCard(index)}
                 onMouseLeave={() => setHoveredCard(null)}
-                className={`bg-white border rounded-3xl transition-all duration-300 relative flex flex-col justify-between overflow-hidden min-h-[550px] ${
+                className={`bg-white border rounded-3xl transition-all duration-300 relative flex flex-col justify-between overflow-hidden min-h-137.5 ${
                   isPro 
                     ? 'border-crimson shadow-md ring-4 ring-rose-500/10' 
                     : isHovered 
@@ -654,11 +655,12 @@ export default function PricingPage({
                 {/* Popular Corner Star Ribbon */}
                 {isPro && (
                   <div className="absolute right-0 top-0 h-20 w-20 overflow-hidden">
-                    <div className="absolute top-[20px] right-[-24px] rotate-45 bg-crimson text-white text-[9px] font-black uppercase text-center w-28 py-1.5 tracking-widest shadow-sm">
+                    <div className="absolute top-5 -right-6 rotate-45 bg-crimson text-white text-[9px] font-black uppercase text-center w-28 py-1.5 tracking-widest shadow-sm">
                       POPULAR
                     </div>
                   </div>
                 )}
+
 
                 <div className="p-7 space-y-6 flex-1">
                   {/* Top Badge */}
@@ -779,7 +781,7 @@ export default function PricingPage({
 
           <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs min-w-[800px]">
+              <table className="w-full text-left text-xs min-w-200">
                 <thead className="bg-slate-50/70 text-slate-700 uppercase tracking-widest font-bold border-b border-slate-250/60">
                   <tr>
                     <th className="px-6 py-5">Parameters / Tiers</th>
@@ -794,9 +796,10 @@ export default function PricingPage({
                     <td className="px-6 py-4 font-semibold text-slate-900 bg-slate-50/20">Monthly Cost</td>
                     <td className="px-6 py-4 text-center font-medium">₹1,950 or $22</td>
                     <td className="px-6 py-4 text-center font-medium">₹10,000 or $106</td>
-                    <td className="px-6 py-4 text-center font-medium bg-rose-50/10 text-rose-950 font-semibold italic">₹25,000 or $265</td>
+                    <td className="px-6 py-4 text-center bg-rose-50/10 text-rose-950 font-semibold italic">₹25,000 or $265</td>
                     <td className="px-6 py-4 text-center font-medium">Contact for Quote</td>
                   </tr>
+
                   <tr>
                     <td className="px-6 py-4 font-semibold text-slate-900 bg-slate-50/20">Annual Price (Equivalent Mo.)</td>
                     <td className="px-6 py-4 text-center">₹1,755 / mo ($19.8)</td>
