@@ -39,6 +39,11 @@ export interface Asset {
   type: 'image' | 'doc' | 'video' | 'audio';
   selected: boolean;
   analysis?: AssetAnalysis;
+  isProductContext?: boolean;
+  isFaceContext?: boolean;
+  isFirstFrameContext?: boolean;
+  isLastFrameContext?: boolean;
+  isIngredientsContext?: boolean;
 }
 
 export interface SlideStructure {
