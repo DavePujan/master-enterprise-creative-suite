@@ -21,6 +21,8 @@ aiRouter.post("/generate-content", async (req, res) => {
     const ai = getServerAI();
     const modelId = model || "gemini-2.5-flash";
 
+    console.log(`[Server AI] Processing generate-content (model: ${modelId}, user: ${req.user?.email || req.user?.uid || 'authenticated'})`);
+
     const response = await ai.models.generateContent({
       model: modelId,
       contents,
@@ -32,7 +34,11 @@ aiRouter.post("/generate-content", async (req, res) => {
       candidates: response.candidates
     });
   } catch (err: any) {
-    console.error("Server AI generate-content error:", err?.message || err);
+    console.error("[Server AI generate-content error]:", {
+      message: err?.message || err,
+      status: err?.status,
+      code: err?.code
+    });
     const status = err?.status || err?.code || 500;
     const statusCode = typeof status === "number" && status >= 400 && status < 600 ? status : 500;
     return res.status(statusCode).json({
@@ -41,6 +47,7 @@ aiRouter.post("/generate-content", async (req, res) => {
     });
   }
 });
+
 
 // Secure Veo Video Generation Gateway
 aiRouter.post("/generate-videos", async (req, res) => {

@@ -1,59 +1,23 @@
-/**
- * Client AI Gateway Adapter & Utilities.
- * Proxies all model executions through secure server endpoints so ZERO secrets reach the browser.
- */
+import { apiClient } from '../api/apiClient.js';
 
 export const getAI = () => {
   return {
     models: {
       async generateContent(params: { model: string; contents: any; config?: any }) {
-        const res = await fetch("/api/ai/generate-content", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params)
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({ error: res.statusText }));
-          const error: any = new Error(errData.error || "Failed to generate AI content");
-          error.status = res.status;
-          error.code = errData.code || res.status;
-          throw error;
-        }
-        return await res.json();
+        return await apiClient.post("/api/ai/generate-content", params);
       },
       async generateVideos(params: { model: string; prompt: string; image?: any; config?: any }) {
-        const res = await fetch("/api/ai/generate-videos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params)
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({ error: res.statusText }));
-          const error: any = new Error(errData.error || "Failed to start video generation");
-          error.status = res.status;
-          throw error;
-        }
-        return await res.json();
+        return await apiClient.post("/api/ai/generate-videos", params);
       }
     },
     operations: {
       async getVideosOperation(params: { operation: any }) {
-        const res = await fetch("/api/ai/poll-videos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params)
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({ error: res.statusText }));
-          const error: any = new Error(errData.error || "Failed to poll video operation");
-          error.status = res.status;
-          throw error;
-        }
-        return await res.json();
+        return await apiClient.post("/api/ai/poll-videos", params);
       }
     }
   };
 };
+
 
 export function parseJSON(text: string) {
   try {

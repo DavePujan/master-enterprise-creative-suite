@@ -5,7 +5,9 @@
 
 import { Modality, Type } from "@google/genai";
 import { getAI, parseJSON, withRetry, generateHistoryTitle } from "./geminiClient.js";
+import { apiClient } from '../api/apiClient.js';
 import { MODELS, promptEngineSettings } from "./modelRegistry.js";
+
 import {
   getSupportedLogoData,
   appendAssetsToParts,
@@ -870,21 +872,13 @@ export async function generateTTS(
   voice: string = 'Kore',
   emotion: string = 'Professional'
 ): Promise<string> {
-  const res = await fetch("/api/ai/tts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, voice, emotion })
-  });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(errData.error || "Failed to generate audio");
-  }
-  const data = await res.json();
-  if (data.audioPcmBase64) {
+  const data = await apiClient.post<{ audioPcmBase64?: string }>("/api/ai/tts", { text, voice, emotion });
+  if (data?.audioPcmBase64) {
     return pcmToWav(data.audioPcmBase64);
   }
   throw new Error("Failed to generate audio");
 }
+
 
 export async function pollVideo(operation: any) {
   if (operation && (operation.engine || operation.status_url)) {

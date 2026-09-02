@@ -5,7 +5,9 @@
 
 import { Type } from "@google/genai";
 import { getAI, parseJSON, withRetry } from "./geminiClient.js";
+import { apiClient } from "../api/apiClient.js";
 import { promptEngineSettings } from "./modelRegistry.js";
+
 import type { BrandGuidelines } from "../../../shared/types/brand.js";
 import type { Asset, AssetAnalysis } from "../../../shared/types/creative.js";
 
@@ -420,22 +422,16 @@ export async function generateBrandLogoAI(
 ): Promise<string> {
   try {
     const logoPrompt = `An iconic, world-class modern minimalist logo for brand "${name}", ${industry} industry, tone ${tone || 'Professional'}. Clean vector art, geometric silhouette, brand colors ${colors.join(', ')}, solid clean pure white background #ffffff. Single centered mark, award-winning graphic design.`;
-    const renderRes = await fetch("/api/campaign/render", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: logoPrompt,
-        size: "1:1",
-        engine: "fal-ai/flux/schnell"
-      })
+    const renderData = await apiClient.post("/api/campaign/render", {
+      prompt: logoPrompt,
+      size: "1:1",
+      engine: "fal-ai/flux/schnell"
     });
-    if (renderRes.ok) {
-      const renderData = await renderRes.json();
-      if (renderData.url) return renderData.url;
-    }
+    if (renderData?.url) return renderData.url;
   } catch (err) {
     console.warn("Fal logo generation fallback to AI client:", err);
   }
+
 
   const ai = getAI();
   const logoResponse = await withRetry(() =>

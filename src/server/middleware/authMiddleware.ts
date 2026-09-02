@@ -19,17 +19,22 @@ declare global {
 const PUBLIC_ROUTE_PREFIXES = [
   "/api/contact-sales",
   "/api/proxy",
-  "/api/proxy-image"
+  "/api/proxy-image",
+  "/contact-sales",
+  "/proxy",
+  "/proxy-image"
 ];
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  const path = req.path;
+  const fullPath = req.originalUrl.split("?")[0];
+  const subPath = req.path;
 
   // Check if route is public
-  const isPublic = PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix));
+  const isPublic = PUBLIC_ROUTE_PREFIXES.some(prefix => fullPath.startsWith(prefix) || subPath.startsWith(prefix));
   if (isPublic) {
     return next();
   }
+
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
