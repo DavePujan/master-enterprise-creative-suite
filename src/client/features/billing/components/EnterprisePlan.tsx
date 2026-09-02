@@ -333,7 +333,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
       };
     }
 
-    const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || 'rzp_live_T14b6zHpE5w3ow';
+    const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
 
     const options: any = {
       key: rzpKeyId,
