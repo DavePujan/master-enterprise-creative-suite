@@ -11,7 +11,7 @@ export interface BrandTypography {
 export interface BrandGuidelines {
   name: string;
   industry: string;
-  tone: string | string[];
+  tone: string;
   pillars: string[];
   colors: string[];
   typography: BrandTypography;
