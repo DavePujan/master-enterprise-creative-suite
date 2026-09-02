@@ -419,18 +419,16 @@ export function App() {
       setBrandSetupComplete(true);
       savePreferences({ brandGuidelines: guidelines, brandSetupComplete: true });
       navigateTo('/workspace');
-    } catch (e) {
-      console.error("Failed to save initial brand kit:", e);
-      isInitialDataLoadedRef.current = true;
+    } catch (e: any) {
+      console.error("Failed to save initial brand kit to cloud:", e);
+      setAuthError(e?.message || "Failed to persist brand kit to cloud database. Please retry.");
       setBrandGuidelines(guidelines);
       setAssets(initialAssets);
-      setBrandSetupComplete(true);
-      savePreferences({ brandGuidelines: guidelines, brandSetupComplete: true });
-      navigateTo('/workspace');
     } finally {
       setIsSyncing(false);
     }
   };
+
 
   return (
     <AppRouter
