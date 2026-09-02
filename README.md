@@ -14,7 +14,7 @@ A production-grade, modular creative automation platform and brand engine. Power
 - **Multi-Voice Studio Audio & TTS**: High-fidelity natural voiceovers with tone and accent control (`gemini-2.5-flash-preview-tts`).
 - **Curated Asset Library**: Unified digital asset management with AI auto-tagging, aspect ratio conversion, and image analysis.
 - **Human-in-the-Loop Curation Queue**: Administrative portal for reviewing, editing, and fulfilling human touch creative requests.
-- **Server-Authoritative Billing**: Plan pricing catalog, Razorpay checkout gateway, and idempotent payment verification.
+- **Server-Authoritative Billing**: Plan pricing catalog, Razorpay checkout gateway, and idempotent payment verification ledger.
 
 ---
 
@@ -72,7 +72,7 @@ Writopedia Platform
 | :--- | :--- |
 | **Zero Browser Secrets** | `GEMINI_API_KEY` is completely excluded from client builds; all AI operations proxy through server-side `/api/ai/*`. |
 | **Server Billing Authority** | Order amounts and credits are strictly validated against `PLAN_PRICING_CATALOG`; client cannot specify arbitrary amounts. |
-| **Payment Idempotency** | Cryptographic HMAC SHA256 verification and atomic transaction ledger prevent replay attacks. |
+| **Payment Idempotency** | Cryptographic HMAC SHA256 verification and atomic transaction ledger (`paymentTransactions`) prevent duplicate credit grants and replay attacks. |
 | **SSRF Multi-IP Protection** | Outbound proxy resolves all DNS records (`all: true`), blocks loopback/private/link-local/metadata/CGNAT ranges, and manually checks redirects. |
 | **Default-Deny Authentication** | Server middleware verifies Firebase ID tokens; public routes are explicitly allowlisted. |
 | **Firestore Authorization** | `adminSettings` strictly requires `isAdmin()`; user `balance` cannot be modified by client requests. |
@@ -97,8 +97,8 @@ Writopedia Platform
 - **Node.js**: `v20.x` or `v24.x` (LTS recommended)
 - **NPM**: `v10+` or `v11+`
 
-### 2. Installation
-Clone the repository and install project dependencies:
+### 2. Direct Repository Clone & Setup
+Clone the official upstream repository:
 ```bash
 git clone https://github.com/hardeep-zw/master-enterprise-creative-suite.git
 cd master-enterprise-creative-suite
@@ -186,85 +186,86 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 🤝 Git Workflow & Contribution Guide
+## 🤝 Detailed Git Workflow & Contribution Guide
 
-Follow these step-by-step instructions to fork, branch, sync, commit, and submit Pull Requests to this repository.
+Follow these step-by-step instructions to fork, clone, sync, branch, commit, and submit Pull Requests cleanly.
 
 ### 1. 🍴 Fork and Clone the Repository
 
-1. Navigate to the main repository: [https://github.com/hardeep-zw/master-enterprise-creative-suite](https://github.com/hardeep-zw/master-enterprise-creative-suite)
-2. Click the **Fork** button (top right) to create your personal copy under your GitHub account.
-3. Clone your forked repository to your local machine:
+1. Navigate to the main upstream repository: [https://github.com/hardeep-zw/master-enterprise-creative-suite](https://github.com/hardeep-zw/master-enterprise-creative-suite)
+2. Click the **Fork** button (top right) to create a copy under your GitHub account.
+3. Clone your personal fork to your local machine:
    ```bash
    git clone https://github.com/YOUR_USERNAME/master-enterprise-creative-suite.git
    cd master-enterprise-creative-suite
    npm install
    ```
 
-4. Configure the **upstream** remote to track the original repository:
+4. Configure the **upstream** remote pointing to the authoritative repository:
    ```bash
    git remote add upstream https://github.com/hardeep-zw/master-enterprise-creative-suite.git
    ```
    *Verify your remotes:*
    ```bash
    git remote -v
-   # origin    https://github.com/YOUR_USERNAME/... (fetch & push)
-   # upstream  https://github.com/hardeep-zw/... (fetch & push)
+   # origin    https://github.com/YOUR_USERNAME/master-enterprise-creative-suite.git (fetch & push)
+   # upstream  https://github.com/hardeep-zw/master-enterprise-creative-suite.git (fetch & push)
    ```
 
 ---
 
-### 2. 🌿 Create a New Feature Branch
+### 2. 🌿 Create a Dedicated Feature Branch
 
-Always create a dedicated branch before making changes:
+Always create a fresh, dedicated branch branching off the latest `main`:
 ```bash
-# Ensure you are on main
+# Ensure local main is clean and selected
 git checkout main
 
-# Create and switch to a new branch
+# Create and switch to your feature branch
 git checkout -b feature/your-feature-name
 
-# Example:
-git checkout -b feature/add-new-brand-template
+# Examples:
+# git checkout -b feat/image-generation-enhancement
+# git checkout -b fix/brand-logo-styling
 ```
 
 ---
 
-### 3. 🔄 Fetching & Syncing Code from Upstream (Keep Your Code Updated)
+### 3. 🔄 Fetching & Syncing Code from Upstream
 
-Before starting work or before creating a pull request, always sync your branch with the latest changes from upstream:
+Before starting work or before opening a pull request, always synchronize your local branch with upstream to maintain a linear and clean history:
 
 ```bash
-# 1. Fetch all updates from the original repository
-git fetch upstream
+# 1. Fetch all updates from the upstream repository
+git fetch upstream main
 
-# 2. Switch to your local main branch and merge upstream changes
+# 2. Switch to local main and fast-forward to latest upstream main
 git checkout main
-git merge upstream/main
+git merge upstream/main --ff-only
 
-# 3. Push the updated main to your fork
+# 3. Push updated main to your personal GitHub fork
 git push origin main
 
-# 4. Rebase or merge changes into your feature branch
+# 4. Switch back to your feature branch and rebase or merge on top of main
 git checkout feature/your-feature-name
-git merge upstream/main
+git rebase main
 ```
 
 ---
 
 ### 4. ✍️ Stage, Commit, and Push Changes
 
-Once you've made your changes and tested them locally (`npm run dev` and `npm run lint`):
+Once your code is written and verified locally (`npm run lint` and `npm run build`):
 
 ```bash
-# 1. Check which files have been modified
+# 1. Review modified files
 git status
 
-# 2. Stage specific files or all changed files
+# 2. Stage changes
 git add .
 
-# 3. Commit your changes with a descriptive message (Conventional Commits style recommended)
-git commit -m "feat: add support for dynamic brand tone customization"
+# 3. Commit with a structured Conventional Commits message
+git commit -m "feat(campaign): add real-time visual asset preview generation"
 
 # 4. Push your branch to YOUR fork on GitHub
 git push -u origin feature/your-feature-name
@@ -274,15 +275,35 @@ git push -u origin feature/your-feature-name
 
 ### 5. 🚀 Create a Pull Request (PR)
 
-1. Open your browser and go to your fork: `https://github.com/YOUR_USERNAME/master-enterprise-creative-suite`
-2. You will see a banner: **"Compare & pull request"** for your recently pushed branch. Click it.
-3. Set the base and compare branches:
+1. Open your browser and navigate to your GitHub fork: `https://github.com/YOUR_USERNAME/master-enterprise-creative-suite`
+2. Click **"Compare & pull request"** for your recently pushed branch.
+3. Configure the branch targets:
    - **Base repository**: `hardeep-zw/master-enterprise-creative-suite` (base: `main`)
    - **Head repository**: `YOUR_USERNAME/master-enterprise-creative-suite` (compare: `feature/your-feature-name`)
 4. Fill in the PR Title and Description:
-   - **Title**: Short summary of changes (e.g. `feat: improve slideshow export quality`)
-   - **Description**: Explain what was added/fixed and provide screenshots if applicable.
+   - **Title**: Brief summary (e.g., `feat(billing): implement server-authoritative credit ledger`)
+   - **Description**: Detailed list of changes, components touched, and verification results.
 5. Click **"Create pull request"**!
+
+---
+
+### 6. 🧹 Post-Merge Cleanup
+
+After your Pull Request has been reviewed and merged into `upstream/main`:
+
+```bash
+# 1. Fetch the merged main from upstream
+git checkout main
+git fetch upstream main
+git merge upstream/main --ff-only
+git push origin main
+
+# 2. Delete the local feature branch
+git branch -d feature/your-feature-name
+
+# 3. Delete the feature branch from your remote fork
+git push origin --delete feature/your-feature-name
+```
 
 ---
 
