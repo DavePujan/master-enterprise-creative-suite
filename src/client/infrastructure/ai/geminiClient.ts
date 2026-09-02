@@ -1,20 +1,58 @@
 /**
- * Client Google GenAI SDK Wrapper & Utilities.
- * Preserves exact retry logic, JSON repair, quota handling, and title generators.
+ * Client AI Gateway Adapter & Utilities.
+ * Proxies all model executions through secure server endpoints so ZERO secrets reach the browser.
  */
 
-import { GoogleGenAI } from "@google/genai";
-
-// API key is managed server-side or injected via bundler defines
 export const getAI = () => {
-  const apiKey =
-    (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
-    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-    '';
-  if (!apiKey) {
-    console.warn("[Gemini Service] No Gemini API key configured in environment.");
-  }
-  return new GoogleGenAI({ apiKey });
+  return {
+    models: {
+      async generateContent(params: { model: string; contents: any; config?: any }) {
+        const res = await fetch("/api/ai/generate-content", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params)
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: res.statusText }));
+          const error: any = new Error(errData.error || "Failed to generate AI content");
+          error.status = res.status;
+          error.code = errData.code || res.status;
+          throw error;
+        }
+        return await res.json();
+      },
+      async generateVideos(params: { model: string; prompt: string; image?: any; config?: any }) {
+        const res = await fetch("/api/ai/generate-videos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params)
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: res.statusText }));
+          const error: any = new Error(errData.error || "Failed to start video generation");
+          error.status = res.status;
+          throw error;
+        }
+        return await res.json();
+      }
+    },
+    operations: {
+      async getVideosOperation(params: { operation: any }) {
+        const res = await fetch("/api/ai/poll-videos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params)
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: res.statusText }));
+          const error: any = new Error(errData.error || "Failed to poll video operation");
+          error.status = res.status;
+          throw error;
+        }
+        return await res.json();
+      }
+    }
+  };
 };
 
 export function parseJSON(text: string) {
@@ -49,18 +87,11 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 10
     return await fn();
   } catch (error: any) {
     const errorStr = typeof error === 'string' ? error : (error?.message || JSON.stringify(error));
-    const isQuotaError = errorStr.includes("RESOURCE_EXHAUSTED") || error?.status === "RESOURCE_EXHAUSTED" || error?.code === 429;
-    const isInternalError = errorStr.includes("INTERNAL") || error?.status === "INTERNAL" || error?.code === 500;
-    const isServiceUnavailable = errorStr.includes("SERVICE_UNAVAILABLE") || errorStr.includes("UNAVAILABLE") || error?.status === "SERVICE_UNAVAILABLE" || error?.status === "UNAVAILABLE" || error?.code === 503;
-    const isDeadlineExceeded = errorStr.includes("DEADLINE_EXCEEDED") || error?.status === "DEADLINE_EXCEEDED" || error?.code === 504;
-    const isNotFoundError = errorStr.includes("Requested entity was not found");
-    const isPermissionDenied = errorStr.includes("PERMISSION_DENIED") || error?.status === "PERMISSION_DENIED" || error?.code === 403;
+    const isQuotaError = errorStr.includes("RESOURCE_EXHAUSTED") || error?.status === 429 || error?.code === 429;
+    const isInternalError = errorStr.includes("INTERNAL") || error?.status === 500 || error?.code === 500;
+    const isServiceUnavailable = errorStr.includes("SERVICE_UNAVAILABLE") || errorStr.includes("UNAVAILABLE") || error?.status === 503 || error?.code === 503;
+    const isDeadlineExceeded = errorStr.includes("DEADLINE_EXCEEDED") || error?.status === 504 || error?.code === 504;
     const isSpendingCap = errorStr.includes("exceeded its spending cap");
-
-    if ((isNotFoundError || isPermissionDenied) && retries > 0 && typeof window !== 'undefined' && (window as any).aistudio?.openSelectKey) {
-      await (window as any).aistudio.openSelectKey();
-      return withRetry(fn, retries - 1, delay * 2);
-    }
 
     if (isSpendingCap) {
       throw error;
@@ -68,73 +99,42 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 10
 
     if ((isQuotaError || isInternalError || isServiceUnavailable || isDeadlineExceeded) && retries > 0) {
       let waitTime = delay;
-
-      try {
-        const errorObj = typeof error === 'string' ? JSON.parse(error) : error;
-        const details = errorObj?.error?.details || errorObj?.details;
-        if (Array.isArray(details)) {
-          const retryInfo = details.find((d: any) => d['@type']?.includes('RetryInfo') || d.retryDelay);
-          if (retryInfo?.retryDelay) {
-            const seconds = parseFloat(retryInfo.retryDelay.replace('s', ''));
-            if (!isNaN(seconds)) {
-              waitTime = (seconds + 1) * 1000;
-            }
-          }
+      if (errorStr.includes("Please retry in")) {
+        const match = errorStr.match(/Please retry in ([\d\.]+)s/);
+        if (match && match[1]) {
+          waitTime = Math.ceil(parseFloat(match[1]) * 1000) + 1000;
         }
-      } catch (e) { }
-
-      console.warn(`Transient error or quota exceeded. Retrying in ${waitTime}ms... (${retries} retries left)`);
+      }
+      console.warn(`Transient API error. Retrying in ${waitTime}ms... (${retries} attempts left). Error:`, errorStr);
       await new Promise(resolve => setTimeout(resolve, waitTime));
-      return withRetry(fn, retries - 1, waitTime * 1.5);
+      return withRetry(fn, retries - 1, delay * 2);
     }
     throw error;
   }
 }
 
-export const getQuotaErrorMessage = (error: any) => {
+export function getQuotaErrorMessage(error: any): string {
   const errorStr = typeof error === 'string' ? error : (error?.message || JSON.stringify(error));
-  const isQuota = errorStr.includes("RESOURCE_EXHAUSTED") || error?.status === "RESOURCE_EXHAUSTED" || error?.code === 429;
-  const isUnavailable = errorStr.includes("UNAVAILABLE") || error?.status === "UNAVAILABLE" || error?.code === 503;
-  const isSpendingCap = errorStr.includes("exceeded its spending cap");
-
-  if (isUnavailable) {
-    return "The AI model is currently experiencing high demand. We are automatically retrying, but if this persists, please try again in a few minutes.";
-  }
-
-  if (isSpendingCap) {
-    return "Your Google Cloud project has exceeded its spending cap. Please check your billing settings in the Google Cloud Console or Google AI Studio to increase your limit.";
-  }
-
-  if (!isQuota) return null;
-
-  try {
-    const errorObj = typeof error === 'string' ? JSON.parse(error) : error;
-    const details = errorObj?.error?.details || errorObj?.details;
-    if (Array.isArray(details)) {
-      const retryInfo = details.find((d: any) => d['@type']?.includes('RetryInfo') || d.retryDelay);
-      if (retryInfo?.retryDelay) {
-        return `API Quota exceeded. Please wait ${retryInfo.retryDelay} or select a different API key.`;
-      }
+  if (errorStr.includes("RESOURCE_EXHAUSTED") || error?.status === 429) {
+    const match = errorStr.match(/Please retry in ([\d\.]+)s/);
+    if (match && match[1]) {
+      return `Rate limit reached. Please wait ${Math.ceil(parseFloat(match[1]))} seconds before generating again.`;
     }
-  } catch (e) { }
+    return "API rate limit reached. Please wait a moment before trying again.";
+  }
+  return "Failed to generate content. Please try again.";
+}
 
-  return "API Quota exceeded. Please wait a moment or select a different API key.";
-};
-
-export async function generateHistoryTitle(prompt: string, gemName: string): Promise<string> {
+export async function generateHistoryTitle(prompt: string, context?: string): Promise<string> {
   try {
     const ai = getAI();
+    const contextPrompt = context ? ` for ${context}` : '';
     const response = await withRetry(() => ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `Generate a very short, clear, and descriptive title (max 5 words) for a creative task based on the following prompt and tool name. 
-      Tool: ${gemName}
-      Prompt: ${prompt}
-      
-      Return ONLY the title string, no quotes or extra text.`,
+      contents: `Generate a very short, punchy 2 to 4-word title${contextPrompt} for this user prompt: "${prompt}". Return ONLY the plain text title, no punctuation, no quotes, no markdown.`
     }));
-    return response.text?.trim() || prompt.substring(0, 30) + '...';
+    return response.text?.trim() || prompt.slice(0, 30);
   } catch (e) {
-    console.error("Failed to generate history title:", e);
-    return prompt.substring(0, 30) + '...';
+    return prompt.slice(0, 30);
   }
 }

@@ -1,16 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, uploadAssetToStorage } from '../../../../lib/firebase.js';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  onSnapshot, 
-  doc, 
-  updateDoc, 
-  deleteDoc,
-  where,
-  setDoc
-} from 'firebase/firestore';
+import { subscribeAdminSettings, saveAdminSettings } from '../../../infrastructure/firebase/repositories/adminRepository.js';
+import { subscribeHumanTouchQueue, updateHumanTouchRequestStatus, deleteHumanTouchRequest } from '../../../infrastructure/firebase/repositories/humanTouchRepository.js';
+import { subscribeSalesSubmissions, updateSalesSubmissionStatus, deleteSalesSubmission } from '../../../infrastructure/firebase/repositories/salesRepository.js';
+import { saveUserAsset } from '../../../infrastructure/firebase/repositories/assetRepository.js';
 import { 
   ShieldAlert, 
   CheckCircle, 
@@ -107,10 +100,8 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
 
   useEffect(() => {
     // Sync settings in real-time from Firestore if available
-    const unsub = onSnapshot(doc(db, 'adminSettings', 'magicPromptConfig'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as any;
-        // Map fields to ensure safety
+    const unsub = subscribeAdminSettings('magicPromptConfig', (data) => {
+      if (data) {
         const updated: PromptEngineSettings = {
           enableAiRewrite: typeof data.enableAiRewrite === 'boolean' ? data.enableAiRewrite : true,
           enableGuidelines: typeof data.enableGuidelines === 'boolean' ? data.enableGuidelines : true,
@@ -121,8 +112,6 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
         setEngineSettings(updated);
         updatePromptEngineSettings(updated);
       }
-    }, (error) => {
-      console.warn("Firestore admin settings subscription denied/offline, relying on local storage fallback", error);
     });
     return unsub;
   }, []);
@@ -136,34 +125,22 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
     updatePromptEngineSettings(newSettings);
 
     try {
-      await setDoc(doc(db, 'adminSettings', 'magicPromptConfig'), newSettings);
+      await saveAdminSettings(newSettings, 'magicPromptConfig');
     } catch (e) {
       console.error("Failed to commit settings update to Firestore:", e);
     }
   };
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'humanTouchRequests'),
-      orderBy('timestamp', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched: GlobalHumanTouchRequest[] = [];
-      snapshot.forEach((docSnap) => {
-        fetched.push({
-          id: docSnap.id,
-          ...docSnap.data()
-        } as GlobalHumanTouchRequest);
-      });
-      setRequests(fetched);
+    const unsubscribe = subscribeHumanTouchQueue((fetched) => {
+      setRequests(fetched as any);
       setLoading(false);
 
       // If a specific request was highlighted from a notification, select it
       if (selectedRequestId) {
         const found = fetched.find(r => r.id === selectedRequestId);
         if (found) {
-          setSelectedRequest(found);
+          setSelectedRequest(found as any);
         }
       }
     }, (error) => {
@@ -175,20 +152,8 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
   }, [selectedRequestId]);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'salesSubmissions'),
-      orderBy('timestamp', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched: SalesQuery[] = [];
-      snapshot.forEach((docSnap) => {
-        fetched.push({
-          id: docSnap.id,
-          ...docSnap.data()
-        } as SalesQuery);
-      });
-      setSalesQueries(fetched);
+    const unsubscribe = subscribeSalesSubmissions((fetched) => {
+      setSalesQueries(fetched as any);
     }, (error) => {
       console.error("Failed to fetch administrative sales queries:", error);
     });
@@ -200,9 +165,7 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
     setIsUpdatingStatus(true);
     setActionError(null);
     try {
-      await updateDoc(doc(db, 'salesSubmissions', queryId), {
-        status: newStatus
-      });
+      await updateSalesSubmissionStatus(queryId, newStatus);
       setSelectedSalesQuery(prev => prev && prev.id === queryId ? { ...prev, status: newStatus } : prev);
     } catch (err: any) {
       console.error("Failed to update sales query status:", err);
@@ -217,7 +180,7 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
     setIsUpdatingStatus(true);
     setActionError(null);
     try {
-      await deleteDoc(doc(db, 'salesSubmissions', queryId));
+      await deleteSalesSubmission(queryId);
       setSelectedSalesQuery(null);
     } catch (err: any) {
       console.error("Failed to delete sales query:", err);
@@ -230,9 +193,9 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
   // Keep selected request in sync with real-time updates
   useEffect(() => {
     if (selectedRequest) {
-      const fresh = requests.find(r => r.id === selectedRequest.id);
-      if (fresh) {
-        setSelectedRequest(fresh);
+      const refreshed = requests.find(r => r.id === selectedRequest.id);
+      if (refreshed) {
+        setSelectedRequest(refreshed);
       }
     }
   }, [requests]);
@@ -270,19 +233,14 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
   };
 
   const handleUploadAndComplete = async () => {
-    if (!selectedRequest) return;
-    if (!uploadedBase64) {
-      setActionError("Please select a high-fidelity curated asset to upload.");
-      return;
-    }
-
+    if (!selectedRequest || !uploadedBase64) return;
     setIsUpdatingStatus(true);
     setActionError(null);
 
     try {
-      const assetId = `${selectedRequest.id}_edited`;
-
-      // 1. Upload high-fidelity edited deliverable to storage
+      const assetId = `curated_${selectedRequest.id}_${Date.now()}`;
+      
+      // 1. Upload the curated output directly to Google Firebase Storage
       const uploadedUrl = await uploadAssetToStorage(
         selectedRequest.userId, 
         assetId, 
@@ -291,14 +249,15 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
       );
 
       // 2. Insert directly as a brand asset inside the user's personal Assets Collection
-      const userAssetDocRef = doc(db, 'users', selectedRequest.userId, 'assets', assetId);
       try {
-        await setDoc(userAssetDocRef, {
-          type: selectedRequest.assetType || 'image',
-          content: uploadedUrl,
-          prompt: `Writopedia Curation Edit (${selectedRequest.id.toUpperCase()})`,
-          timestamp: Date.now()
-        });
+        await saveUserAsset(
+          selectedRequest.userId,
+          assetId,
+          `Writopedia Curation Edit (${selectedRequest.id.toUpperCase()})`,
+          uploadedUrl,
+          (selectedRequest.assetType as any) || 'image',
+          `Writopedia Curation Edit (${selectedRequest.id.toUpperCase()})`
+        );
       } catch (assetErr: any) {
         console.error("Failed step 2: writing to user brand assets", assetErr);
         throw new Error(`[Step 2: Brand Assets] ${assetErr.message || assetErr}`);
@@ -312,22 +271,11 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
         completedTimestamp: Date.now()
       };
 
-      const globalDocRef = doc(db, 'humanTouchRequests', selectedRequest.id);
       try {
-        await updateDoc(globalDocRef, updatePayload);
+        await updateHumanTouchRequestStatus(selectedRequest.id, updatePayload as any, selectedRequest.userId);
       } catch (globalErr: any) {
-        console.error("Failed step 3a: updating global humanTouchRequests", globalErr);
-        throw new Error(`[Step 3a: Global Requests] ${globalErr.message || globalErr}`);
-      }
-
-      const userDocRef = doc(db, 'users', selectedRequest.userId, 'humanTouchRequests', selectedRequest.id);
-      try {
-        await updateDoc(userDocRef, updatePayload);
-      } catch (userErr: any) {
-        console.warn("User notification request updates completed: (subcollection is skipped):", userErr);
-        // We do not throw or block completed state if the user subcollect updates fail, 
-        // but if we do get an error it's helpful to see it.
-        throw new Error(`[Step 3b: User Curation Request Subcollection] ${userErr.message || userErr}`);
+        console.error("Failed step 3: updating humanTouchRequests", globalErr);
+        throw new Error(`[Step 3: Human Touch Requests] ${globalErr.message || globalErr}`);
       }
 
       setUploadedBase64(null);
@@ -346,20 +294,7 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
     setIsUpdatingStatus(true);
     setActionError(null);
     try {
-      // 1. Update in the global collection
-      const globalDocRef = doc(db, 'humanTouchRequests', requestId);
-      await updateDoc(globalDocRef, {
-        status: newStatus
-      });
-
-      // 2. Update in user-specific subcollection
-      const userDocRef = doc(db, 'users', userId, 'humanTouchRequests', requestId);
-      await updateDoc(userDocRef, {
-        status: newStatus
-      }).catch(err => {
-        console.warn("User-specific subcollection doc update failed (might be deleted):", err);
-      });
-
+      await updateHumanTouchRequestStatus(requestId, { status: newStatus } as any, userId);
     } catch (err: any) {
       console.error("Failed to update status:", err);
       setActionError(`Failed to update status: ${err.message || 'Unknown error'}`);
@@ -374,13 +309,7 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
     setIsUpdatingStatus(true);
     setActionError(null);
     try {
-      // Delete in global collection
-      const globalDocRef = doc(db, 'humanTouchRequests', requestId);
-      await deleteDoc(globalDocRef);
-
-      // Delete in user-specific subcollection
-      const userDocRef = doc(db, 'users', userId, 'humanTouchRequests', requestId);
-      await deleteDoc(userDocRef).catch(() => {});
+      await deleteHumanTouchRequest(requestId, userId);
 
       if (selectedRequest?.id === requestId) {
         setSelectedRequest(null);

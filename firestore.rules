@@ -18,8 +18,12 @@ service cloud.firestore {
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == "hardeep.pathak@gmail.com" || 
-        request.auth.token.email == "avdhesh.babaria@gmail.com"
+        request.auth.token.email in [
+          "hardeep.pathak@gmail.com",
+          "avdhesh.babaria@gmail.com",
+          "business@writopedia.com"
+        ] ||
+        request.auth.token.admin == true
       );
     }
 
@@ -109,10 +113,10 @@ service cloud.firestore {
     // The Fortresses
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
-      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && incoming().balance == 50;
       allow update: if isOwner(userId) && isValidId(userId) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'updatedAt'])
-        && incoming().balance is number
+        // Client can only update timestamp; balance mutations are reserved for trusted backend transactions
+        incoming().diff(existing()).affectedKeys().hasOnly(['updatedAt'])
         && incoming().updatedAt is number
       );
       
@@ -134,7 +138,6 @@ service cloud.firestore {
         allow list, get: if isOwner(userId);
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(historyId) && isValidHistoryLog(incoming());
         allow update: if isOwner(userId) && isValidId(userId) && isValidId(historyId) && (
-          // Allow title update as long as it's within size limits
           incoming().diff(existing()).affectedKeys().hasOnly(['title']) &&
           incoming().title is string && incoming().title.size() <= 200
         );
@@ -159,12 +162,13 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(requestId) && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
+    // Admin Settings: Writable strictly by Admins
     match /adminSettings/{docId} {
       allow get, list: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidId(docId) && isValidAdminSettings(incoming());
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(docId) && isValidAdminSettings(incoming());
     }
 
+    // Sales Inquiries: Protected anti-abuse submissions
     match /salesSubmissions/{submissionId} {
       allow list: if isAdmin();
       allow get: if isSignedIn() && isValidId(submissionId) && (resource.data.email == request.auth.token.email || isAdmin());

@@ -3,9 +3,8 @@ import { Upload, Trash2, CheckCircle2, Image as ImageIcon, Download, Loader2, Sp
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { analyzeAsset, type AssetAnalysis, generateImage, type BrandGuidelines, resizeImageIfNeeded } from '../../../../services/geminiService.js';
-import { db, useAuth, uploadAssetToStorage, storage } from '../../../../lib/firebase.js';
-import { doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
+import { db, useAuth, uploadAssetToStorage } from '../../../../lib/firebase.js';
+import { saveUserAsset, deleteUserAsset } from '../../../infrastructure/firebase/repositories/assetRepository.js';
 import { cn, downloadFile } from '../../../../lib/utils.js';
 
 export interface Asset {
@@ -60,18 +59,10 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
         if (user) {
           setIsSyncing?.(true);
           try {
-            const storageUrl = await uploadAssetToStorage(user.uid, tempId, base64Data, 'image');
-            
-            if (storageUrl !== base64Data) {
-              setAssets(prev => prev.map(a => a.id === tempId ? { ...a, data: storageUrl } : a));
+            const hostedUrl = await saveUserAsset(user.uid, tempId, file.name, base64Data, 'image', file.name);
+            if (hostedUrl !== base64Data) {
+              setAssets(prev => prev.map(a => a.id === tempId ? { ...a, data: hostedUrl } : a));
             }
-            
-            await setDoc(doc(db, 'users', user.uid, 'assets', tempId), {
-              type: 'image',
-              content: storageUrl,
-              prompt: file.name,
-              timestamp: Date.now()
-            });
           } catch (e) {
             console.error("Upload sync failed:", e);
           } finally {
@@ -82,18 +73,6 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
         try {
           const analysis = await analyzeAsset(base64Data);
           setAssets(prev => prev.map(a => a.id === tempId ? { ...a, analysis } : a));
-          
-          if (user) {
-            setIsSyncing?.(true);
-            try {
-              // Note: the schema doesn't have an "analysis" field, but we can store it inside "content" or stringify it in "prompt"? Right now let's just ignore analysis upload to keep schema simple
-              // await updateDoc(doc(db, 'users', user.uid, 'assets', tempId), { analysis });
-            } catch (e) {
-              console.error("Analysis sync failed:", e);
-            } finally {
-              setIsSyncing?.(false);
-            }
-          }
         } catch (error) {
           console.error("Failed to analyze asset:", error);
         }
@@ -124,18 +103,10 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
       if (user) {
         setIsSyncing?.(true);
         try {
-          const storageUrl = await uploadAssetToStorage(user.uid, id, res.url, 'image');
-          
-          if (storageUrl !== res.url) {
-            setAssets(prev => prev.map(a => a.id === id ? { ...a, data: storageUrl } : a));
+          const hostedUrl = await saveUserAsset(user.uid, id, newAsset.name, res.url, 'image', newAsset.name);
+          if (hostedUrl !== res.url) {
+            setAssets(prev => prev.map(a => a.id === id ? { ...a, data: hostedUrl } : a));
           }
-          
-          await setDoc(doc(db, 'users', user.uid, 'assets', id), {
-            type: 'image',
-            content: storageUrl,
-            prompt: newAsset.name,
-            timestamp: Date.now()
-          });
         } catch (e) {
           console.error("Generated asset sync failed:", e);
         } finally {
@@ -157,35 +128,15 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
     if (!asset) return;
     const nextSelected = !asset.selected;
     setAssets(prev => prev.map(a => a.id === id ? { ...a, selected: nextSelected } : a));
-
-    // Selection not persisted in schema to keep it simple, but we could update it
-    // if (user) {
-    //   setIsSyncing?.(true);
-    //   try {
-    //     await updateDoc(doc(db, 'users', user.uid, 'assets', id), { selected: nextSelected });
-    //   } catch (e) {} finally {}
-    // }
   };
 
   const deleteAsset = async (id: string) => {
-    const assetToDelete = assets.find(a => a.id === id);
     setAssets(prev => prev.filter(a => a.id !== id));
 
     if (user) {
       setIsSyncing?.(true);
       try {
-        await deleteDoc(doc(db, 'users', user.uid, 'assets', id));
-        
-        // Try to delete from storage as well
-        if (assetToDelete) {
-          try {
-            const ext = assetToDelete.type === 'image' ? 'png' : assetToDelete.type === 'video' ? 'mp4' : assetToDelete.type === 'audio' ? 'mp3' : 'md';
-            const storageRef = ref(storage, `users/${user.uid}/assets/${id}.${ext}`);
-            await deleteObject(storageRef);
-          } catch(storageErr) {
-            console.log("Storage deletion skipped or failed:", storageErr);
-          }
-        }
+        await deleteUserAsset(user.uid, id);
       } catch (e) {
         console.error("Deletion sync failed:", e);
       } finally {

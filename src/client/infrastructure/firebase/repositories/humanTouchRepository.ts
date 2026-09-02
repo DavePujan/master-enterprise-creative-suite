@@ -3,7 +3,7 @@
  * Collections: `users/{userId}/humanTouchRequests/{requestId}`, `humanTouchRequests/{requestId}`
  */
 
-import { doc, collection, onSnapshot, setDoc, query, orderBy, db, handleFirestoreError } from '../firestore.js';
+import { doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, db, handleFirestoreError } from '../firestore.js';
 import type { HumanTouchRequest } from '../../../../shared/types/user.js';
 
 export async function submitHumanTouchRequest(
@@ -45,4 +45,26 @@ export function subscribeHumanTouchQueue(
       if (onError) onError(err);
     }
   );
+}
+
+export async function updateHumanTouchRequestStatus(
+  requestId: string,
+  updateData: Partial<HumanTouchRequest>,
+  userId?: string
+): Promise<void> {
+  const globalRef = doc(db, 'humanTouchRequests', requestId);
+  await updateDoc(globalRef, updateData);
+  if (userId) {
+    const userRef = doc(db, 'users', userId, 'humanTouchRequests', requestId);
+    await updateDoc(userRef, updateData).catch(() => {});
+  }
+}
+
+export async function deleteHumanTouchRequest(requestId: string, userId?: string): Promise<void> {
+  const globalRef = doc(db, 'humanTouchRequests', requestId);
+  await deleteDoc(globalRef);
+  if (userId) {
+    const userRef = doc(db, 'users', userId, 'humanTouchRequests', requestId);
+    await deleteDoc(userRef).catch(() => {});
+  }
 }

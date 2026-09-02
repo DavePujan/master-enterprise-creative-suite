@@ -128,6 +128,14 @@ export default function PricingPage({
     const amountInSubunits = Math.round(details.amount * 100);
     const creditsToApply = details.credits;
 
+    const isYearly = activeBillingPeriod === 'annually';
+    const planId =
+      planName === 'Pro'
+        ? isYearly ? 'plan-pro-yearly' : 'plan-pro-monthly'
+        : planName === 'Plus'
+        ? isYearly ? 'plan-plus-yearly' : 'plan-plus-monthly'
+        : isYearly ? 'plan-pilot-yearly' : 'plan-pilot-monthly';
+
     let orderData;
     try {
       const orderResponse = await fetch('/api/payment/razorpay-order', {
@@ -136,7 +144,7 @@ export default function PricingPage({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          amount: amountInSubunits,
+          planId,
           currency: activeCurrency
         })
       });
@@ -189,30 +197,35 @@ export default function PricingPage({
             body: JSON.stringify({
               razorpay_order_id: response.razorpay_order_id || orderData.id,
               razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
+              razorpay_signature: response.razorpay_signature,
+              planId
             })
           });
 
           if (!verifyResponse.ok) {
-            throw new Error("Cryptographic signature mismatch");
+            throw new Error(await verifyResponse.text());
           }
+
+          const verifyData = await verifyResponse.json();
+          const granted = verifyData.creditsGranted || creditsToApply;
 
           setPaymentStatus({
             status: 'success',
-            paymentId: response.razorpay_payment_id || 'pay_test_' + Math.random().toString(36).substring(7),
+            paymentId: response.razorpay_payment_id,
             planName: planName,
-            creditsAdded: creditsToApply,
+            creditsAdded: granted,
             amountPaid: details.amount
           });
 
           if (setCredits) {
-            setCredits(prev => prev + creditsToApply);
+            setCredits(prev => prev + granted);
           }
         } catch (verifyErr: any) {
           console.error("Cryptographic signature authorization failed:", verifyErr);
           setPaymentStatus({
             status: 'failed',
-            message: 'Razorpay transaction verification failed. The payment signature could not be verified securely.'
+            message: 'Razorpay transaction verification failed. The payment signature could not be verified by the backend.',
+            planName
           });
         }
       },

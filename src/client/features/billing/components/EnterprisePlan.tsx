@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, handleFirestoreError } from '../../../../lib/firebase.js';
-import { collection, addDoc } from 'firebase/firestore';
+import { submitSalesInquiry } from '../../../infrastructure/firebase/repositories/salesRepository.js';
 
 interface EnterprisePlanProps {
   credits?: number;
@@ -463,7 +463,8 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
       };
 
       try {
-        await addDoc(collection(db, 'salesSubmissions'), submissionDoc);
+        const submissionId = Math.random().toString(36).substring(7);
+        await submitSalesInquiry(submissionId, submissionDoc);
       } catch (error) {
         handleFirestoreError(error, 'create', 'salesSubmissions');
       }
