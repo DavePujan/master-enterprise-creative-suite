@@ -41,6 +41,7 @@ export interface GemExecutionState {
   isDownloadingPDF: boolean;
   isDownloadingZip: boolean;
   softWarning: any;
+  ttsError: string | null;
   isRefineModalOpen: boolean;
   refinePrompt: string;
   isRefining: boolean;
@@ -119,6 +120,7 @@ export const getDefaultGemState = (gem: Gem, guidelines?: BrandGuidelines): GemE
     isDownloadingPDF: false,
     isDownloadingZip: false,
     softWarning: null,
+    ttsError: null,
     isRefineModalOpen: false,
     refinePrompt: '',
     isRefining: false,
@@ -672,25 +674,68 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
   };
 
   // Audio / TTS Controls
-  const handleTTS = async (text: string) => {
+  const handleTTS = async (text: string, forceBrowserVoice: boolean = false) => {
     if (activeState.isPlaying) {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       audioRef.current?.pause();
       updateActiveState({ isPlaying: false });
       return;
     }
 
-    if (audioRef.current && !audioRef.current.ended && audioRef.current.readyState >= 2) {
+    if (audioRef.current && !audioRef.current.ended && audioRef.current.readyState >= 2 && !forceBrowserVoice) {
       audioRef.current.play();
-      updateActiveState({ isPlaying: true });
+      updateActiveState({ isPlaying: true, ttsError: null });
       return;
     }
 
     if (activeState.isTTSLoading) return;
-    updateActiveState({ isTTSLoading: true });
+    updateActiveState({ isTTSLoading: true, ttsError: null });
+
+    const playWithBrowserVoice = (cleanText: string) => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Microsoft'))) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+        if (preferredVoice) utterance.voice = preferredVoice;
+
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+
+        utterance.onstart = () => {
+          updateActiveState({ isPlaying: true, isTTSLoading: false, ttsError: null });
+        };
+        utterance.onend = () => {
+          updateActiveState({ isPlaying: false });
+        };
+        utterance.onerror = (e) => {
+          console.warn('Browser SpeechSynthesis error:', e);
+          updateActiveState({ isPlaying: false, isTTSLoading: false });
+        };
+
+        window.speechSynthesis.speak(utterance);
+        return true;
+      }
+      return false;
+    };
+
+    if (forceBrowserVoice) {
+      const ok = playWithBrowserVoice(text);
+      if (!ok) {
+        updateActiveState({
+          isTTSLoading: false,
+          ttsError: "Browser speech synthesis is not supported on this device."
+        });
+      }
+      return;
+    }
 
     try {
       const url = await generateTTS(text, activeState.selectedVoice, activeState.voiceEmotion);
-      updateActiveState({ audioUrl: url });
+      updateActiveState({ audioUrl: url, ttsError: null });
 
       if (audioRef.current) {
         audioRef.current.src = url;
@@ -713,8 +758,25 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
       audioRef.current.volume = audioVolume;
       await audioRef.current.play();
       updateActiveState({ isPlaying: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("TTS failed:", error);
+      const rawMsg = error?.message || error?.error || String(error);
+
+      let friendlyError = "Speech generation temporarily unavailable. You can retry or play using your device voice below.";
+      if (rawMsg.includes("429") || rawMsg.includes("quota") || rawMsg.includes("RESOURCE_EXHAUSTED")) {
+        friendlyError = "Google Voice AI quota or rate limit reached. You can play using your device voice below or retry shortly.";
+      } else if (rawMsg.includes("503") || rawMsg.includes("UNAVAILABLE") || rawMsg.includes("AI_SERVICE_BUSY")) {
+        friendlyError = "Voice AI service is temporarily experiencing high traffic. Please retry in a few moments.";
+      } else if (rawMsg.includes("safety") || rawMsg.includes("blocked")) {
+        friendlyError = "Audio synthesis was flagged by safety filters for this text.";
+      } else if (rawMsg.includes("Network") || rawMsg.includes("Failed to fetch")) {
+        friendlyError = "Network connection issue while requesting speech audio.";
+      }
+
+      updateActiveState({
+        ttsError: friendlyError,
+        isPlaying: false
+      });
     } finally {
       updateActiveState({ isTTSLoading: false });
     }
@@ -898,6 +960,8 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     handleRefineWithAI,
     getBrandStyles,
     handleGenerate,
+    ttsError: activeState.ttsError,
+    setTtsError: (err: string | null) => updateActiveState({ ttsError: err }),
     handleTTS,
     handleDownloadAudio,
     handleDownloadPDF,

@@ -17,6 +17,9 @@ import {
   Video as VideoIcon, 
   Loader2, 
   AlertCircle, 
+  AlertTriangle,
+  RotateCw,
+  X,
   Fingerprint 
 } from 'lucide-react';
 import { GroundingSources } from '@web/features/slideshow/components/GroundingSources.js';
@@ -87,8 +90,10 @@ export interface CreativeOutputCanvasProps {
   audioVolume: number;
   setAudioVolume: (vol: number) => void;
   audioUrl: string | null;
-  handleTTS: (text: string) => Promise<void>;
+  handleTTS: (text: string, forceBrowserVoice?: boolean) => Promise<void>;
   handleDownloadAudio: () => void;
+  ttsError?: string | null;
+  setTtsError?: (err: string | null) => void;
   // Slideshow
   currentSlide: number;
   setCurrentSlide: React.Dispatch<React.SetStateAction<number>>;
@@ -163,6 +168,8 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
   audioUrl,
   handleTTS,
   handleDownloadAudio,
+  ttsError,
+  setTtsError,
   currentSlide,
   setCurrentSlide,
   slideshowTheme,
@@ -877,6 +884,13 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                         </div>
                       )}
 
+                      {ttsError && !isTTSLoading && (
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-semibold">
+                          <AlertTriangle size={13} className="shrink-0" />
+                          <span>TTS Issue Detected</span>
+                        </div>
+                      )}
+
                       {isPlaying && (
                         <div className="hidden sm:flex items-center gap-1 mr-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded-sm animate-pulse">
                           <div className="w-1 h-3 bg-slate-400 dark:bg-slate-500 rounded-full animate-[bounce_1s_infinite_0ms]" />
@@ -896,9 +910,11 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                               ? "bg-sky-600 text-white shadow-sm cursor-wait animate-pulse"
                               : isPlaying 
                               ? "bg-slate-800 text-white shadow-sm" 
+                              : ttsError
+                              ? "bg-rose-600 hover:bg-rose-500 text-white shadow-sm"
                               : "bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                           )}
-                          title={isTTSLoading ? "Generating Speech Audio..." : isPlaying ? "Pause Narrative" : "Listen to Narrative"}
+                          title={isTTSLoading ? "Generating Speech Audio..." : ttsError ? `${ttsError} - Click to retry` : isPlaying ? "Pause Narrative" : "Listen to Narrative"}
                         >
                           {isTTSLoading ? (
                             <>
@@ -913,7 +929,7 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                           ) : (
                             <>
                               <Play size={16} />
-                              <span>{audioDuration > 0 ? "Resume" : "Listen"}</span>
+                              <span>{audioDuration > 0 ? "Resume" : ttsError ? "Retry Listen" : "Listen"}</span>
                             </>
                           )}
                         </button>
@@ -931,6 +947,49 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {ttsError && (
+                    <div className="mb-6 p-4 rounded-sm bg-rose-50/90 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-left flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle size={18} className="text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                        <div>
+                          <h5 className="text-xs font-bold text-rose-900 dark:text-rose-200">
+                            Voice Synthesis Notice
+                          </h5>
+                          <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-0.5 leading-relaxed">
+                            {ttsError}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                        <button
+                          onClick={() => handleTTS(cleanTextContent(result.data), true)}
+                          className="px-3 py-1.5 rounded-sm bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                          title="Play using your browser's built-in voice"
+                        >
+                          <Volume2 size={13} />
+                          <span>Play Device Voice</span>
+                        </button>
+                        <button
+                          onClick={() => handleTTS(cleanTextContent(result.data), false)}
+                          className="px-3 py-1.5 rounded-sm bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-[11px] flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                          title="Retry speech generation via Google AI"
+                        >
+                          <RotateCw size={13} />
+                          <span>Retry AI Voice</span>
+                        </button>
+                        {setTtsError && (
+                          <button
+                            onClick={() => setTtsError(null)}
+                            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                            title="Dismiss"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="markdown-body" style={getBrandStyles()}>
                     <ReactMarkdown>{cleanTextContent(result.data)}</ReactMarkdown>

@@ -570,6 +570,8 @@ export function App() {
         audioUrl={creativeExecution.audioUrl}
         handleTTS={creativeExecution.handleTTS}
         handleDownloadAudio={creativeExecution.handleDownloadAudio}
+        ttsError={creativeExecution.ttsError}
+        setTtsError={creativeExecution.setTtsError}
         // Slideshow
         currentSlide={creativeExecution.currentSlide}
         setCurrentSlide={creativeExecution.setCurrentSlide}

@@ -86,8 +86,10 @@ export interface CreativeWorkspaceProps {
   audioVolume: number;
   setAudioVolume: (vol: number) => void;
   audioUrl: string | null;
-  handleTTS: (text: string) => Promise<void>;
+  handleTTS: (text: string, forceBrowserVoice?: boolean) => Promise<void>;
   handleDownloadAudio: () => void;
+  ttsError?: string | null;
+  setTtsError?: (err: string | null) => void;
   // Slideshow
   currentSlide: number;
   setCurrentSlide: React.Dispatch<React.SetStateAction<number>>;
