@@ -58,6 +58,7 @@ export interface AppShellProps {
   addToHistory: (entry: any) => Promise<void>;
   navigateTo: (path: string) => void;
   handleLogout: () => Promise<void>;
+  generatingGemIds?: string[];
   // Creative State & Props
   aspectRatio: string;
   setAspectRatio: (ratio: string) => void;
@@ -266,6 +267,7 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
         onDeleteHistoryItem={onDeleteHistoryItem}
         onClearHistory={onClearHistory}
         isSyncing={isSyncing}
+        generatingGemIds={props.generatingGemIds}
         onOpenSettings={() => {
           setEditingGuidelines(JSON.parse(JSON.stringify(brandGuidelines)));
           setShowGuidelines(true);

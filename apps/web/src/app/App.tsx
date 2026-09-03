@@ -74,23 +74,8 @@ export function App() {
   const [isInitialDataLoading, setIsInitialDataLoading] = useState(false);
   const isInitialDataLoadedRef = useRef(false);
 
-  // Creative Parameters
-  const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash-image');
-  const [videoShotType, setVideoShotType] = useState<'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling'>('Single Shot');
-  const [imageStyle, setImageStyle] = useState('Photorealistic, 8k resolution');
+  // Creative Preference Toggle
   const [bakeLogoOnGeneration, setBakeLogoOnGeneration] = useState(false);
-  const [voiceEmotion, setVoiceEmotion] = useState<'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming'>('Neutral');
-  const [selectedLanguage, setSelectedLanguage] = useState('English');
-  const [selectedVoice, setSelectedVoice] = useState('Kore');
-  const [selectedPresentationTheme, setSelectedPresentationTheme] = useState<any>(null);
-
-  // Context Reference Attachments
-  const [productContext, setProductContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [faceContext, setFaceContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [firstFrameContext, setFirstFrameContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [lastFrameContext, setLastFrameContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [ingredientsContexts, setIngredientsContexts] = useState<{ id: string; name: string; data: string }[]>([]);
 
   // Asset & History Persistence
   const [assets, setAssets] = useState<any[]>([]);
@@ -269,21 +254,14 @@ export function App() {
   // History Actions
   const handleSelectGem = (gem: Gem) => {
     setSelectedGem(gem);
-    if (gem.type === 'image') {
-      setSelectedModel('gemini-2.5-flash-image');
-    } else if (gem.type === 'video') {
-      setSelectedModel('veo-3.1-generate-preview');
-    } else {
-      setSelectedModel('gemini-2.5-flash');
-    }
   };
 
   const handleSelectHistoryItem = (item: HistoryItem) => {
-    creativeExecution.setResult(item.result);
-    creativeExecution.setPrompt(item.prompt);
     const gem = GENERIC_GEMS.find(g => g.id === item.gemId);
     if (gem) {
       setSelectedGem(gem);
+      creativeExecution.setGemResult(item.gemId, item.result);
+      creativeExecution.setGemPrompt(item.gemId, item.prompt);
     }
     setView('tools');
   };
@@ -517,42 +495,44 @@ export function App() {
         navigateTo={navigateTo}
         handleLogout={handleLogout}
         // Creative State & Props
-        aspectRatio={aspectRatio}
-        setAspectRatio={setAspectRatio}
-        selectedModel={selectedModel}
-        setSelectedModel={setSelectedModel}
-        videoShotType={videoShotType}
-        setVideoShotType={setVideoShotType}
-        imageStyle={imageStyle}
-        setImageStyle={setImageStyle}
+        // Creative State & Props (isolated per gem)
+        aspectRatio={creativeExecution.aspectRatio}
+        setAspectRatio={creativeExecution.setAspectRatio}
+        selectedModel={creativeExecution.selectedModel}
+        setSelectedModel={creativeExecution.setSelectedModel}
+        videoShotType={creativeExecution.videoShotType}
+        setVideoShotType={creativeExecution.setVideoShotType}
+        imageStyle={creativeExecution.imageStyle}
+        setImageStyle={creativeExecution.setImageStyle}
         bakeLogoOnGeneration={bakeLogoOnGeneration}
         setBakeLogoOnGeneration={setBakeLogoOnGeneration}
-        voiceEmotion={voiceEmotion}
-        setVoiceEmotion={setVoiceEmotion}
+        voiceEmotion={creativeExecution.voiceEmotion}
+        setVoiceEmotion={creativeExecution.setVoiceEmotion}
         result={creativeExecution.result}
         setResult={creativeExecution.setResult}
         isGenerating={creativeExecution.isGenerating}
         videoStatus={creativeExecution.videoStatus}
         prompt={creativeExecution.prompt}
         setPrompt={creativeExecution.setPrompt}
-        selectedLanguage={selectedLanguage}
-        setSelectedLanguage={setSelectedLanguage}
-        selectedVoice={selectedVoice}
-        setSelectedVoice={setSelectedVoice}
+        selectedLanguage={creativeExecution.selectedLanguage}
+        setSelectedLanguage={creativeExecution.setSelectedLanguage}
+        selectedVoice={creativeExecution.selectedVoice}
+        setSelectedVoice={creativeExecution.setSelectedVoice}
         isGeneratingCreativePrompt={creativeExecution.isGeneratingCreativePrompt}
         setIsGeneratingCreativePrompt={creativeExecution.setIsGeneratingCreativePrompt}
-        productContext={productContext}
-        setProductContext={setProductContext}
-        faceContext={faceContext}
-        setFaceContext={setFaceContext}
-        firstFrameContext={firstFrameContext}
-        setFirstFrameContext={setFirstFrameContext}
-        lastFrameContext={lastFrameContext}
-        setLastFrameContext={setLastFrameContext}
-        ingredientsContexts={ingredientsContexts}
-        setIngredientsContexts={setIngredientsContexts}
-        selectedPresentationTheme={selectedPresentationTheme}
-        setSelectedPresentationTheme={setSelectedPresentationTheme}
+        productContext={creativeExecution.productContext}
+        setProductContext={creativeExecution.setProductContext}
+        faceContext={creativeExecution.faceContext}
+        setFaceContext={creativeExecution.setFaceContext}
+        firstFrameContext={creativeExecution.firstFrameContext}
+        setFirstFrameContext={creativeExecution.setFirstFrameContext}
+        lastFrameContext={creativeExecution.lastFrameContext}
+        setLastFrameContext={creativeExecution.setLastFrameContext}
+        ingredientsContexts={creativeExecution.ingredientsContexts}
+        setIngredientsContexts={creativeExecution.setIngredientsContexts}
+        selectedPresentationTheme={creativeExecution.selectedPresentationTheme}
+        setSelectedPresentationTheme={creativeExecution.setSelectedPresentationTheme}
+        generatingGemIds={creativeExecution.generatingGemIds}
         // Canvas State & Handlers
         containerRef={canvasEditor.containerRef}
         logoPosition={canvasEditor.logoPosition}
