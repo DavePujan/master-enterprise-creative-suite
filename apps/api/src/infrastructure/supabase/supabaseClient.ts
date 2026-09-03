@@ -73,7 +73,9 @@ export async function reserveCreditsForAi(params: {
 }): Promise<{
   success: boolean;
   holdId?: string;
+  hold_id?: string;
   amountReserved?: number;
+  available?: number;
   isReplay?: boolean;
   error?: string;
 }> {

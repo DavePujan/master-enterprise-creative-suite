@@ -1,6 +1,7 @@
 /**
  * Internal Server-Side AI Gateway Router.
- * Executes Google GenAI SDK operations securely server-side through a governed control plane.
+ * Executes Google GenAI SDK operations securely server-side through a governed control plane
+ * with two-phase credit reservation, capture, and AI job observability.
  * Routes: POST /api/ai/generate-content, POST /api/ai/generate-videos, POST /api/ai/poll-videos, POST /api/ai/tts
  */
 
@@ -8,26 +9,106 @@ import { Router } from "express";
 import { getServerAI } from "../../infrastructure/gemini/serverGeminiClient.js";
 import { validateGenerateContentInput, validateTTSInput, validateVideoInput } from "./aiSchemas.js";
 import { orchestrateGenerateContent, orchestrateTTS, orchestrateVideoGeneration } from "./aiOrchestrator.js";
+import { creditService } from "../../services/creditService.js";
+import { aiJobRepository } from "../../repositories/aiJobRepository.js";
 
 export const aiRouter = Router();
 
-// Secure Governed Content Generation Gateway
+// Secure Governed Content Generation Gateway with Two-Phase Credit Lifecycle
 aiRouter.post("/generate-content", async (req, res) => {
   const { data, error } = validateGenerateContentInput(req.body);
   if (error) {
     return res.status(error.status).json({ error: error.message, code: error.code });
   }
 
+  const workspaceId = req.user?.workspaceId;
+  const userId = req.user?.uid || "dev_local_user";
+  const userIdentifier = req.user?.email || req.user?.uid || "authenticated";
+  const clientKey = (req.headers["x-idempotency-key"] as string) || `ai_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+  let holdId: string | null = null;
+  let jobId: string | null = null;
+  const creditsRequired = 5;
+
   try {
-    const userIdentifier = req.user?.email || req.user?.uid || "authenticated";
+    // 1. If tenant workspace is present, execute two-phase credit hold
+    if (workspaceId) {
+      const reservation = await creditService.reserveCredits({
+        workspaceId,
+        userId,
+        amount: creditsRequired,
+        referenceId: clientKey,
+        description: `AI Generation (${data!.model})`,
+        idempotencyKey: `hold_${clientKey}`,
+      });
+
+      if (!reservation.success) {
+        return res.status(402).json({
+          error: "Insufficient credits available in workspace.",
+          code: "INSUFFICIENT_CREDITS",
+          available: reservation.available,
+          required: creditsRequired,
+        });
+      }
+
+      holdId = reservation.holdId || reservation.hold_id || null;
+
+      // 2. Track AI Generation Job
+      const job = await aiJobRepository.createJob({
+        workspaceId,
+        requestedBy: userId,
+        operation: "generate-content",
+        provider: "google-gemini",
+        modelRequested: data!.model,
+        creditsReserved: creditsRequired,
+        idempotencyKey: `job_${clientKey}`,
+      });
+      jobId = job?.id || null;
+    }
+
+    // 3. Execute AI generation
     const result = await orchestrateGenerateContent(data!, userIdentifier);
+
+    // 4. On success: capture hold and settle to ledger
+    if (holdId && workspaceId) {
+      await creditService.captureCredits(holdId, `capture_${clientKey}`);
+      if (jobId) {
+        await aiJobRepository.completeJob({
+          jobId,
+          modelUsed: result.modelUsed,
+          creditsCharged: creditsRequired,
+          outputs: [],
+        });
+        await aiJobRepository.recordUsage({
+          workspaceId,
+          userId,
+          jobId,
+          provider: "google-gemini",
+          model: result.modelUsed,
+          operation: "generate-content",
+          inputUnits: 100,
+          outputUnits: 200,
+          providerCostMicrounits: 1250, // Micro-dollars ($0.001250)
+          creditsCharged: creditsRequired,
+        });
+      }
+    }
+
     return res.json(result);
   } catch (err: any) {
+    // On failure: release hold back to available balance
+    if (holdId) {
+      await creditService.releaseCredits(holdId, err?.message || "AI Generation Failed");
+    }
+    if (jobId) {
+      await aiJobRepository.failJob(jobId, err?.code || "AI_FAILED", err?.message || "Generation error");
+    }
+
     const status = err?.status || 500;
     const statusCode = typeof status === "number" && status >= 400 && status < 600 ? status : 500;
     return res.status(statusCode).json({
       error: err?.message || "Failed to generate AI content",
-      code: err?.code || "AI_GENERATION_FAILED"
+      code: err?.code || "AI_GENERATION_FAILED",
     });
   }
 });
@@ -81,7 +162,7 @@ aiRouter.post("/tts", async (req, res) => {
     const statusCode = typeof status === "number" && status >= 400 && status < 600 ? status : 500;
     return res.status(statusCode).json({
       error: err?.message || "Failed to generate TTS audio",
-      code: err?.code || "TTS_GENERATION_FAILED"
+      code: err?.code || "TTS_GENERATION_FAILED",
     });
   }
 });
