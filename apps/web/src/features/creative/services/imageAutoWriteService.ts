@@ -40,9 +40,13 @@ CREATIVE PRINCIPLES & GOVERNANCE:
      * 4:3: Editorial magazine proportion, balanced still-life.
    - STYLE & REALISM: Interpret style descriptions (e.g. "Photorealistic, 8k resolution") into concrete photographic direction: physically plausible lighting, natural material textures, depth of field. Do not blindly append raw "8k resolution" token spam.
 
-4. ART DIRECTION LANGUAGE:
+4. ART DIRECTION LANGUAGE & CONCISENESS BUDGET:
+   - CONCISE & FOCUSED PROMPT: The generated prompt MUST be concise, punchy, and production-ready: strictly between 35 and 65 words (approx. 220 to 420 characters total).
+   - DO NOT write long-winded essays, rambling backstories, or verbose narratives. Image diffusion models generate the highest quality results from crisp, focused descriptions.
+   - CORE STRUCTURE: [Hero Subject & Focal Action] + [Environment & Surfaces] + [Framing & Aspect Ratio] + [Lighting & Color Harmony] + [Negative Space for Logo if enabled].
+   - Every sentence MUST be grammatically complete and end with a proper period. Never leave dangling thoughts or half-finished sentences.
    - Avoid generic, empty AI buzzwords ("stunning", "masterpiece", "epic", "ultra beautiful").
-   - Use concrete commercial photography language: specific lighting (diffused window light, soft rim light), surfaces (brushed linen, polished travertine), camera perspectives, and chromatic balance.
+   - Use concrete commercial photography language: specific lighting, surfaces, camera perspectives, and chromatic balance.
    - NO UNWANTED TYPOGRAPHY: Never ask for text, slogans, or words in the image unless explicitly requested.
 
 5. SECURITY & PROMPT INJECTION DEFENSE:
@@ -115,35 +119,29 @@ export function validateAndSanitizeAutoWriteResponse(
 
   const bgName = fallbackContext.brandGuidelines.name || "Brand";
 
-  // Sanitize title (max 70 chars)
-  let title = typeof idea.title === 'string' ? idea.title.trim() : `${bgName} Visual Narrative`;
-  if (!title || title.length > 70) {
-    title = title.substring(0, 67).trim() + "...";
-  }
+  // Sanitize title (clean word-boundary, max 60 chars)
+  let title = typeof idea.title === 'string' ? idea.title.trim() : `${bgName} Visual Concept`;
+  title = truncateAtWord(title, 60, false);
 
-  // Sanitize concept (max 350 chars)
-  let concept = typeof idea.concept === 'string' ? idea.concept.trim() : `A refined visual composition for ${bgName} reflecting its core aesthetic.`;
-  if (concept.length > 350) {
-    concept = concept.substring(0, 347).trim() + "...";
-  }
+  // Sanitize concept (max 280 chars, clean word boundary)
+  let concept = typeof idea.concept === 'string' ? idea.concept.trim() : `A focused visual composition for ${bgName} reflecting its core aesthetic.`;
+  concept = truncateAtWord(concept, 280, true);
 
-  // Sanitize prompt (max 700 chars)
+  // Sanitize prompt (max 1200 chars ceiling, complete sentence ending with a period, NEVER '...')
   let prompt = typeof idea.prompt === 'string' ? idea.prompt.trim() : "";
   if (!prompt) {
     prompt = `Professional commercial photography for ${bgName}. Balanced composition, natural lighting, premium textures, optimized for ${fallbackContext.imageConfig.aspectRatio} framing. No text or watermarks.`;
   }
-  if (prompt.length > 750) {
-    prompt = prompt.substring(0, 747).trim() + "...";
-  }
+  prompt = cleanPromptSentence(prompt, 1200);
 
-  // Sanitize visual direction
+  // Sanitize visual direction (clean word boundary, no cut-off words)
   const vd = idea.visualDirection || {};
   const visualDirection = {
-    subject: typeof vd.subject === 'string' && vd.subject ? vd.subject.trim().substring(0, 150) : `${bgName} commercial focal subject`,
-    composition: typeof vd.composition === 'string' && vd.composition ? vd.composition.trim().substring(0, 150) : `Optimized ${fallbackContext.imageConfig.aspectRatio} framing`,
-    lighting: typeof vd.lighting === 'string' && vd.lighting ? vd.lighting.trim().substring(0, 150) : "Diffused commercial studio lighting",
-    color: typeof vd.color === 'string' && vd.color ? vd.color.trim().substring(0, 150) : (fallbackContext.brandGuidelines.colors?.join(", ") || "Balanced chromatic harmony"),
-    mood: typeof vd.mood === 'string' && vd.mood ? vd.mood.trim().substring(0, 150) : (fallbackContext.brandGuidelines.tone || "Premium and authentic")
+    subject: typeof vd.subject === 'string' && vd.subject ? truncateAtWord(vd.subject, 180, false) : `${bgName} commercial focal subject`,
+    composition: typeof vd.composition === 'string' && vd.composition ? truncateAtWord(vd.composition, 200, false) : `Optimized ${fallbackContext.imageConfig.aspectRatio} framing`,
+    lighting: typeof vd.lighting === 'string' && vd.lighting ? truncateAtWord(vd.lighting, 200, false) : "Diffused commercial studio lighting",
+    color: typeof vd.color === 'string' && vd.color ? truncateAtWord(vd.color, 180, false) : (fallbackContext.brandGuidelines.colors?.join(", ") || "Balanced chromatic harmony"),
+    mood: typeof vd.mood === 'string' && vd.mood ? truncateAtWord(vd.mood, 180, false) : (fallbackContext.brandGuidelines.tone || "Premium and authentic")
   };
 
   return {
@@ -155,6 +153,43 @@ export function validateAndSanitizeAutoWriteResponse(
       visualDirection
     }
   };
+}
+
+/**
+ * Safely truncates string at word boundary without cutting words in half.
+ */
+function truncateAtWord(str: string, maxLen: number, appendDots = true): string {
+  const trimmed = str.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  const target = appendDots ? maxLen - 3 : maxLen;
+  const slice = trimmed.substring(0, target);
+  const lastSpace = slice.lastIndexOf(' ');
+  const clean = lastSpace > target * 0.4 ? slice.substring(0, lastSpace).trim() : slice.trim();
+  return appendDots ? clean + '...' : clean;
+}
+
+/**
+ * Ensures the prompt is complete, grammatically sound, and ends with a period.
+ * Does NOT append '...' to prompts.
+ */
+function cleanPromptSentence(str: string, maxLen = 1200): string {
+  let trimmed = str.trim();
+  // Remove any trailing ellipsis from external generation
+  trimmed = trimmed.replace(/\.{2,}$/, '').trim();
+  if (trimmed.length <= maxLen) {
+    if (!/[.!?]$/.test(trimmed)) trimmed += '.';
+    return trimmed;
+  }
+  // Try to find the last complete sentence period before maxLen
+  const lastPeriod = trimmed.lastIndexOf('.', maxLen - 1);
+  if (lastPeriod > maxLen * 0.5) {
+    return trimmed.substring(0, lastPeriod + 1).trim();
+  }
+  // Otherwise truncate at word boundary and finish cleanly with a period
+  const cut = trimmed.substring(0, maxLen);
+  const lastSpace = cut.lastIndexOf(' ');
+  const clean = lastSpace > maxLen * 0.4 ? cut.substring(0, lastSpace).trim() : cut.trim();
+  return clean + '.';
 }
 
 /**

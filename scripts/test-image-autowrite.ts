@@ -156,12 +156,13 @@ console.log("🚀 Starting Auto-Write Creative Engine Test Suite...\n");
   };
 
   const sanitized = validateAndSanitizeAutoWriteResponse(rawGeminiOutput, ctx);
-  assert(sanitized.idea.title.length <= 70, "Title must be truncated to <= 70 chars");
-  assert(sanitized.idea.title.endsWith("..."), "Truncated title ends with ellipsis");
+  assert(sanitized.idea.title.length <= 60, "Title must be truncated to <= 60 chars");
   assert.equal(sanitized.idea.concept, rawGeminiOutput.idea.concept, "Concept preserved");
   assert(sanitized.idea.prompt.includes("Aura Skincare"), "Prompt contains brand name");
+  assert(!sanitized.idea.prompt.endsWith("..."), "Prompt must never end with ellipsis");
+  assert(sanitized.idea.prompt.endsWith("."), "Prompt must end with a complete period");
   assert.equal(sanitized.idea.visualDirection.composition, "Vertical 9:16 mobile-safe layout with clean upper third");
-  console.log("  ✓ Output validation successfully bounds and sanitizes creative response");
+  console.log("  ✓ Output validation successfully bounds and sanitizes creative response with complete period termination");
 }
 
 // 6. Output Validation Fallback Test (Malformed / Truncated AI response)
