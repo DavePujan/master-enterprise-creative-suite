@@ -1,5 +1,6 @@
 /**
- * React Auth Hook for Firebase Authentication.
+ * Dual-Driver React Auth Hook.
+ * Supports Supabase Auth as the primary enterprise identity driver with graceful fallback to Firebase.
  * Preserves exact error mapping, Google login, email login/registration, and profile updates.
  */
 
@@ -15,19 +16,66 @@ import {
   onAuthStateChanged,
   type User
 } from '../../../infrastructure/firebase/auth.js';
+import {
+  signInWithGoogle,
+  signInWithEmail,
+  signUpWithEmail,
+  signOutUser,
+  subscribeAuthState,
+  getCurrentAccessToken,
+} from '../../../infrastructure/supabase/auth.js';
+import { getSupabaseClient } from '../../../infrastructure/supabase/supabaseClient.js';
+
+export interface NormalizedUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  getIdToken?: () => Promise<string>;
+}
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(auth.currentUser);
+  const isSupabase = Boolean(getSupabaseClient());
+  const [user, setUser] = useState<NormalizedUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isSupabase) {
+      const unsubscribe = subscribeAuthState((supaUser) => {
+        if (supaUser) {
+          setUser({
+            uid: supaUser.id,
+            email: supaUser.email || null,
+            displayName: supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
+            photoURL: supaUser.user_metadata?.avatar_url || null,
+            getIdToken: async () => (await getCurrentAccessToken()) || "",
+          });
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      });
+      return unsubscribe;
+    }
+
+    // Firebase fallback
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+      if (currentUser) {
+        setUser({
+          uid: currentUser.uid,
+          email: currentUser.email,
+          displayName: currentUser.displayName,
+          photoURL: currentUser.photoURL,
+          getIdToken: async () => await currentUser.getIdToken(),
+        });
+      } else {
+        setUser(null);
+      }
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [isSupabase]);
 
   const parseAuthError = (e: any, fallbackMessage: string) => {
     const code = e?.code || '';
@@ -35,18 +83,18 @@ export function useAuth() {
     const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
 
     if (code === 'auth/unauthorized-domain' || msg.includes('auth/unauthorized-domain')) {
-      return `Domain Authorization Required: Please add "${currentHost}" to Firebase Console -> Authentication -> Settings -> Authorized Domains. In the meantime, you can create an account or sign in with Email & Password above!`;
+      return `Domain Authorization Required: Please add "${currentHost}" to Authorized Domains. In the meantime, you can create an account or sign in with Email & Password above!`;
     }
-    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential' || msg.includes('Invalid login credentials')) {
       return "Invalid email or password. Please check your credentials or switch to the Sign Up tab.";
     }
     if (code === 'auth/wrong-password') {
       return "Incorrect password. Please verify and try again.";
     }
-    if (code === 'auth/email-already-in-use') {
+    if (code === 'auth/email-already-in-use' || msg.includes('already registered')) {
       return "An account with this email already exists. Please switch to the Sign In tab.";
     }
-    if (code === 'auth/weak-password') {
+    if (code === 'auth/weak-password' || msg.includes('weak')) {
       return "Password is too weak. Please use at least 6 characters.";
     }
     if (code === 'auth/invalid-email') {
@@ -64,6 +112,11 @@ export function useAuth() {
   const login = async () => {
     try {
       setAuthError(null);
+      if (isSupabase) {
+        const { error } = await signInWithGoogle();
+        if (error) throw new Error(error);
+        return;
+      }
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
@@ -81,6 +134,13 @@ export function useAuth() {
         setAuthError(err);
         throw new Error(err);
       }
+
+      if (isSupabase) {
+        const { error } = await signInWithEmail(email.trim(), password);
+        if (error) throw new Error(error);
+        return;
+      }
+
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (e: any) {
       console.error("Email login error:", e);
@@ -103,6 +163,13 @@ export function useAuth() {
         setAuthError(err);
         throw new Error(err);
       }
+
+      if (isSupabase) {
+        const { error } = await signUpWithEmail(email.trim(), password);
+        if (error) throw new Error(error);
+        return;
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       if (displayName && userCredential.user) {
         await updateProfile(userCredential.user, { displayName });
@@ -115,10 +182,14 @@ export function useAuth() {
     }
   };
 
-
   const logout = async () => {
     try {
-      await signOut(auth);
+      if (isSupabase) {
+        await signOutUser();
+      } else {
+        await signOut(auth);
+      }
+      setUser(null);
     } catch (e: any) {
       console.error("Sign out error:", e);
     }
