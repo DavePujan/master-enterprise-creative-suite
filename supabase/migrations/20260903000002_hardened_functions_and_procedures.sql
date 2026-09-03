@@ -80,6 +80,11 @@ DECLARE
     v_hold_id UUID;
     v_existing_hold RECORD;
 BEGIN
+    -- Validate amount
+    IF p_amount <= 0 THEN
+        RAISE EXCEPTION 'Hold amount must be strictly positive' USING ERRCODE = '22003';
+    END IF;
+
     -- 1. Pre-check idempotency
     SELECT id, status, amount INTO v_existing_hold
     FROM public.credit_holds
@@ -201,6 +206,16 @@ BEGIN
         RETURN jsonb_build_object('success', true, 'is_replay', true);
     END IF;
 
+    IF v_hold.status = 'released' THEN
+        RAISE EXCEPTION 'Cannot capture a released hold' USING ERRCODE = '22000';
+    END IF;
+
+    IF v_hold.status = 'expired' OR v_hold.expires_at < NOW() THEN
+        -- Mark expired if not already marked
+        UPDATE public.credit_holds SET status = 'expired', updated_at = NOW() WHERE id = p_hold_id;
+        RAISE EXCEPTION 'Cannot capture an expired hold' USING ERRCODE = '22000';
+    END IF;
+
     IF v_hold.status != 'pending' THEN
         RAISE EXCEPTION 'Hold is not in pending status' USING ERRCODE = '22000';
     END IF;
@@ -279,7 +294,48 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 7. CONCURRENCY-SAFE ATOMIC IDEMPOTENT CREDIT GRANT (PAYMENTS & TOPUPS)
+-- 7. EXPIRE STALE CREDIT HOLDS (AUTOMATIC CLEANUP MECHANISM)
+-- Cleans up any hold that has exceeded expires_at and releases held credits idempotently
+CREATE OR REPLACE FUNCTION public.expire_stale_credit_holds()
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_record RECORD;
+    v_expired_count INTEGER := 0;
+    v_total_released INTEGER := 0;
+BEGIN
+    FOR v_record IN
+        SELECT id, workspace_id, amount
+        FROM public.credit_holds
+        WHERE status = 'pending' AND expires_at < NOW()
+        FOR UPDATE SKIP LOCKED
+    LOOP
+        -- Release held balance back to available balance
+        UPDATE public.credit_balances
+        SET held_balance = GREATEST(0, held_balance - v_record.amount),
+            updated_at = NOW()
+        WHERE workspace_id = v_record.workspace_id;
+
+        -- Mark hold as expired
+        UPDATE public.credit_holds
+        SET status = 'expired', updated_at = NOW()
+        WHERE id = v_record.id;
+
+        v_expired_count := v_expired_count + 1;
+        v_total_released := v_total_released + v_record.amount;
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'expired_count', v_expired_count,
+        'total_credits_released', v_total_released
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- 8. CONCURRENCY-SAFE ATOMIC IDEMPOTENT CREDIT GRANT (PAYMENTS & TOPUPS)
 CREATE OR REPLACE FUNCTION public.grant_credits(
     p_workspace_id UUID,
     p_actor_user_id UUID,

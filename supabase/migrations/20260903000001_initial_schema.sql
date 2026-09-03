@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS public.credit_holds (
 );
 
 CREATE INDEX IF NOT EXISTS idx_credit_holds_active ON public.credit_holds(workspace_id, status) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_credit_holds_expiry ON public.credit_holds(status, expires_at) WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS public.credit_ledger (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -157,13 +158,14 @@ CREATE TRIGGER trg_credit_ledger_immutable
 BEFORE UPDATE OR DELETE ON public.credit_ledger
 FOR EACH ROW EXECUTE FUNCTION private.prevent_ledger_mutation();
 
--- 5. BILLING & PAYMENT AUDIT (State Machine Enforced)
+-- 5. BILLING & PAYMENT AUDIT (State Machine & Webhook Provider Idempotency)
 CREATE TABLE IF NOT EXISTS public.payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE RESTRICT,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
     order_id TEXT NOT NULL UNIQUE,
     payment_id TEXT UNIQUE,
+    provider_event_id TEXT UNIQUE, -- Webhook idempotency key from Razorpay
     signature TEXT,
     plan_id TEXT NOT NULL,
     amount_subunits INTEGER NOT NULL,
@@ -227,7 +229,7 @@ CREATE TABLE IF NOT EXISTS public.brand_guidelines (
     CONSTRAINT unique_workspace_default_brand UNIQUE (workspace_id, is_default)
 );
 
--- 7. ASSETS (Canonical Storage Path & Sha256 Checksum)
+-- 7. ASSETS (Canonical Storage Path, SHA-256 Checksum, & Object Generation)
 CREATE TABLE IF NOT EXISTS public.assets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -235,6 +237,7 @@ CREATE TABLE IF NOT EXISTS public.assets (
     name VARCHAR(200) NOT NULL,
     storage_bucket VARCHAR(100) NOT NULL DEFAULT 'user-assets',
     storage_path TEXT NOT NULL,
+    storage_generation VARCHAR(64) NOT NULL DEFAULT '1',
     type asset_type NOT NULL,
     prompt TEXT,
     analysis JSONB,
@@ -261,6 +264,7 @@ CREATE TABLE IF NOT EXISTS public.ai_generation_jobs (
     credits_reserved INTEGER NOT NULL DEFAULT 0,
     credits_charged INTEGER NOT NULL DEFAULT 0,
     provider_request_id TEXT,
+    idempotency_key TEXT UNIQUE, -- Prevents duplicate job creation
     error_code TEXT,
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -276,6 +280,7 @@ CREATE TABLE IF NOT EXISTS public.ai_generation_outputs (
     asset_id UUID REFERENCES public.assets(id) ON DELETE SET NULL,
     storage_bucket VARCHAR(100) NOT NULL DEFAULT 'user-assets',
     storage_path TEXT NOT NULL,
+    storage_generation VARCHAR(64) NOT NULL DEFAULT '1',
     mime_type VARCHAR(100) NOT NULL,
     sha256 VARCHAR(64),
     metadata JSONB DEFAULT '{}'::jsonb,
