@@ -111,11 +111,21 @@ export class ImageGenerationService {
     });
     const jobId = job?.id || `job_${Date.now()}`;
 
-    // 6. Build structured, logo-safe prompt
+    // 6. Build structured, logo-safe prompt with ingredient context
     const promptText = imagePromptBuilder.buildPrompt(request, model);
+    const refImgs = [...(request.referenceImages || [])];
+    if (model.capabilities.references.supported && request.ingredients) {
+      for (const ing of request.ingredients) {
+        if (ing.data && !refImgs.includes(ing.data)) {
+          refImgs.push(ing.data);
+        }
+      }
+    }
+
     const enrichedRequest: NormalizedImageRequest = {
       ...request,
       prompt: promptText,
+      referenceImages: refImgs.length > 0 ? refImgs : undefined,
     };
 
     let executionResult;

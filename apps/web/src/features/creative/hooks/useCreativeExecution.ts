@@ -621,10 +621,11 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     const model = activeState.selectedModel;
 
     if (selectedGem.type === 'image') {
-      if (model === 'openai/gpt-image-2') {
-        // Fully supported
-      } else if (model === 'gemini-2.5-flash-image') {
-        if (activeState.faceContext) unsupportedImages.push('Face / Model Context Image');
+      if (activeState.faceContext) {
+        unsupportedImages.push('Face / Model Context Image (Face reference is unavailable)');
+      }
+      if (activeState.productContext && (model === 'flux-schnell' || model === 'fal-ai/flux/schnell')) {
+        unsupportedImages.push('Product Context Image (FLUX Schnell is text-only)');
       }
     } else if (selectedGem.type === 'video') {
       if (model === 'veo-3.1-lite-generate-preview') {

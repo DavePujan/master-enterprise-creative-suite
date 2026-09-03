@@ -399,7 +399,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
         </div>
       )}
 
-      {(selectedGem.type === 'video' || (selectedGem.type === 'image' && selectedModel === 'openai/gpt-image-2')) && (
+      {(selectedGem.type === 'image' || selectedGem.type === 'video') && (
         <div className="space-y-4 pb-2 pt-1">
           <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <div className="flex items-center justify-between">
@@ -407,15 +407,17 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                 <Sparkles size={12} className="text-amber-500 animate-pulse" />
                 Ingredients Reference Images ({ingredientsContexts.length}/3)
               </span>
-              {selectedModel === 'veo-3.1-generate-preview' || (selectedGem.type === 'image' && selectedModel === 'openai/gpt-image-2') ? (
+              {selectedGem.type === 'image' ? (
+                <span className="text-[9px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
+                  Prompt Guided Elements
+                </span>
+              ) : selectedModel === 'veo-3.1-generate-preview' ? (
                 <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider bg-emerald-500/10 px-1.5 py-0.5 rounded-xs">
-                  Active ({selectedGem.type === 'image' ? 'Commercial Plus' : 'Cinematic High'})
+                  Active (Cinematic High)
                 </span>
               ) : (
                 <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider bg-amber-500/10 px-1.5 py-0.5 rounded-xs">
-                  {selectedGem.type === 'image' 
-                    ? 'Switch to "Commercial Plus" to Activate References' 
-                    : 'Switch to "Cinematic High" to Activate References'}
+                  Switch to "Cinematic High" to Activate References
                 </span>
               )}
             </div>

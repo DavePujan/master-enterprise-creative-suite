@@ -57,7 +57,19 @@ export class ImagePromptBuilder {
       );
     }
 
-    // 7. Logo-Safe Space (Section 27)
+    // 7. Ingredients Context (Prompt Guided)
+    if (request.ingredients && request.ingredients.length > 0) {
+      const names = request.ingredients
+        .map((ing) => ing.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ").trim())
+        .filter(Boolean);
+      if (names.length > 0) {
+        sections.push(
+          `Featured Natural Ingredients & Key Elements: Artistically showcase and integrate the authentic natural ingredients (${names.join(", ")}) into the visual scene composition, highlighting their fresh textures, organic essence, and premium aesthetic detail.`
+        );
+      }
+    }
+
+    // 8. Logo-Safe Space (Section 27)
     if (request.logo?.enabled) {
       sections.push(
         "COMPOSITION SAFETY: Reserve clean, uncluttered visual negative space in the composition for the brand mark. Avoid placing high-frequency visual noise or focal details in the corner/header region. ABSOLUTELY DO NOT draw, render, or invent any logo, brand name, typography, or text onto the image."
