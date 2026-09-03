@@ -20,6 +20,7 @@ import {
 import { pcmToWav } from '@utils/audio.js';
 import type { Gem, SlideStructure, StorylineStructure } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
+import type { NormalizedImageResult, NormalizedImageRequest } from '@shared-types/imageGeneration.js';
 
 export {
   generateFastPrompt,
@@ -132,111 +133,57 @@ export async function generateCreative(
       ? gem.systemInstruction
       : 'Create a clean, natural brand image.';
 
-    const parts: any[] = [
-      {
-        text: `${finalSystemInstruction}\n${finalGuidelinesContext}${styleInstruction}${culturalVisualInstruction}\n\nPrompt: ${prompt}`
-      }
-    ];
+    // Parse contexts from attached assets
+    let productRef: { enabled: boolean; assetId?: string; data?: string } | undefined = undefined;
+    let faceRef: { enabled: boolean; assetId?: string; data?: string } | undefined = undefined;
+    const ingredients: Array<{ id?: string; name: string; data?: string }> = [];
+    const referenceImages: string[] = [];
 
-    await appendAssetsToParts(parts, config?.assets);
-
-    if (!promptEngineSettings.allowTextOnAssets) {
-      parts[0].text +=
-        "\n\nCRITICAL TEXT OVERLAY RESTRICTION: ABSOLUTELY NO text, letters, typography, font, labels, captions, subtitles, words, logos, names, branding, or alphabetical/numerical overlays are allowed inside the generated image. All visual elements, backgrounds, product surfaces, and scenes must be completely clean of any text/words/labels. Make the image completely textless and empty of characters.";
-    }
-
-    if (config?.bakeLogo !== false && config?.guidelines?.logo && promptEngineSettings.allowTextOnAssets) {
-      const supportedLogo = await getSupportedLogoData(config.guidelines.logo);
-      if (supportedLogo) {
-        parts.push({
-          inlineData: {
-            mimeType: supportedLogo.mimeType,
-            data: supportedLogo.data
-          }
-        });
-        parts[0].text +=
-          "\n\nIMPORTANT: Use the provided logo image as the definitive brand mark. Incorporate it into the creative EXACTLY ONCE. The logo MUST be a clean, transparent overlay with NO background box, border, or container. It should blend naturally into the scene as if it were part of the environment or a high-end watermark. ABSOLUTELY NO grey, white, or colored background squares around the logo. DO NOT generate any other text or logos.";
-      }
-    } else {
-      parts[0].text +=
-        "\n\nCRITICAL: DO NOT overlay or draw any logo, text, or brand name on the image. Generate only the clean background scene, leaving space if needed for a layout watermark to be added later on.";
-    }
-
-    const modelId = config?.model || 'openai/gpt-image-2';
-    const isFal = modelId.startsWith('fal-ai/') || modelId === 'openai/gpt-image-2' || !modelId.startsWith('gemini-');
-
-    if (isFal) {
-      const referenceImages: string[] = [];
-      if (config?.assets) {
-        config.assets.forEach((asset: any) => {
-          if (asset.type === 'image' && asset.data) {
-            referenceImages.push(asset.data);
-          }
-        });
-      }
-
-      const renderData = await apiClient.post<any>("/api/campaign/render", {
-        prompt: parts[0].text,
-        size: config?.aspectRatio || '1:1',
-        engine: modelId,
-        guidelines: config?.guidelines,
-        referenceImages: referenceImages
-      });
-      return {
-        type: 'image',
-        data: renderData.url,
-        newBalance: renderData.newBalance
-      };
-    }
-
-    const ai = getAI();
-    try {
-      const response = await withRetry(() =>
-        ai.models.generateContent({
-          model: modelId,
-          contents: { parts },
-          config: {
-            imageConfig: { aspectRatio: (config?.aspectRatio as any) || "1:1" }
-          }
-        })
-      );
-
-      const imagePart = response.candidates?.[0]?.content?.parts.find((p) => p.inlineData);
-      if (imagePart?.inlineData) {
-        return {
-          type: 'image',
-          data: `data:image/png;base64,${imagePart.inlineData.data}`,
-          groundingMetadata: response.candidates?.[0]?.groundingMetadata,
-          newBalance: (response as any)?.newBalance
-        };
-      }
-    } catch (gErr: any) {
-      console.warn("Gemini image generation failed or quota reached, routing to Fal AI engine:", gErr.message);
-      try {
-        const referenceImages: string[] = [];
-        if (config?.assets) {
-          config.assets.forEach((asset: any) => {
-            if (asset.type === 'image' && asset.data) {
-              referenceImages.push(asset.data);
-            }
-          });
+    if (config?.assets && Array.isArray(config.assets)) {
+      for (const asset of config.assets) {
+        if (asset.type === 'product_context') {
+          productRef = { enabled: true, assetId: asset.id, data: asset.data };
+        } else if (asset.type === 'face_context') {
+          faceRef = { enabled: true, assetId: asset.id, data: asset.data };
+        } else if (asset.type === 'ingredient_context') {
+          ingredients.push({ id: asset.id, name: asset.name, data: asset.data });
+        } else if (asset.data) {
+          referenceImages.push(asset.data);
         }
-        const renderData = await apiClient.post<any>("/api/campaign/render", {
-          prompt: parts[0].text,
-          size: config?.aspectRatio || '1:1',
-          engine: 'openai-gpt-image-2',
-          guidelines: config?.guidelines,
-          referenceImages
-        });
-        if (renderData?.url) {
-          return { type: 'image', data: renderData.url, newBalance: renderData.newBalance };
-        }
-      } catch (renderErr) {
-        console.error("Fal AI fallback failed:", renderErr);
       }
-      throw gErr;
     }
-    throw new Error("No image generated");
+
+    const hasLogo = promptEngineSettings.allowTextOnAssets && !!config?.guidelines?.logo;
+    const normalizedReq: NormalizedImageRequest = {
+      prompt,
+      aspectRatio: (config?.aspectRatio as any) || '1:1',
+      modelKey: config?.model || 'fal-studio',
+      style: config?.imageStyle,
+      logo: {
+        enabled: hasLogo,
+        bakeLogo: !!config?.bakeLogo,
+        url: config?.guidelines?.logo
+      },
+      productReference: productRef,
+      faceReference: faceRef,
+      ingredients: ingredients.length > 0 ? ingredients : undefined,
+      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      guidelines: config?.guidelines
+    };
+
+    const res = await apiClient.post<NormalizedImageResult>('/api/images/generate', normalizedReq);
+    const imageUrl = res?.images?.[0]?.url;
+    if (!imageUrl) {
+      throw new Error("No image generated by image service");
+    }
+
+    return {
+      type: 'image',
+      data: imageUrl,
+      newBalance: res.newBalance,
+      storagePath: res.images[0].storagePath,
+      assetId: res.images[0].assetId
+    };
   }
 
   if (gem.type === 'campaign') {

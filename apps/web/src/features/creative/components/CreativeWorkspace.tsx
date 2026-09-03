@@ -2,7 +2,7 @@ import React from 'react';
 import { Sparkles, Layers, Image as ImageIcon, Video as VideoIcon, FileText, LayoutDashboard, Presentation, Target, BookOpen, Volume2, Music } from 'lucide-react';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
-import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS } from '@web/infrastructure/ai/modelRegistry.js';
+import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, getImageModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
 import { cn } from '@web/lib/utils.js';
 import { CreativeOutputCanvas } from './CreativeOutputCanvas.js';
 import { CreativeCommandBar } from './CreativeCommandBar.js';
@@ -324,36 +324,41 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
           </span>
           
           {selectedGem.type === 'image' ? (
-            <>
-              <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                Logo Overlay: 
-                <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", selectedModel === 'openai/gpt-image-2' ? "text-slate-450 dark:text-slate-500" : "text-emerald-600 dark:text-emerald-400")}>
-                  {selectedModel === 'openai/gpt-image-2' ? 'Unsupported' : 'Supported'}
-                </span>
-              </span>
-              <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                Face Reference: 
-                <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", (selectedModel.includes('gemini-3') || selectedModel === 'openai/gpt-image-2') ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                  {(selectedModel.includes('gemini-3') || selectedModel === 'openai/gpt-image-2') ? 'Supported' : 'Unsupported'}
-                </span>
-              </span>
-              <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                Product Placement: 
-                <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", selectedModel === 'openai/gpt-image-2' ? "text-emerald-600 dark:text-emerald-400" : (selectedModel === 'gemini-2.5-flash-image' ? "text-amber-600 dark:text-amber-500 font-bold" : "text-emerald-600 dark:text-emerald-400"))}>
-                  {selectedModel === 'openai/gpt-image-2' ? 'Supported' : (selectedModel === 'gemini-2.5-flash-image' ? 'Inspirational Only' : 'Supported')}
-                </span>
-              </span>
-              <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                Ingredients Input: 
-                <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", selectedModel === 'openai/gpt-image-2' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                  {selectedModel === 'openai/gpt-image-2' ? 'Supported' : 'Unsupported'}
-                </span>
-              </span>
-            </>
+            (() => {
+              const caps = getImageModelCapabilities(selectedModel);
+              return (
+                <>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
+                    Logo Overlay: 
+                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsLogoOverlay ? "text-emerald-600 dark:text-emerald-400" : "text-slate-450 dark:text-slate-500")}>
+                      {caps.supportsLogoOverlay ? 'Supported' : 'Unsupported'}
+                    </span>
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
+                    Face Reference: 
+                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsFaceReference === 'supported' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
+                      {caps.supportsFaceReference === 'supported' ? 'Supported' : 'Unsupported'}
+                    </span>
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
+                    Product Placement: 
+                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsProductReference === 'supported' ? "text-emerald-600 dark:text-emerald-400" : (caps.supportsProductReference === 'inspirational' ? "text-amber-600 dark:text-amber-500 font-bold" : "text-slate-450 dark:text-slate-500"))}>
+                      {caps.supportsProductReference === 'supported' ? 'Supported' : (caps.supportsProductReference === 'inspirational' ? 'Inspirational Only' : 'Unsupported')}
+                    </span>
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
+                    Ingredients Input: 
+                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsIngredientsInput === 'supported' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
+                      {caps.supportsIngredientsInput === 'supported' ? 'Supported' : 'Unsupported'}
+                    </span>
+                  </span>
+                </>
+              );
+            })()
           ) : (
             <>
               <span className="text-slate-300 dark:text-slate-700 select-none">·</span>

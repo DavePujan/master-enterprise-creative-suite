@@ -4,6 +4,14 @@
  */
 
 import type { Gem, PromptEngineSettings } from '@shared-types/creative.js';
+import {
+  IMAGE_MODEL_DEFINITIONS,
+  getImageModelCapabilities,
+  resolveImageModel,
+  type ImageModelDefinition
+} from '@shared-types/imageGeneration.js';
+
+export { getImageModelCapabilities, resolveImageModel };
 
 export const MODELS = {
   TEXT_FAST: 'gemini-2.5-flash',
@@ -18,12 +26,16 @@ export const MODELS = {
   TTS: 'gemini-2.5-flash-preview-tts',
 } as const;
 
-export const IMAGE_MODELS = [
-  { id: 'openai/gpt-image-2', name: 'Fal Studio', modelName: 'GPT-Image-2 (Fal)', description: 'Commercial grade high-fidelity visual engine', credits: 3, humanTouch: 30 },
-  { id: 'fal-ai/flux/schnell', name: 'Fal FLUX Schnell', modelName: 'FLUX Schnell (Fal)', description: 'Ultra-fast photorealistic visual composition', credits: 2, humanTouch: 20 },
-  { id: 'fal-ai/flux/dev', name: 'Fal FLUX Pro', modelName: 'FLUX Dev Pro (Fal)', description: 'High-detail commercial advertising rendering', credits: 4, humanTouch: 40 },
-  { id: 'gemini-2.5-flash-image', name: 'Gemini Preview', modelName: 'Nano Banana', description: 'Standard preview draft generator', credits: 2, humanTouch: 20 }
-];
+export const IMAGE_MODELS = IMAGE_MODEL_DEFINITIONS.map(m => ({
+  id: m.key,
+  modelKey: m.key,
+  name: m.label,
+  modelName: m.label,
+  description: m.description,
+  credits: m.credits,
+  humanTouch: m.humanTouch,
+  capabilities: m.capabilities
+}));
 
 export const TEXT_MODELS = [
   { id: 'gemini-2.5-flash', name: 'Campaign Strategy', modelName: 'Gemini Pro', description: 'Deep conversational discovery workshop and copywriting', credits: 5, humanTouch: 50 },
