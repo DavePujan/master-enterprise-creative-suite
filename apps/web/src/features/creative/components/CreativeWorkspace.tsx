@@ -405,6 +405,7 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         setSelectedLanguage={props.setSelectedLanguage}
         selectedVoice={props.selectedVoice}
         setSelectedVoice={props.setSelectedVoice}
+        voiceEmotion={props.voiceEmotion}
         isGeneratingCreativePrompt={props.isGeneratingCreativePrompt}
         setIsGeneratingCreativePrompt={props.setIsGeneratingCreativePrompt}
         prompt={props.prompt}

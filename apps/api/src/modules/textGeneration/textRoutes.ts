@@ -7,8 +7,10 @@
 
 import { Router } from "express";
 import { textGenerationService } from "./textGenerationService.js";
+import { textAutoWriteService } from "./textAutoWriteService.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import type { NormalizedTextRequest, TextTask } from "@shared-types/textGeneration.js";
+import type { TextAutoWriteRequest, CaptionEmotion } from "@shared-types/textAutoWrite.js";
 
 export const textRouter = Router();
 
@@ -180,5 +182,70 @@ textRouter.post("/generate/stream", async (req, res) => {
       res.write(`data: ${JSON.stringify({ error: err.message || "Stream error" })}\n\n`);
       res.end();
     }
+  }
+});
+
+const VALID_EMOTIONS = new Set<CaptionEmotion>([
+  "Neutral",
+  "Cheerful",
+  "Energetic",
+  "Professional",
+  "Calming",
+]);
+
+/**
+ * POST /api/text/autowrite
+ * Generates a structured social caption idea and platform-ready copy with AI Senior Copywriter.
+ */
+textRouter.post("/autowrite", async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentication required.",
+        code: "UNAUTHORIZED",
+      });
+    }
+
+    const body = req.body || {};
+    const userIntent = typeof body.userIntent === "string" ? body.userIntent.trim() : "";
+    if (userIntent.length > 4000) {
+      return res.status(400).json({
+        error: "userIntent exceeds maximum allowed length of 4000 characters.",
+        code: "INPUT_TOO_LONG",
+      });
+    }
+
+    const emotion: CaptionEmotion = VALID_EMOTIONS.has(body.emotion)
+      ? body.emotion
+      : "Neutral";
+
+    const autowriteReq: TextAutoWriteRequest = {
+      userIntent,
+      brandContext: body.brandContext,
+      emotion,
+      quality: body.quality === "premium" ? "premium" : "standard",
+      productContext: body.productContext,
+      targetLanguage: typeof body.targetLanguage === "string" ? body.targetLanguage : undefined,
+      platforms: Array.isArray(body.platforms) ? body.platforms : undefined,
+      idempotencyKey: req.headers["x-idempotency-key"] as string || body.idempotencyKey,
+    };
+
+    const result = await textAutoWriteService.generateAutoWriteIdea(
+      autowriteReq,
+      {
+        userId: user.uid,
+        workspaceId: user.workspaceId,
+      }
+    );
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error("[TextRouter /autowrite] Error:", err);
+    return res.status(err.statusCode || err.status || 500).json({
+      error: err.message || "Failed to generate Auto-Write caption concept.",
+      code: err.code || "TEXT_AUTOWRITE_FAILED",
+      requiredCredits: err.requiredCredits,
+    });
   }
 });

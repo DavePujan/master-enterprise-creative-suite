@@ -14,8 +14,10 @@ import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
 import { generateImageAutoWriteIdea } from '../services/imageAutoWriteService.js';
+import { generateTextAutoWriteIdea } from '../services/textAutoWriteService.js';
 import { getImageModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
 import type { ImageAutoWriteIdea } from '@shared-types/imageAutoWrite.js';
+import type { TextAutoWriteIdea, CaptionEmotion } from '@shared-types/textAutoWrite.js';
 import { resizeImageIfNeeded } from '@utils/image.js';
 import { cn } from '@web/lib/utils.js';
 
@@ -26,6 +28,7 @@ export interface CreativeCommandBarProps {
   setSelectedLanguage: (lang: string) => void;
   selectedVoice: string;
   setSelectedVoice: (voice: string) => void;
+  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
   isGeneratingCreativePrompt: boolean;
   setIsGeneratingCreativePrompt: (val: boolean) => void;
   prompt: string;
@@ -57,6 +60,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   setSelectedLanguage,
   selectedVoice,
   setSelectedVoice,
+  voiceEmotion,
   isGeneratingCreativePrompt,
   setIsGeneratingCreativePrompt,
   prompt,
@@ -81,6 +85,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   handleGenerate
 }) => {
   const [activeIdeaPreview, setActiveIdeaPreview] = React.useState<ImageAutoWriteIdea | null>(null);
+  const [activeTextIdeaPreview, setActiveTextIdeaPreview] = React.useState<TextAutoWriteIdea | null>(null);
 
   const generateCustomThemes = (guidelines: any) => {
     const brandColors = guidelines?.colors && guidelines.colors.length > 0 ? guidelines.colors : ['#0f172a', '#334155'];
@@ -200,6 +205,30 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                   });
                   setPrompt(res.idea.prompt);
                   setActiveIdeaPreview(res.idea);
+                } else if (selectedGem.type === 'text') {
+                  const res = await generateTextAutoWriteIdea({
+                    userIntent: prompt,
+                    brandContext: {
+                      name: brandGuidelines.name,
+                      industry: brandGuidelines.industry,
+                      tone: brandGuidelines.tone,
+                      pillars: brandGuidelines.pillars,
+                      colors: brandGuidelines.colors,
+                      location: brandGuidelines.location,
+                      targetAudience: (brandGuidelines as any).targetAudience || brandGuidelines.mission,
+                    },
+                    emotion: (voiceEmotion as CaptionEmotion) || 'Neutral',
+                    quality: selectedModel === 'gemini-2.5-pro' ? 'premium' : 'standard',
+                    productContext: productContext ? {
+                      id: productContext.id,
+                      name: productContext.name,
+                      details: productContext.data ? 'Product photo attached' : undefined
+                    } : undefined,
+                    targetLanguage: selectedLanguage,
+                    platforms: ['Instagram', 'LinkedIn', 'X', 'Threads']
+                  });
+                  setPrompt(res.idea.formattedCopy);
+                  setActiveTextIdeaPreview(res.idea);
                 } else {
                   const prm = await generateFastPrompt(
                     'creative', 
@@ -683,6 +712,48 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
           <button
             type="button"
             onClick={() => setActiveIdeaPreview(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer transition-colors"
+            title="Dismiss Creative Concept"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {activeTextIdeaPreview && selectedGem.type === 'text' && (
+        <div className="flex items-start justify-between gap-3 p-3 bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/20 rounded-sm text-xs animate-in fade-in slide-in-from-top-1">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-extrabold text-[11px] text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                <Sparkles size={11} className="animate-pulse" />
+                {activeTextIdeaPreview.concept.angle}
+              </span>
+              <span className="text-[10px] text-slate-400">· Strategic Angle</span>
+              <span className="px-1.5 py-0.5 rounded-xs bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] uppercase tracking-wider">
+                {activeTextIdeaPreview.concept.emotionalTone}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed font-medium">
+              {activeTextIdeaPreview.concept.coreMessage}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pt-1.5 border-t border-rose-500/10 text-[10px] text-slate-400 dark:text-slate-500">
+              <span>Audience: <strong className="text-slate-700 dark:text-slate-300 font-medium">{activeTextIdeaPreview.concept.targetAudience}</strong></span>
+              <span>·</span>
+              <span>Core Benefit: <strong className="text-slate-700 dark:text-slate-300 font-medium">{activeTextIdeaPreview.concept.keyBenefit}</strong></span>
+              <span>·</span>
+              <span className="flex items-center gap-1 flex-wrap">
+                Platforms:
+                {activeTextIdeaPreview.captions.map(c => (
+                  <span key={c.platform} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-[9px] font-bold">
+                    {c.platform === 'X' ? 'X (Twitter)' : c.platform}
+                  </span>
+                ))}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTextIdeaPreview(null)}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer transition-colors"
             title="Dismiss Creative Concept"
           >
