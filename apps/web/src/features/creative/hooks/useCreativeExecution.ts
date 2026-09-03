@@ -476,13 +476,12 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
       // 3. Settle / sync authoritative credits from server
       if (res?.newBalance !== undefined) {
         setCredits(res.newBalance);
-      } else {
-        apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
-          .then(bal => {
-            if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
-          })
-          .catch(() => {});
       }
+      apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+        .then(bal => {
+          if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+        })
+        .catch(() => {});
 
       // 4. Handle output according to result type
       if (res?.type === 'video_op') {

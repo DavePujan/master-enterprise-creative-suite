@@ -105,7 +105,7 @@ aiRouter.post("/generate-content", async (req, res) => {
     let newBalance: number | undefined;
     if (holdId) {
       const captureResult = await creditService.captureCredits(holdId, `capture_${clientKey}`);
-      newBalance = captureResult.newBalance;
+      newBalance = captureResult.newBalance ?? (captureResult as any)?.new_balance;
       if (jobId) {
         await aiJobRepository.completeJob({
           jobId,

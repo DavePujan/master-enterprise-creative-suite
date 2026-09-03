@@ -213,11 +213,20 @@ export async function generateCreative(
     } catch (gErr: any) {
       console.warn("Gemini image generation failed or quota reached, routing to Fal AI engine:", gErr.message);
       try {
+        const referenceImages: string[] = [];
+        if (config?.assets) {
+          config.assets.forEach((asset: any) => {
+            if (asset.type === 'image' && asset.data) {
+              referenceImages.push(asset.data);
+            }
+          });
+        }
         const renderData = await apiClient.post<any>("/api/campaign/render", {
           prompt: parts[0].text,
           size: config?.aspectRatio || '1:1',
           engine: 'openai-gpt-image-2',
-          guidelines: config?.guidelines
+          guidelines: config?.guidelines,
+          referenceImages
         });
         if (renderData?.url) {
           return { type: 'image', data: renderData.url, newBalance: renderData.newBalance };
