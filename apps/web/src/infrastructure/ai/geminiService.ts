@@ -6,7 +6,7 @@
 import { Modality, Type } from "@google/genai";
 import { getAI, parseJSON, withRetry, generateHistoryTitle } from "./geminiClient.js";
 import { apiClient } from '../api/apiClient.js';
-import { MODELS, promptEngineSettings } from "./modelRegistry.js";
+import { MODELS, promptEngineSettings, getImageModelCapabilities } from "./modelRegistry.js";
 
 import {
   getSupportedLogoData,
@@ -139,12 +139,18 @@ export async function generateCreative(
     const ingredients: Array<{ id?: string; name: string; data?: string }> = [];
     const referenceImages: string[] = [];
 
+    const selectedModelKey = config?.model || 'fal-studio';
+    const modelCaps = getImageModelCapabilities(selectedModelKey);
+    // Align request enablement with model capabilities to respect UI's "Reference Ignored by Active Model" promise
+    const supportsFace = modelCaps?.faceReference?.status === 'native' || modelCaps?.supportsFaceReference === 'supported';
+    const supportsProd = modelCaps?.productReference?.status !== 'unsupported' && modelCaps?.supportsProductReference !== 'unsupported';
+
     if (config?.assets && Array.isArray(config.assets)) {
       for (const asset of config.assets) {
         if (asset.type === 'product_context') {
-          productRef = { enabled: true, assetId: asset.id, data: asset.data };
+          productRef = { enabled: supportsProd, assetId: asset.id, data: asset.data };
         } else if (asset.type === 'face_context') {
-          faceRef = { enabled: true, assetId: asset.id, data: asset.data };
+          faceRef = { enabled: supportsFace, assetId: asset.id, data: asset.data };
         } else if (asset.type === 'ingredient_context') {
           ingredients.push({ id: asset.id, name: asset.name, data: asset.data });
         } else if (asset.data) {

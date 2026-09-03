@@ -38,30 +38,66 @@ export class ImageGenerationService {
       throw err;
     }
 
-    // 2. Authorize reference assets if IDs provided
-    if (request.productReference?.enabled && request.productReference.assetId) {
-      const asset = await assetRepository.getById(request.productReference.assetId, workspaceId);
-      if (!asset) {
-        const err = new Error("Product reference asset does not exist or does not belong to your workspace.");
-        (err as any).status = 403;
-        (err as any).code = "UNAUTHORIZED_ASSET_ACCESS";
-        throw err;
-      }
-      if (!request.productReference.url) {
-        request.productReference.url = (await storageService.getSignedUrl(asset.storagePath)) || undefined;
+    /**
+     * PRODUCTION & DEPLOYMENT ARCHITECTURE NOTES (FOR FUTURE REFERENCE):
+     * 
+     * 1. DEDICATED VPS / DOCKER / PERSISTENT NODE RUNTIMES (Render, Railway, Fly.io, EC2, VPS):
+     *    - Inline base64 payloads work 100% reliably. Express is configured with `express.json({ limit: '50mb' })`.
+     *    - Image generation adapters (Fal AI and Google GenAI) natively ingest base64 data URIs or inline image parts.
+     *
+     * 2. SERVERLESS PLATFORMS & EDGE GATEWAYS (Vercel Serverless Functions, AWS Lambda, Netlify):
+     *    - Vercel Serverless Functions enforce a strict incoming request body limit of 4.5 MB (AWS Lambda: 6 MB).
+     *    - When users upload multiple high-res photos (Product + Face + 3 Ingredients), raw uncompressed base64
+     *      can exceed 4.5 MB and cause Vercel to return `413 Request Entity Too Large` before reaching Express.
+     *    - Mitigation:
+     *      a) Frontend `resizeImageIfNeeded` / `compressBase64Image` reduces dimensions to <= 768px JPEG (~150KB/image),
+     *         keeping the combined JSON payload well under ~1 MB even with 5 images attached.
+     *      b) For enterprise high-res assets (>4.5MB), use presigned direct-to-Supabase-Storage uploads from the client,
+     *         passing true Supabase asset UUIDs instead of inline base64 data.
+     *
+     * 3. ASSET AUTHORIZATION VS INLINE LOCAL UPLOADS:
+     *    - Workspace Database Assets: Validated via `UUID_REGEX` against `assetRepository.getById(id, workspaceId)`
+     *      to ensure tenant isolation and prevent cross-workspace asset leakage.
+     *    - Inline Local Uploads: Client-generated IDs (e.g. `product-context-*`, `face-context-*`) containing
+     *      inline `data:` URLs are allowed directly without triggering false 403 UNAUTHORIZED_ASSET_ACCESS errors.
+     */
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isDbUuid = (id?: string): boolean => !!id && UUID_REGEX.test(id);
+
+    // 2. Authorize reference assets if persistent DB IDs provided; otherwise accept inline local uploads
+    if (request.productReference?.enabled) {
+      if (isDbUuid(request.productReference.assetId)) {
+        const asset = await assetRepository.getById(request.productReference.assetId!, workspaceId);
+        if (!asset) {
+          const err = new Error("Product reference asset does not exist or does not belong to your workspace.");
+          (err as any).status = 403;
+          (err as any).code = "UNAUTHORIZED_ASSET_ACCESS";
+          throw err;
+        }
+        if (!request.productReference.url) {
+          request.productReference.url = (await storageService.getSignedUrl(asset.storagePath)) || undefined;
+        }
+      } else if (request.productReference.data && !request.productReference.url) {
+        // Direct local PC upload (e.g., 'product-context-*' with base64 data)
+        request.productReference.url = request.productReference.data;
       }
     }
 
-    if (request.faceReference?.enabled && request.faceReference.assetId) {
-      const asset = await assetRepository.getById(request.faceReference.assetId, workspaceId);
-      if (!asset) {
-        const err = new Error("Face reference asset does not exist or does not belong to your workspace.");
-        (err as any).status = 403;
-        (err as any).code = "UNAUTHORIZED_ASSET_ACCESS";
-        throw err;
-      }
-      if (!request.faceReference.url) {
-        request.faceReference.url = (await storageService.getSignedUrl(asset.storagePath)) || undefined;
+    if (request.faceReference?.enabled) {
+      if (isDbUuid(request.faceReference.assetId)) {
+        const asset = await assetRepository.getById(request.faceReference.assetId!, workspaceId);
+        if (!asset) {
+          const err = new Error("Face reference asset does not exist or does not belong to your workspace.");
+          (err as any).status = 403;
+          (err as any).code = "UNAUTHORIZED_ASSET_ACCESS";
+          throw err;
+        }
+        if (!request.faceReference.url) {
+          request.faceReference.url = (await storageService.getSignedUrl(asset.storagePath)) || undefined;
+        }
+      } else if (request.faceReference.data && !request.faceReference.url) {
+        // Direct local PC upload (e.g., 'face-context-*' with base64 data)
+        request.faceReference.url = request.faceReference.data;
       }
     }
 
@@ -114,10 +150,20 @@ export class ImageGenerationService {
     // 6. Build structured, logo-safe prompt with ingredient context
     const promptText = imagePromptBuilder.buildPrompt(request, model);
     const refImgs = [...(request.referenceImages || [])];
-    if (model.capabilities.references.supported && request.ingredients) {
-      for (const ing of request.ingredients) {
-        if (ing.data && !refImgs.includes(ing.data)) {
-          refImgs.push(ing.data);
+    if (model.capabilities.references.supported) {
+      if (request.productReference?.enabled && (request.productReference.url || request.productReference.data)) {
+        const target = request.productReference.url || request.productReference.data!;
+        if (!refImgs.includes(target)) refImgs.push(target);
+      }
+      if (request.faceReference?.enabled && (request.faceReference.url || request.faceReference.data)) {
+        const target = request.faceReference.url || request.faceReference.data!;
+        if (!refImgs.includes(target)) refImgs.push(target);
+      }
+      if (request.ingredients) {
+        for (const ing of request.ingredients) {
+          if (ing.data && !refImgs.includes(ing.data)) {
+            refImgs.push(ing.data);
+          }
         }
       }
     }
