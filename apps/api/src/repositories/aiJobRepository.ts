@@ -48,7 +48,7 @@ export class AiJobRepository {
   async createJob(params: CreateAiJobParams): Promise<{ id: string; isReplay?: boolean } | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return { id: `mock_job_${Date.now()}` };
+      return null;
     }
 
     // Check idempotency if key provided

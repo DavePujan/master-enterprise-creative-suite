@@ -81,15 +81,7 @@ export async function reserveCreditsForAi(params: {
 }> {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
-    // If Supabase is not yet configured, allow operation in local dev fallback
-    if (serverConfig.nodeEnv === "development") {
-      return {
-        success: true,
-        holdId: `mock_hold_${Date.now()}`,
-        amountReserved: params.amount,
-      };
-    }
-    return { success: false, error: "Database not configured" };
+    return { success: false, error: "Database client is not configured." };
   }
 
   const { data, error } = await supabase.rpc("reserve_credits_for_ai", {

@@ -24,13 +24,7 @@ export class SalesRepository {
   async createLead(lead: SalesLeadInput): Promise<SalesLeadRecord | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return {
-        id: `mock_lead_${Date.now()}`,
-        ...lead,
-        status: "new",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      return null;
     }
 
     const { data, error } = await supabase

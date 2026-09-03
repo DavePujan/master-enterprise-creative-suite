@@ -22,15 +22,7 @@ export class WorkspaceRepository {
   async getPrimaryWorkspaceForUser(userId: string): Promise<WorkspaceRecord | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return {
-        id: `ws_${userId}`,
-        name: "Personal Workspace",
-        ownerId: userId,
-        isPersonal: true,
-        role: "owner",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      return null;
     }
 
     // Check workspace_members
@@ -84,7 +76,9 @@ export class WorkspaceRepository {
     if (existing) return existing.id;
 
     const supabase = getSupabaseAdmin();
-    if (!supabase) return `ws_${userId}`;
+    if (!supabase) {
+      throw new Error("Supabase database client is not configured.");
+    }
 
     // Ensure profile exists first
     await supabase.from("profiles").upsert({
@@ -106,7 +100,7 @@ export class WorkspaceRepository {
 
     if (wsError || !ws) {
       console.error("ensurePersonalWorkspace error:", wsError);
-      return `ws_${userId}`;
+      throw new Error(`Failed to create personal workspace: ${wsError?.message || "Unknown database error"}`);
     }
 
     // Add membership

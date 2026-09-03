@@ -1,11 +1,13 @@
 /**
  * Server-Authoritative Billing Router with Idempotent Payment Fulfillment.
  * Delegates business logic to BillingService and persistence to PaymentRepository.
+ * Strictly production-oriented: requires authenticated user session and authoritative PostgreSQL workspace.
  * Routes: POST /api/payment/razorpay-order, POST /api/payment/razorpay-verify
  */
 
 import { Router } from "express";
 import { billingService } from "../../services/billingService.js";
+import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import { PLAN_PRICING_CATALOG, type PlanId } from "../../../../../packages/types/billing.js";
 
 export const billingRouter = Router();
@@ -17,8 +19,13 @@ billingRouter.post("/razorpay-order", async (req, res) => {
       return res.status(400).json({ error: `Invalid or missing planId: "${planId}". Must be a valid catalog plan.` });
     }
 
-    const workspaceId = req.user?.workspaceId || `ws_${req.user?.uid || "dev"}`;
-    const userId = req.user?.uid || "dev_local_user";
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: User session required." });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
 
     const orderResult = await billingService.createOrder({
       workspaceId,
@@ -42,8 +49,13 @@ billingRouter.post("/razorpay-verify", async (req, res) => {
       return res.status(400).json({ error: "Required verification parameters missing" });
     }
 
-    const workspaceId = req.user?.workspaceId || `ws_${req.user?.uid || "dev"}`;
-    const userId = req.user?.uid || "dev_local_user";
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: User session required." });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
     const resolvedPlanId = (planId as PlanId) || "booster-starter";
 
     const fulfillment = await billingService.verifyAndFulfillPayment({

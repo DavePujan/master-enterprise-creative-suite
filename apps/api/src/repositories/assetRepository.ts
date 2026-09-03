@@ -30,14 +30,7 @@ export class AssetRepository {
   async create(input: CreateAssetInput): Promise<AssetRecord | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return {
-        id: `mock_asset_${Date.now()}`,
-        ...input,
-        storageBucket: input.storageBucket || "user-assets",
-        storageGeneration: input.storageGeneration || "1",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      return null;
     }
 
     const { data, error } = await supabase

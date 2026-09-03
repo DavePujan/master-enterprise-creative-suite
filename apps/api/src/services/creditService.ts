@@ -1,6 +1,7 @@
 /**
  * Credit & Ledger Domain Service.
  * Business logic layer orchestrating credit reservations, holds, captures, and audits.
+ * Strictly production-oriented: direct execution against PostgreSQL stored procedures with zero mock fallbacks.
  */
 
 import { creditRepository } from "../repositories/creditRepository.js";

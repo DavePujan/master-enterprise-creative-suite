@@ -2,6 +2,7 @@
  * Internal Server-Side AI Gateway Router.
  * Executes Google GenAI SDK operations securely server-side through a governed control plane
  * with two-phase credit reservation, capture, and AI job observability.
+ * Strictly production-oriented: requires authenticated session and real PostgreSQL workspace.
  * Routes: POST /api/ai/generate-content, POST /api/ai/generate-videos, POST /api/ai/poll-videos, POST /api/ai/tts
  */
 
@@ -11,6 +12,7 @@ import { validateGenerateContentInput, validateTTSInput, validateVideoInput } fr
 import { orchestrateGenerateContent, orchestrateTTS, orchestrateVideoGeneration } from "./aiOrchestrator.js";
 import { creditService } from "../../services/creditService.js";
 import { aiJobRepository } from "../../repositories/aiJobRepository.js";
+import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 
 export const aiRouter = Router();
 
@@ -21,56 +23,60 @@ aiRouter.post("/generate-content", async (req, res) => {
     return res.status(error.status).json({ error: error.message, code: error.code });
   }
 
-  const workspaceId = req.user?.workspaceId;
-  const userId = req.user?.uid || "dev_local_user";
-  const userIdentifier = req.user?.email || req.user?.uid || "authenticated";
+  if (!req.user || !req.user.uid) {
+    return res.status(401).json({ error: "Unauthorized: Authenticated user session required.", code: "AUTH_REQUIRED" });
+  }
+
+  const userId = req.user.uid;
+  const userIdentifier = req.user.email || req.user.uid;
   const clientKey = (req.headers["x-idempotency-key"] as string) || `ai_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+  // Ensure workspace is resolved
+  const workspaceId = req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
 
   let holdId: string | null = null;
   let jobId: string | null = null;
   const creditsRequired = 5;
 
   try {
-    // 1. If tenant workspace is present, execute two-phase credit hold
-    if (workspaceId) {
-      const reservation = await creditService.reserveCredits({
-        workspaceId,
-        userId,
-        amount: creditsRequired,
-        referenceId: clientKey,
-        description: `AI Generation (${data!.model})`,
-        idempotencyKey: `hold_${clientKey}`,
+    // 1. Two-phase credit reservation
+    const reservation = await creditService.reserveCredits({
+      workspaceId,
+      userId,
+      amount: creditsRequired,
+      referenceId: clientKey,
+      description: `AI Generation (${data!.model})`,
+      idempotencyKey: `hold_${clientKey}`,
+    });
+
+    if (!reservation.success) {
+      return res.status(402).json({
+        error: "Insufficient credits available in workspace.",
+        code: "INSUFFICIENT_CREDITS",
+        available: reservation.available,
+        required: creditsRequired,
       });
-
-      if (!reservation.success) {
-        return res.status(402).json({
-          error: "Insufficient credits available in workspace.",
-          code: "INSUFFICIENT_CREDITS",
-          available: reservation.available,
-          required: creditsRequired,
-        });
-      }
-
-      holdId = reservation.holdId || reservation.hold_id || null;
-
-      // 2. Track AI Generation Job
-      const job = await aiJobRepository.createJob({
-        workspaceId,
-        requestedBy: userId,
-        operation: "generate-content",
-        provider: "google-gemini",
-        modelRequested: data!.model,
-        creditsReserved: creditsRequired,
-        idempotencyKey: `job_${clientKey}`,
-      });
-      jobId = job?.id || null;
     }
+
+    holdId = reservation.holdId || reservation.hold_id || null;
+
+    // 2. Track AI Generation Job
+    const job = await aiJobRepository.createJob({
+      workspaceId,
+      requestedBy: userId,
+      operation: "generate-content",
+      provider: "google-gemini",
+      modelRequested: data!.model,
+      creditsReserved: creditsRequired,
+      idempotencyKey: `job_${clientKey}`,
+    });
+    jobId = job?.id || null;
 
     // 3. Execute AI generation
     const result = await orchestrateGenerateContent(data!, userIdentifier);
 
     // 4. On success: capture hold and settle to ledger
-    if (holdId && workspaceId) {
+    if (holdId) {
       await creditService.captureCredits(holdId, `capture_${clientKey}`);
       if (jobId) {
         await aiJobRepository.completeJob({

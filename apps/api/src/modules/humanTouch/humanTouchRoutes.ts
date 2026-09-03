@@ -1,11 +1,13 @@
 /**
  * Human Touch Module Router.
  * Persists review requests to PostgreSQL human_touch_requests table and dispatches notification.
+ * Strictly production-oriented: requires authenticated session and authoritative workspace.
  * Routes: POST /api/human-touch
  */
 
 import { Router } from "express";
 import { humanTouchRepository } from "../../repositories/humanTouchRepository.js";
+import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 
 export const humanTouchRouter = Router();
 
@@ -17,9 +19,14 @@ humanTouchRouter.post("/human-touch", async (req, res) => {
       return res.status(400).json({ error: "Missing required request parameters" });
     }
 
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: User session required." });
+    }
+
     const mailTarget = emailReceipt || "business@writopedia.com";
-    const workspaceId = req.user?.workspaceId || `ws_${req.user?.uid || "guest"}`;
-    const requesterId = req.user?.uid || "00000000-0000-0000-0000-000000000000";
+    const requesterId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(requesterId, req.user.email || ""));
 
     // 1. Persist curation request in PostgreSQL
     const record = await humanTouchRepository.createRequest({
@@ -33,9 +40,13 @@ humanTouchRouter.post("/human-touch", async (req, res) => {
       emailReceipt: mailTarget,
     });
 
+    if (!record) {
+      return res.status(500).json({ error: "Failed to persist human touch request in database" });
+    }
+
     console.log("===============================");
     console.log(`HUMAN-TOUCH REQUEST RECEIVED`);
-    console.log(`Request ID: ${record?.id || "N/A"}`);
+    console.log(`Request ID: ${record.id}`);
     console.log(`To: ${mailTarget}`);
     console.log(`Subject: New Writopedia Human-Touch Last-Mile Edit Request`);
     console.log(`-------------------------------`);
@@ -48,7 +59,7 @@ humanTouchRouter.post("/human-touch", async (req, res) => {
 
     return res.json({
       success: true,
-      requestId: record?.id,
+      requestId: record.id,
       message: `Your asset has been successfully submitted to Writopedia! A human edit agent will receive this request on ${mailTarget} and review your guidelines, the prompt, metadata, and custom review comments shortly.`,
       details: {
         recipient: mailTarget,

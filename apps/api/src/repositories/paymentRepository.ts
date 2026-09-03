@@ -44,21 +44,7 @@ export class PaymentRepository {
   }): Promise<PaymentRecord | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      // Local dev fallback
-      return {
-        id: `pay_${Date.now()}`,
-        workspaceId: record.workspaceId,
-        userId: record.userId,
-        orderId: record.orderId,
-        planId: record.planId,
-        amountSubunits: record.amountSubunits,
-        currency: record.currency || "USD",
-        status: "created",
-        isSimulated: Boolean(record.isSimulated),
-        idempotencyKey: record.idempotencyKey,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      return null;
     }
 
     const { data, error } = await supabase

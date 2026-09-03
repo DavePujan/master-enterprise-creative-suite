@@ -28,13 +28,7 @@ export class HumanTouchRepository {
   async createRequest(req: HumanTouchInput): Promise<HumanTouchRecord | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return {
-        id: `mock_ht_${Date.now()}`,
-        ...req,
-        status: "pending",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      return null;
     }
 
     const { data, error } = await supabase

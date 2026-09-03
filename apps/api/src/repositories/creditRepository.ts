@@ -28,16 +28,7 @@ export class CreditRepository {
   async getBalance(workspaceId: string): Promise<CreditBalanceRecord | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      // Local dev fallback
-      return {
-        workspaceId,
-        balance: 50,
-        heldBalance: 0,
-        availableBalance: 50,
-        lifetimeGranted: 50,
-        lifetimeSpent: 0,
-        updatedAt: new Date().toISOString(),
-      };
+      return null;
     }
 
     const { data, error } = await supabase
