@@ -1,25 +1,27 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import { defineConfig } from 'vite';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, process.cwd(), '');
-  const geminiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(geminiKey),
-      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(geminiKey),
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        '@web': path.resolve(__dirname, 'apps/web/src'),
+        '@api': path.resolve(__dirname, 'apps/api/src'),
+        '@contracts': path.resolve(__dirname, 'packages/contracts'),
+        '@shared-types': path.resolve(__dirname, 'packages/types'),
+        '@errors': path.resolve(__dirname, 'packages/errors'),
+        '@utils': path.resolve(__dirname, 'packages/utils'),
       },
     },
     server: {
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
   };

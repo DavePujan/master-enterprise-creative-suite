@@ -18,6 +18,24 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@web/*": [
+        "./apps/web/src/*"
+      ],
+      "@api/*": [
+        "./apps/api/src/*"
+      ],
+      "@contracts/*": [
+        "./packages/contracts/*"
+      ],
+      "@shared-types/*": [
+        "./packages/types/*"
+      ],
+      "@errors/*": [
+        "./packages/errors/*"
+      ],
+      "@utils/*": [
+        "./packages/utils/*"
       ]
     },
     "allowImportingTsExtensions": true,
