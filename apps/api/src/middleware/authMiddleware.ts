@@ -1,16 +1,16 @@
 /**
  * Centralized Authentication & Authorization Middleware.
- * Enforces Default-Deny policy across all server endpoints.
+ * Enforces Default-Deny policy across all server endpoints using the Universal Auth Bridge.
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { verifyFirebaseIdToken, type AuthenticatedUser } from "../infrastructure/firebase/serverAuth.js";
+import { verifyAuthToken, type AuthContextUser } from "../infrastructure/supabase/serverAuth.js";
 import { serverConfig } from "../config/env.js";
 
 declare global {
   namespace Express {
     interface Request {
-      user?: AuthenticatedUser;
+      user?: AuthContextUser;
     }
   }
 }
@@ -35,7 +35,6 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     return next();
   }
 
-
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     // In local development mode without token, allow mock user if in development environment
@@ -43,7 +42,8 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       req.user = {
         uid: "dev_local_user",
         email: "developer@writopedia.local",
-        admin: true
+        admin: true,
+        workspaceId: "ws_dev_local",
       };
       return next();
     }
@@ -51,10 +51,10 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   }
 
   const token = authHeader.split("Bearer ")[1].trim();
-  const user = await verifyFirebaseIdToken(token);
+  const user = await verifyAuthToken(token);
 
   if (!user) {
-    return res.status(401).json({ error: "Unauthorized: Invalid or expired Firebase ID token." });
+    return res.status(401).json({ error: "Unauthorized: Invalid or expired authentication token." });
   }
 
   req.user = user;

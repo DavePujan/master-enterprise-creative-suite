@@ -48,7 +48,7 @@ webFiles.forEach(file => {
   }
 
   // Rule: web cannot access server-only secrets directly
-  if (/process\.env\.GEMINI_API_KEY|process\.env\.RAZORPAY_KEY_SECRET|process\.env\.FAL_KEY/.test(content)) {
+  if (/process\.env\.GEMINI_API_KEY|process\.env\.RAZORPAY_KEY_SECRET|process\.env\.FAL_KEY|process\.env\.SUPABASE_SERVICE_ROLE_KEY|process\.env\.DATABASE_URL/.test(content)) {
     reportViolation(file, 'Frontend apps/web cannot reference server-only environment variables.');
   }
 });

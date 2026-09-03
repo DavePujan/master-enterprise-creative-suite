@@ -14,6 +14,11 @@ export interface ServerConfig {
   falApiKey: string;
   razorpayKeyId: string;
   razorpayKeySecret: string;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  supabaseServiceRoleKey: string;
+  databaseUrl: string;
+  dbDriver: "supabase" | "firebase";
 }
 
 export const serverConfig: ServerConfig = {
@@ -23,4 +28,9 @@ export const serverConfig: ServerConfig = {
   falApiKey: process.env.FAL_API_KEY || process.env.FAL_KEY || "",
   razorpayKeyId: process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "",
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || "",
+  supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "",
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  databaseUrl: process.env.DATABASE_URL || "",
+  dbDriver: (process.env.DB_DRIVER === "firebase" ? "firebase" : "supabase"),
 };
