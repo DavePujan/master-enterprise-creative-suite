@@ -48,6 +48,10 @@ DO $$ BEGIN
     CREATE TYPE sales_status AS ENUM ('new', 'contacted', 'qualified', 'closed', 'archived');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+DO $$ BEGIN
+    CREATE TYPE payment_status AS ENUM ('created', 'authorized', 'captured', 'failed', 'refunded', 'partially_refunded');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- 2. CORE IDENTITY & PROFILES
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -96,6 +100,7 @@ CREATE TABLE IF NOT EXISTS public.workspace_members (
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON public.workspace_members(user_id);
 
 -- 4. AUTHORITATIVE CREDIT BALANCES, HOLDS, & IMMUTABLE TRANSACTION LEDGER
+-- INVARIANT: available_balance = balance - held_balance (enforced via CHECK constraint)
 CREATE TABLE IF NOT EXISTS public.credit_balances (
     workspace_id UUID PRIMARY KEY REFERENCES public.workspaces(id) ON DELETE CASCADE,
     balance INTEGER NOT NULL DEFAULT 50 CHECK (balance >= 0),
@@ -152,7 +157,7 @@ CREATE TRIGGER trg_credit_ledger_immutable
 BEFORE UPDATE OR DELETE ON public.credit_ledger
 FOR EACH ROW EXECUTE FUNCTION private.prevent_ledger_mutation();
 
--- 5. BILLING & PAYMENTS (Workspace = Account Owner, User = Purchasing Actor)
+-- 5. BILLING & PAYMENT AUDIT (State Machine Enforced)
 CREATE TABLE IF NOT EXISTS public.payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE RESTRICT,
@@ -163,12 +168,41 @@ CREATE TABLE IF NOT EXISTS public.payments (
     plan_id TEXT NOT NULL,
     amount_subunits INTEGER NOT NULL,
     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
-    status TEXT NOT NULL,
+    status payment_status NOT NULL DEFAULT 'created',
     is_simulated BOOLEAN NOT NULL DEFAULT FALSE,
     idempotency_key TEXT UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Payment State Machine Transition Validator
+CREATE OR REPLACE FUNCTION private.validate_payment_status_transition()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.status = NEW.status THEN
+        RETURN NEW;
+    END IF;
+
+    -- Valid transitions
+    IF OLD.status = 'created' AND NEW.status IN ('authorized', 'captured', 'failed') THEN
+        RETURN NEW;
+    ELSIF OLD.status = 'authorized' AND NEW.status IN ('captured', 'failed') THEN
+        RETURN NEW;
+    ELSIF OLD.status = 'captured' AND NEW.status IN ('refunded', 'partially_refunded') THEN
+        RETURN NEW;
+    ELSIF OLD.status = 'partially_refunded' AND NEW.status = 'refunded' THEN
+        RETURN NEW;
+    ELSE
+        RAISE EXCEPTION 'Invalid payment state transition from % to %', OLD.status, NEW.status
+            USING ERRCODE = '22023';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_payment_status_transition ON public.payments;
+CREATE TRIGGER trg_payment_status_transition
+BEFORE UPDATE OF status ON public.payments
+FOR EACH ROW EXECUTE FUNCTION private.validate_payment_status_transition();
 
 -- 6. BRAND GUIDELINES
 CREATE TABLE IF NOT EXISTS public.brand_guidelines (
@@ -181,7 +215,7 @@ CREATE TABLE IF NOT EXISTS public.brand_guidelines (
     pillars TEXT[] NOT NULL DEFAULT '{}',
     colors TEXT[] NOT NULL DEFAULT '{}',
     typography JSONB NOT NULL DEFAULT '{"primary":"Inter","secondary":"Inter"}'::jsonb,
-    logo_url TEXT,
+    logo_storage_path TEXT,
     logo_description VARCHAR(2000),
     location VARCHAR(200),
     voice_accent_style VARCHAR(200),
@@ -193,24 +227,26 @@ CREATE TABLE IF NOT EXISTS public.brand_guidelines (
     CONSTRAINT unique_workspace_default_brand UNIQUE (workspace_id, is_default)
 );
 
--- 7. ASSETS
+-- 7. ASSETS (Canonical Storage Path & Sha256 Checksum)
 CREATE TABLE IF NOT EXISTS public.assets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     uploaded_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
     name VARCHAR(200) NOT NULL,
+    storage_bucket VARCHAR(100) NOT NULL DEFAULT 'user-assets',
     storage_path TEXT NOT NULL,
-    public_url TEXT NOT NULL,
     type asset_type NOT NULL,
     prompt TEXT,
     analysis JSONB,
     file_size_bytes BIGINT,
     mime_type VARCHAR(100),
+    sha256 VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON public.assets(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_assets_sha256 ON public.assets(sha256) WHERE sha256 IS NOT NULL;
 
 -- 8. AI GENERATION JOBS, OUTPUTS & USAGE COST OBSERVABILITY
 CREATE TABLE IF NOT EXISTS public.ai_generation_jobs (
@@ -238,8 +274,10 @@ CREATE TABLE IF NOT EXISTS public.ai_generation_outputs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     generation_job_id UUID NOT NULL REFERENCES public.ai_generation_jobs(id) ON DELETE CASCADE,
     asset_id UUID REFERENCES public.assets(id) ON DELETE SET NULL,
+    storage_bucket VARCHAR(100) NOT NULL DEFAULT 'user-assets',
     storage_path TEXT NOT NULL,
     mime_type VARCHAR(100) NOT NULL,
+    sha256 VARCHAR(64),
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -254,18 +292,19 @@ CREATE TABLE IF NOT EXISTS public.ai_usage (
     operation VARCHAR(100) NOT NULL,
     input_units INTEGER DEFAULT 0,
     output_units INTEGER DEFAULT 0,
-    provider_cost_subunits NUMERIC(10, 4) DEFAULT 0,
+    provider_cost_microunits BIGINT NOT NULL DEFAULT 0, -- USD micro-dollars (e.g. $0.001237 = 1237)
     credits_charged INTEGER NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_usage_analytics ON public.ai_usage(provider, model, created_at);
 
--- 9. HISTORY LOGS
+-- 9. HISTORY LOGS (Lightweight presentation view referencing ai_generation_jobs)
 CREATE TABLE IF NOT EXISTS public.history_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    job_id UUID REFERENCES public.ai_generation_jobs(id) ON DELETE SET NULL,
     gem_id VARCHAR(100) NOT NULL,
     title VARCHAR(200) NOT NULL,
     prompt TEXT NOT NULL,
@@ -281,14 +320,15 @@ CREATE TABLE IF NOT EXISTS public.human_touch_requests (
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     requester_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     asset_type VARCHAR(100) NOT NULL,
-    asset_url TEXT NOT NULL,
+    storage_bucket VARCHAR(100) NOT NULL DEFAULT 'user-assets',
+    storage_path TEXT NOT NULL,
     original_prompt TEXT NOT NULL,
     models_used VARCHAR(1000) NOT NULL DEFAULT '',
     user_comment TEXT NOT NULL,
     email_receipt VARCHAR(200) NOT NULL,
     status curation_status NOT NULL DEFAULT 'pending',
     assigned_curator_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-    completed_asset_url TEXT,
+    completed_storage_path TEXT,
     completed_comment TEXT,
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -314,7 +354,7 @@ CREATE TABLE IF NOT EXISTS public.sales_leads (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 11. USER SIGNUP & ONBOARDING TRIGGER (auth.users -> profiles + default workspace + signup credits)
+-- 11. USER SIGNUP & ONBOARDING TRIGGER
 CREATE OR REPLACE FUNCTION public.handle_new_user_registration()
 RETURNS TRIGGER 
 SECURITY DEFINER
@@ -335,7 +375,7 @@ BEGIN
     SET email = EXCLUDED.email,
         updated_at = NOW();
 
-    -- 2. Assign Default Role ('user' or 'admin' for initial admin emails)
+    -- 2. Assign Default Role
     INSERT INTO public.user_roles (user_id, role)
     VALUES (
         NEW.id,

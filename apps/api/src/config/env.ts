@@ -18,6 +18,7 @@ export interface ServerConfig {
   supabaseAnonKey: string;
   supabaseServiceRoleKey: string;
   databaseUrl: string;
+  databaseConnectionMode: "persistent" | "serverless";
   dbDriver: "supabase" | "firebase";
 }
 
@@ -32,5 +33,6 @@ export const serverConfig: ServerConfig = {
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   databaseUrl: process.env.DATABASE_URL || "",
+  databaseConnectionMode: (process.env.DB_CONNECTION_MODE === "serverless" ? "serverless" : "persistent"),
   dbDriver: (process.env.DB_DRIVER === "firebase" ? "firebase" : "supabase"),
 };
