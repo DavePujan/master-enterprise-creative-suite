@@ -9,6 +9,7 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
+    "check:boundaries": "node scripts/check-boundaries.cjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

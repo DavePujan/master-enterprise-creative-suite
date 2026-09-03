@@ -7,7 +7,7 @@ import { Router } from "express";
 
 export const salesRouter = Router();
 
-salesRouter.post("/contact-sales", async (req, res) => {
+salesRouter.post(["/", "/contact-sales"], async (req, res) => {
   try {
     const { companyName, contactName, email, teamSize, message } = req.body;
 

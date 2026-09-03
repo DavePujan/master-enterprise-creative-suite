@@ -273,13 +273,9 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
             throw new Error("Video generation completed but no URI was returned.");
           }
           
-          const isFalVideo = !!currentOp?.engine || !!updatedOp?.engine;
-          const fetchUrl = isFalVideo ? `/api/proxy?url=${encodeURIComponent(videoUri)}` : videoUri;
-          const fetchHeaders: HeadersInit = isFalVideo ? {} : { 'x-goog-api-key': process.env.GEMINI_API_KEY || '' };
-
+          const fetchUrl = `/api/proxy?url=${encodeURIComponent(videoUri)}`;
           const response = await fetch(fetchUrl, {
             method: 'GET',
-            headers: fetchHeaders,
           });
           const blob = await response.blob();
           const videoUrl = URL.createObjectURL(blob);
