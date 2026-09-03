@@ -128,16 +128,41 @@ TARGET LANGUAGE: ${request.targetLanguage || "English"}
 Generate the complete structured Audio Production Brief now.
 `.trim();
 
-      // 4. Invoke Gemini Model
+      // 4. Invoke Gemini Model (with bounded fallback to gemini-3.6-flash if primary quota exhausted)
       const ai = getServerAI();
-      const response = await ai.models.generateContent({
-        model: AUDIO_MODELS.script,
-        contents: userMessage,
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-        },
-      });
+      let response: any;
+      let modelUsed: string = AUDIO_MODELS.script;
+
+      try {
+        response = await ai.models.generateContent({
+          model: AUDIO_MODELS.script,
+          contents: userMessage,
+          config: {
+            systemInstruction,
+            temperature: 0.7,
+          },
+        });
+      } catch (scriptErr: any) {
+        const isQuota =
+          scriptErr?.status === 429 ||
+          scriptErr?.statusCode === 429 ||
+          scriptErr?.message?.includes("429") ||
+          scriptErr?.message?.includes("RESOURCE_EXHAUSTED");
+        if (isQuota) {
+          console.log("Primary script model quota exhausted, failing over to gemini-3.6-flash...");
+          response = await ai.models.generateContent({
+            model: "gemini-3.6-flash",
+            contents: userMessage,
+            config: {
+              systemInstruction,
+              temperature: 0.7,
+            },
+          });
+          modelUsed = "gemini-3.6-flash";
+        } else {
+          throw scriptErr;
+        }
+      }
 
       const rawText = response.text?.trim() || "{}";
       const sanitized = sanitizeTextOutput(rawText);

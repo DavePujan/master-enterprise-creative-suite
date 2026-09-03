@@ -23,6 +23,7 @@ import {
 import {
   buildScriptwriterPrompt,
   buildTtsPerformancePrompt,
+  buildTTSInstructionPrompt,
   buildMusicPrompt,
 } from "./audioPromptBuilder.js";
 import { ttsPcmToWav } from "./ttsPcmToWav.js";
@@ -163,22 +164,69 @@ export class AudioGenerationService {
     let finalTranscript = request.transcript?.trim() || "";
     if (!finalTranscript) {
       const scriptPrompt = buildScriptwriterPrompt(request);
-      const scriptRes = await ai.models.generateContent({
-        model: AUDIO_MODELS.script,
-        contents: scriptPrompt.userMessage,
-        config: {
-          systemInstruction: scriptPrompt.systemInstruction,
-          temperature: 0.7,
-        },
-      });
+      let scriptRes: any;
+      try {
+        scriptRes = await ai.models.generateContent({
+          model: AUDIO_MODELS.script,
+          contents: scriptPrompt.userMessage,
+          config: {
+            systemInstruction: scriptPrompt.systemInstruction,
+            temperature: 0.7,
+          },
+        });
+      } catch (scriptErr: any) {
+        const isQuota =
+          scriptErr?.status === 429 ||
+          scriptErr?.statusCode === 429 ||
+          scriptErr?.message?.includes("429") ||
+          scriptErr?.message?.includes("RESOURCE_EXHAUSTED");
+        if (isQuota) {
+          scriptRes = await ai.models.generateContent({
+            model: "gemini-3.6-flash",
+            contents: scriptPrompt.userMessage,
+            config: {
+              systemInstruction: scriptPrompt.systemInstruction,
+              temperature: 0.7,
+            },
+          });
+        } else {
+          throw scriptErr;
+        }
+      }
       finalTranscript = scriptRes.text?.trim() || request.userIntent;
     }
 
-    // Step B: Performance Direction Prompt
-    const ttsPrompt = buildTtsPerformancePrompt(finalTranscript, request.performanceConfig);
+    // Step B: Performance Direction Prompt & Multi-Speaker Configuration
+    const isTwoSpeaker = request.voiceConfig?.speakerMode === "two-speaker" && request.voiceConfig?.speakers?.length === 2;
+    const ttsPrompt = buildTTSInstructionPrompt(finalTranscript, request.voiceConfig, request.performanceConfig);
+
+    const primaryVoice = request.voiceConfig.speakers[0]?.voice || "Kore";
+    const speechConfig: any = isTwoSpeaker
+      ? {
+          multiSpeakerVoiceConfig: {
+            speakerVoiceConfigs: [
+              {
+                speaker: request.voiceConfig.speakers[0].name,
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: request.voiceConfig.speakers[0].voice },
+                },
+              },
+              {
+                speaker: request.voiceConfig.speakers[1].name,
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: request.voiceConfig.speakers[1].voice },
+                },
+              },
+            ],
+          },
+        }
+      : {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: primaryVoice },
+          },
+        };
 
     // Step C: Speech Synthesis (Gemini 3.1 Flash TTS with bounded retry & configurable fallback)
-    const primaryVoice = request.voiceConfig.speakers[0]?.voice || "Kore";
     let audioPcmBase64 = "";
     let modelUsed: string = AUDIO_MODELS.tts.primary;
     let fallbackUsed = false;
@@ -190,19 +238,20 @@ export class AudioGenerationService {
         contents: ttsPrompt,
         config: {
           responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: primaryVoice },
-            },
-          },
+          speechConfig,
         },
       });
       audioPcmBase64 = ttsRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
     } catch (primaryErr: any) {
       console.warn("Primary TTS model error:", primaryErr?.message || primaryErr);
 
-      // Attempt bounded retry if transient
-      const isRateLimit = primaryErr?.message?.includes("429") || primaryErr?.message?.includes("RESOURCE_EXHAUSTED");
+      // Attempt bounded retry if transient rate limit / quota exhaustion
+      const isRateLimit =
+        primaryErr?.message?.includes("429") ||
+        primaryErr?.message?.includes("RESOURCE_EXHAUSTED") ||
+        primaryErr?.status === 429 ||
+        primaryErr?.statusCode === 429;
+
       if (isRateLimit) {
         // Optional configured fallback to Gemini 2.5 Flash TTS
         try {
@@ -212,11 +261,7 @@ export class AudioGenerationService {
             contents: ttsPrompt,
             config: {
               responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: primaryVoice },
-                },
-              },
+              speechConfig,
             },
           });
           audioPcmBase64 = fallbackRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
@@ -329,7 +374,7 @@ export class AudioGenerationService {
 
   /**
    * Executes the Music Pipeline:
-   * Musical Direction Prompt -> Lyria 3.5 (Clip or Pro) -> Normalization -> Supabase Storage.
+   * Musical Direction Prompt -> Lyria Interactions API (Clip or Pro) -> Normalization -> Supabase Storage.
    */
   private async executeMusicPipeline(params: {
     request: MusicRequest;
@@ -362,33 +407,55 @@ export class AudioGenerationService {
     // Step A: Structured musical production prompt
     const musicPrompt = buildMusicPrompt(request);
 
-    // Step B: Invoke Lyria 3.5 model
-    let rawCandidate: any;
+    // Step B: Invoke Lyria model via Gemini Interactions API
+    let rawResult: any;
     try {
-      const musicRes = await ai.models.generateContent({
-        model: modelRequested,
-        contents: musicPrompt,
-        config: {
-          responseModalities: ["AUDIO"],
-        },
-      });
-      rawCandidate = musicRes.candidates?.[0];
+      try {
+        rawResult = await (ai as any).interactions.create({
+          model: modelRequested,
+          input: musicPrompt,
+          response_format: { type: "audio" },
+        });
+      } catch (firstErr: any) {
+        // Fallback between 3.5 and 3 aliases if 404
+        const isNotFound =
+          firstErr?.status === 404 ||
+          firstErr?.statusCode === 404 ||
+          firstErr?.message?.includes("not found");
+        if (isNotFound) {
+          const alternateModel = modelRequested.includes("3.5")
+            ? modelRequested.replace("3.5", "3")
+            : modelRequested.replace("lyria-3-", "lyria-3.5-");
+          rawResult = await (ai as any).interactions.create({
+            model: alternateModel,
+            input: musicPrompt,
+            response_format: { type: "audio" },
+          });
+        } else {
+          throw firstErr;
+        }
+      }
     } catch (lyriaErr: any) {
       console.warn("Lyria music generation error:", lyriaErr?.message || lyriaErr);
-      const isQuota = lyriaErr?.message?.includes("429") || lyriaErr?.message?.includes("RESOURCE_EXHAUSTED");
+      const isQuota =
+        lyriaErr?.status === 429 ||
+        lyriaErr?.statusCode === 429 ||
+        lyriaErr?.message?.includes("429") ||
+        lyriaErr?.message?.includes("RESOURCE_EXHAUSTED") ||
+        lyriaErr?.message?.includes("Quota exceeded");
       if (isQuota) {
         throw {
           statusCode: 429,
           code: "LYRIA_QUOTA_EXHAUSTED",
           message:
-            "Music generation (Lyria 3.5) quota is currently unavailable on this tier. No credits were deducted.",
+            "Music generation (Lyria) quota is currently unavailable on this plan tier. No credits were deducted.",
         };
       }
       throw lyriaErr;
     }
 
     // Step C: Dedicated Music Output Normalization (MP3/WAV)
-    const normalized = normalizeMusicOutput(rawCandidate, request.mode);
+    const normalized = normalizeMusicOutput(rawResult, request.mode);
 
     // Step D: Upload to Supabase Storage
     const ext = normalized.mimeType === "audio/wav" ? "wav" : "mp3";
