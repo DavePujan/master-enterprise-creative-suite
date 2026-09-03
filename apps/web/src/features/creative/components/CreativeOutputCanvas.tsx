@@ -780,10 +780,11 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
                             onClick={() => handleTTS(result.concept.voiceOver)}
-                            className="p-2 bg-white dark:bg-slate-900 rounded-sm shadow-sm text-slate-900 dark:text-white hover:scale-105 transition-transform cursor-pointer"
-                            title="Listen to Voice Over"
+                            disabled={isTTSLoading}
+                            className="p-2 bg-white dark:bg-slate-900 rounded-sm shadow-sm text-slate-900 dark:text-white hover:scale-105 transition-transform cursor-pointer disabled:opacity-50"
+                            title={isTTSLoading ? "Generating Speech Audio..." : isPlaying ? "Pause Voice Over" : "Listen to Voice Over"}
                           >
-                            {isPlaying ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                            {isTTSLoading ? <Loader2 size={14} className="animate-spin text-sky-500" /> : isPlaying ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
                           </button>
                           {audioUrl && (
                             <button 
@@ -868,7 +869,14 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isTTSLoading && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-sm bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-300 text-xs font-semibold animate-pulse shadow-sm">
+                          <Loader2 size={14} className="animate-spin text-sky-500" />
+                          <span>Generating Voiceover (TTS)...</span>
+                        </div>
+                      )}
+
                       {isPlaying && (
                         <div className="hidden sm:flex items-center gap-1 mr-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded-sm animate-pulse">
                           <div className="w-1 h-3 bg-slate-400 dark:bg-slate-500 rounded-full animate-[bounce_1s_infinite_0ms]" />
@@ -883,15 +891,20 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                           onClick={() => handleTTS(cleanTextContent(result.data))}
                           disabled={isTTSLoading}
                           className={cn(
-                            "h-10 px-4 rounded-sm transition-all disabled:opacity-50 flex items-center gap-2 font-bold text-xs cursor-pointer",
-                            isPlaying 
+                            "h-10 px-4 rounded-sm transition-all flex items-center gap-2 font-bold text-xs cursor-pointer select-none",
+                            isTTSLoading
+                              ? "bg-sky-600 text-white shadow-sm cursor-wait animate-pulse"
+                              : isPlaying 
                               ? "bg-slate-800 text-white shadow-sm" 
                               : "bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                           )}
-                          title={isPlaying ? "Pause Narrative" : "Listen to Narrative"}
+                          title={isTTSLoading ? "Generating Speech Audio..." : isPlaying ? "Pause Narrative" : "Listen to Narrative"}
                         >
                           {isTTSLoading ? (
-                            <Loader2 className="animate-spin" size={16} />
+                            <>
+                              <Loader2 className="animate-spin" size={16} />
+                              <span>Generating TTS...</span>
+                            </>
                           ) : isPlaying ? (
                             <>
                               <Pause size={16} />
@@ -923,14 +936,34 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                     <ReactMarkdown>{cleanTextContent(result.data)}</ReactMarkdown>
                   </div>
 
+                  {isTTSLoading && (
+                    <div className="mt-6 p-4 bg-sky-50/70 dark:bg-sky-950/40 rounded-sm border border-sky-200 dark:border-sky-900/60 flex items-center justify-between gap-4 animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900 flex items-center justify-center text-sky-600 dark:text-sky-300">
+                          <Volume2 size={16} className="animate-bounce" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-sky-900 dark:text-sky-200">
+                            Synthesizing Speech with AI Voice Model...
+                          </p>
+                          <p className="text-[11px] text-sky-700 dark:text-sky-400">
+                            Processing realistic human intonation & cadence. Your voiceover will automatically play once ready.
+                          </p>
+                        </div>
+                      </div>
+                      <Loader2 size={18} className="animate-spin text-sky-500 shrink-0" />
+                    </div>
+                  )}
+
                   {audioDuration > 0 && (
                     <div className="mt-8 p-6 bg-slate-50/50 dark:bg-slate-800/50 rounded-sm border border-slate-100 dark:border-slate-700 flex flex-col gap-4">
                       <div className="flex items-center gap-4">
                         <button 
-                          onClick={() => handleTTS(result.data)}
-                          className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-900 rounded-sm shadow-sm hover:shadow-md transition-all text-slate-900 dark:text-white border border-slate-100 dark:border-slate-800 cursor-pointer"
+                          onClick={() => handleTTS(cleanTextContent(result.data))}
+                          disabled={isTTSLoading}
+                          className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-900 rounded-sm shadow-sm hover:shadow-md transition-all text-slate-900 dark:text-white border border-slate-100 dark:border-slate-800 cursor-pointer disabled:opacity-50"
                         >
-                          {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-1" />}
+                          {isTTSLoading ? <Loader2 size={18} className="animate-spin text-sky-500" /> : isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-1" />}
                         </button>
                         
                         <div className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full relative group cursor-pointer overflow-hidden">
