@@ -6,7 +6,7 @@
 import { Modality, Type } from "@google/genai";
 import { getAI, parseJSON, withRetry, generateHistoryTitle } from "./geminiClient.js";
 import { apiClient } from '../api/apiClient.js';
-import { MODELS, promptEngineSettings } from "./modelRegistry.js";
+import { MODELS, promptEngineSettings, getImageModelCapabilities } from "./modelRegistry.js";
 
 import {
   getSupportedLogoData,
@@ -20,6 +20,7 @@ import {
 import { pcmToWav } from '@utils/audio.js';
 import type { Gem, SlideStructure, StorylineStructure } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
+import type { NormalizedImageResult, NormalizedImageRequest } from '@shared-types/imageGeneration.js';
 
 export {
   generateFastPrompt,
@@ -132,110 +133,63 @@ export async function generateCreative(
       ? gem.systemInstruction
       : 'Create a clean, natural brand image.';
 
-    const parts: any[] = [
-      {
-        text: `${finalSystemInstruction}\n${finalGuidelinesContext}${styleInstruction}${culturalVisualInstruction}\n\nPrompt: ${prompt}`
+    // Parse contexts from attached assets
+    let productRef: { enabled: boolean; assetId?: string; data?: string } | undefined = undefined;
+    let faceRef: { enabled: boolean; assetId?: string; data?: string } | undefined = undefined;
+    const ingredients: Array<{ id?: string; name: string; data?: string }> = [];
+    const referenceImages: string[] = [];
+
+    const selectedModelKey = config?.model || 'fal-studio';
+    const modelCaps = getImageModelCapabilities(selectedModelKey);
+    // Align request enablement with model capabilities to respect UI's "Reference Ignored by Active Model" promise
+    const supportsFace = modelCaps?.faceReference?.status === 'native' || modelCaps?.supportsFaceReference === 'supported';
+    const supportsProd = modelCaps?.productReference?.status !== 'unsupported' && modelCaps?.supportsProductReference !== 'unsupported';
+
+    if (config?.assets && Array.isArray(config.assets)) {
+      for (const asset of config.assets) {
+        if (asset.type === 'product_context') {
+          productRef = { enabled: supportsProd, assetId: asset.id, data: asset.data };
+        } else if (asset.type === 'face_context') {
+          faceRef = { enabled: supportsFace, assetId: asset.id, data: asset.data };
+        } else if (asset.type === 'ingredient_context') {
+          ingredients.push({ id: asset.id, name: asset.name, data: asset.data });
+        } else if (asset.data) {
+          referenceImages.push(asset.data);
+        }
       }
-    ];
-
-    await appendAssetsToParts(parts, config?.assets);
-
-    if (!promptEngineSettings.allowTextOnAssets) {
-      parts[0].text +=
-        "\n\nCRITICAL TEXT OVERLAY RESTRICTION: ABSOLUTELY NO text, letters, typography, font, labels, captions, subtitles, words, logos, names, branding, or alphabetical/numerical overlays are allowed inside the generated image. All visual elements, backgrounds, product surfaces, and scenes must be completely clean of any text/words/labels. Make the image completely textless and empty of characters.";
     }
 
-    if (config?.bakeLogo !== false && config?.guidelines?.logo && promptEngineSettings.allowTextOnAssets) {
-      const supportedLogo = await getSupportedLogoData(config.guidelines.logo);
-      if (supportedLogo) {
-        parts.push({
-          inlineData: {
-            mimeType: supportedLogo.mimeType,
-            data: supportedLogo.data
-          }
-        });
-        parts[0].text +=
-          "\n\nIMPORTANT: Use the provided logo image as the definitive brand mark. Incorporate it into the creative EXACTLY ONCE. The logo MUST be a clean, transparent overlay with NO background box, border, or container. It should blend naturally into the scene as if it were part of the environment or a high-end watermark. ABSOLUTELY NO grey, white, or colored background squares around the logo. DO NOT generate any other text or logos.";
-      }
-    } else {
-      parts[0].text +=
-        "\n\nCRITICAL: DO NOT overlay or draw any logo, text, or brand name on the image. Generate only the clean background scene, leaving space if needed for a layout watermark to be added later on.";
+    const hasLogo = promptEngineSettings.allowTextOnAssets && !!config?.guidelines?.logo;
+    const normalizedReq: NormalizedImageRequest = {
+      prompt,
+      aspectRatio: (config?.aspectRatio as any) || '1:1',
+      modelKey: config?.model || 'fal-studio',
+      style: config?.imageStyle,
+      logo: {
+        enabled: hasLogo,
+        bakeLogo: !!config?.bakeLogo,
+        url: config?.guidelines?.logo
+      },
+      productReference: productRef,
+      faceReference: faceRef,
+      ingredients: ingredients.length > 0 ? ingredients : undefined,
+      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      guidelines: config?.guidelines
+    };
+
+    const res = await apiClient.post<NormalizedImageResult>('/api/images/generate', normalizedReq);
+    const imageUrl = res?.images?.[0]?.url;
+    if (!imageUrl) {
+      throw new Error("No image generated by image service");
     }
 
-    const modelId = config?.model || 'openai/gpt-image-2';
-    const isFal = modelId.startsWith('fal-ai/') || modelId === 'openai/gpt-image-2' || !modelId.startsWith('gemini-');
-
-    if (isFal) {
-      const referenceImages: string[] = [];
-      if (config?.assets) {
-        config.assets.forEach((asset: any) => {
-          if (asset.type === 'image' && asset.data) {
-            referenceImages.push(asset.data);
-          }
-        });
-      }
-
-      const renderRes = await fetch("/api/campaign/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: parts[0].text,
-          size: config?.aspectRatio || '1:1',
-          engine: modelId,
-          guidelines: config?.guidelines,
-          referenceImages: referenceImages
-        })
-      });
-      if (!renderRes.ok) {
-        const errText = await renderRes.text();
-        throw new Error(`Fal AI rendering error: ${errText}`);
-      }
-      const renderData = await renderRes.json();
-      return {
-        type: 'image',
-        data: renderData.url
-      };
-    }
-
-    const ai = getAI();
-    try {
-      const response = await withRetry(() =>
-        ai.models.generateContent({
-          model: modelId,
-          contents: { parts },
-          config: {
-            imageConfig: { aspectRatio: (config?.aspectRatio as any) || "1:1" }
-          }
-        })
-      );
-
-      const imagePart = response.candidates?.[0]?.content?.parts.find((p) => p.inlineData);
-      if (imagePart?.inlineData) {
-        return {
-          type: 'image',
-          data: `data:image/png;base64,${imagePart.inlineData.data}`,
-          groundingMetadata: response.candidates?.[0]?.groundingMetadata
-        };
-      }
-    } catch (gErr: any) {
-      console.warn("Gemini image generation failed or quota reached, routing to Fal AI engine:", gErr.message);
-      const renderRes = await fetch("/api/campaign/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: parts[0].text,
-          size: config?.aspectRatio || '1:1',
-          engine: 'openai-gpt-image-2',
-          guidelines: config?.guidelines
-        })
-      });
-      if (renderRes.ok) {
-        const renderData = await renderRes.json();
-        return { type: 'image', data: renderData.url };
-      }
-      throw gErr;
-    }
-    throw new Error("No image generated");
+    return {
+      type: 'image',
+      data: imageUrl,
+      newBalance: res.newBalance,
+      storagePath: res.images[0].storagePath,
+      assetId: res.images[0].assetId
+    };
   }
 
   if (gem.type === 'campaign') {
@@ -314,21 +268,13 @@ export async function generateCreative(
   if (gem.type === 'text') {
     const ai = getAI();
     const modelId = config?.model || 'gemini-2.5-flash';
-    const parts: any[] = [{ text: `${gem.systemInstruction}\n${guidelinesContext}\n\nPrompt: ${prompt}` }];
+    const isCaptions = gem.id === 'strategy-captions';
 
-    if (config?.guidelines?.logo) {
-      const supportedLogo = await getSupportedLogoData(config.guidelines.logo);
-      if (supportedLogo) {
-        parts.push({
-          inlineData: {
-            mimeType: supportedLogo.mimeType,
-            data: supportedLogo.data
-          }
-        });
-        parts[0].text +=
-          "\n\nIMPORTANT: Use the provided logo image as the definitive brand mark. In your generated SVG, represent this logo accurately using SVG paths/shapes or include a clear placeholder for it. Ensure it is well-positioned and blends with the brand aesthetics. Place it as a clear, well-positioned element with a transparent background—DO NOT place it inside a box, label, or rounded rectangle.";
-      }
-    }
+    const strictFormatting = isCaptions
+      ? "\n\nCRITICAL FORMATTING INSTRUCTION: Deliver clean, high-converting, platform-ready social media captions with engaging hooks, emojis, body copy, hashtags, and platform recommendations. ABSOLUTELY DO NOT output any raw SVG code, HTML tags, CSS, XML, programming code, or internal thoughts. Output ONLY formatted Markdown copy."
+      : "\n\nCRITICAL FORMATTING INSTRUCTION: Deliver clean, high-impact brand copywriting in Markdown format. ABSOLUTELY DO NOT output any raw SVG code, HTML tags, XML, or code blocks. Output ONLY formatted Markdown text.";
+
+    const parts: any[] = [{ text: `${gem.systemInstruction}\n${guidelinesContext}${strictFormatting}\n\nPrompt: ${prompt}` }];
 
     await appendAssetsToParts(parts, config?.assets);
 
@@ -337,14 +283,19 @@ export async function generateCreative(
         model: modelId,
         contents: { parts },
         config: {
-          systemInstruction: gem.systemInstruction
+          systemInstruction: `${gem.systemInstruction}\n\nStrict Rule: Output ONLY clean human-readable marketing copy in Markdown. Never generate SVG, HTML, code tags, or developer metadata.`
         }
       })
     );
 
+    let cleanedText = response.text || '';
+    // Strip any accidental raw <svg>...</svg> blocks or ```xml ```svg code fences
+    cleanedText = cleanedText.replace(/<svg[\s\S]*?<\/svg>/gi, '').trim();
+    cleanedText = cleanedText.replace(/```(?:svg|xml|html)?\s*<svg[\s\S]*?<\/svg>\s*```/gi, '').trim();
+
     return {
       type: 'text',
-      data: response.text,
+      data: cleanedText,
       groundingMetadata: response.candidates?.[0]?.groundingMetadata
     };
   }
@@ -491,21 +442,12 @@ export async function generateCreative(
 
     const isFalVideo = modelId === 'bytedance/seedance-2.0' || modelId === 'kling-video';
     if (isFalVideo) {
-      const renderRes = await fetch("/api/campaign/video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: concept.visualPrompt,
-          size: config?.aspectRatio || '16:9',
-          engine: modelId,
-          guidelines: config?.guidelines
-        })
+      const queueJson = await apiClient.post<any>("/api/campaign/video", {
+        prompt: concept.visualPrompt,
+        size: config?.aspectRatio || '16:9',
+        engine: modelId,
+        guidelines: config?.guidelines
       });
-      if (!renderRes.ok) {
-        const errorText = await renderRes.text();
-        throw new Error(`Fal AI video generation error: ${errorText}`);
-      }
-      const queueJson = await renderRes.json();
       return {
         type: 'video_op',
         operationId: queueJson.request_id || queueJson.operationId,
@@ -805,22 +747,13 @@ export async function generateImage(
       });
     }
 
-    const renderRes = await fetch("/api/campaign/render", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: parts[0].text,
-        size: aspectRatio,
-        engine: modelId,
-        guidelines: guidelines,
-        referenceImages: referenceImages
-      })
+    const renderData = await apiClient.post<any>("/api/campaign/render", {
+      prompt: parts[0].text,
+      size: aspectRatio,
+      engine: modelId,
+      guidelines: guidelines,
+      referenceImages: referenceImages
     });
-    if (!renderRes.ok) {
-      const errText = await renderRes.text();
-      throw new Error(`Fal AI rendering error: ${errText}`);
-    }
-    const renderData = await renderRes.json();
     return {
       url: renderData.url
     };
@@ -847,19 +780,18 @@ export async function generateImage(
     }
   } catch (gErr: any) {
     console.warn("Gemini image generator failed, recovering with Fal AI:", gErr.message);
-    const renderRes = await fetch("/api/campaign/render", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const renderData = await apiClient.post<any>("/api/campaign/render", {
         prompt: parts[0].text,
         size: aspectRatio,
         engine: 'openai-gpt-image-2',
         guidelines: guidelines
-      })
-    });
-    if (renderRes.ok) {
-      const renderData = await renderRes.json();
-      return { url: renderData.url };
+      });
+      if (renderData?.url) {
+        return { url: renderData.url };
+      }
+    } catch (renderErr) {
+      console.error("Fal image fallback failed:", renderErr);
     }
     throw gErr;
   }
@@ -882,16 +814,7 @@ export async function generateTTS(
 
 export async function pollVideo(operation: any) {
   if (operation && (operation.engine || operation.status_url)) {
-    const res = await fetch("/api/campaign/video-poll", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operation })
-    });
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Fal video poll error: ${errorText}`);
-    }
-    return await res.json();
+    return await apiClient.post<any>("/api/campaign/video-poll", { operation });
   }
   const ai = getAI();
   return await withRetry(() => ai.operations.getVideosOperation({ operation }));

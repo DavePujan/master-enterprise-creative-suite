@@ -7,8 +7,8 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Downloads a file from a URL by fetching it and creating a local blob URL.
- * This is necessary for cross-origin downloads (like Firebase Storage) where the 
- * 'download' attribute on <a> tags might be ignored.
+ * This is necessary for cross-origin downloads (like Supabase Storage) where the 
+ * browser ignores the `download` attribute on standard <a> tags.
  */
 export async function downloadFile(url: string, filename: string) {
   // Ensure we have a reasonable filename

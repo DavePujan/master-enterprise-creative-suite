@@ -19,8 +19,7 @@ import {
   User
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { db, handleFirestoreError } from '@web/infrastructure/firebase/firebaseApp.js';
-import { submitSalesInquiry } from '../../../infrastructure/firebase/repositories/salesRepository.js';
+import { submitSalesInquiry } from '@web/infrastructure/repositories/salesRepository.js';
 
 interface EnterprisePlanProps {
   credits?: number;
@@ -465,22 +464,9 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
       try {
         const submissionId = Math.random().toString(36).substring(7);
         await submitSalesInquiry(submissionId, submissionDoc);
-      } catch (error) {
-        handleFirestoreError(error, 'create', 'salesSubmissions');
-      }
-
-      // 2. Dispatch to backend API to simulate email copy
-      const response = await fetch('/api/contact-sales', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(submissionDoc)
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        console.warn("Backend notification responded with error:", errData);
+      } catch (error: any) {
+        console.warn('Sales inquiry submit error:', error);
+        throw new Error(error.message || 'Failed to dispatch enterprise sales request');
       }
 
       setSalesSubmitMessage({

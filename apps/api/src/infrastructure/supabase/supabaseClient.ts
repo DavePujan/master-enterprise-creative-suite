@@ -98,7 +98,16 @@ export async function reserveCreditsForAi(params: {
     return { success: false, error: error.message };
   }
 
-  return data as any;
+  const res = data as any;
+  return {
+    success: Boolean(res?.success),
+    holdId: res?.hold_id ?? res?.holdId,
+    hold_id: res?.hold_id ?? res?.holdId,
+    amountReserved: res?.amount_reserved ?? res?.amountReserved,
+    available: res?.available,
+    required: res?.required,
+    error: res?.error,
+  } as any;
 }
 
 /**
@@ -110,6 +119,7 @@ export async function captureCreditHold(params: {
 }): Promise<{
   success: boolean;
   newBalance?: number;
+  new_balance?: number;
   ledgerId?: string;
   isReplay?: boolean;
   error?: string;
@@ -117,7 +127,7 @@ export async function captureCreditHold(params: {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     if (serverConfig.nodeEnv === "development") {
-      return { success: true, newBalance: 40, ledgerId: `mock_ledger_${Date.now()}` };
+      return { success: true, newBalance: 40, new_balance: 40, ledgerId: `mock_ledger_${Date.now()}` };
     }
     return { success: false, error: "Database not configured" };
   }
@@ -132,7 +142,15 @@ export async function captureCreditHold(params: {
     return { success: false, error: error.message };
   }
 
-  return data as any;
+  const res = data as any;
+  const balanceVal = res?.new_balance ?? res?.newBalance;
+  return {
+    success: Boolean(res?.success),
+    newBalance: balanceVal,
+    new_balance: balanceVal,
+    ledgerId: res?.ledger_id ?? res?.ledgerId,
+    isReplay: res?.is_replay ?? res?.isReplay,
+  };
 }
 
 /**

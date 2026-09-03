@@ -3,3 +3,5 @@ export * from './brand.js';
 export * from './creative.js';
 export * from './user.js';
 export * from './tierPolicy.js';
+export * from './imageGeneration.js';
+export * from './imageAutoWrite.js';

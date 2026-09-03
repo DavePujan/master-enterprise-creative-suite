@@ -20,7 +20,10 @@ import {
   BookOpen,
   Layers,
   Volume2,
-  Music
+  Music,
+  ChevronLeft,
+  ChevronRight,
+  Loader2
 } from 'lucide-react';
 import { BrandLogo } from '@web/features/brand/components/BrandLogo.js';
 import { GENERIC_GEMS } from '@web/infrastructure/ai/modelRegistry.js';
@@ -58,6 +61,7 @@ export interface AppSidebarProps {
   onOpenSettings: () => void;
   onLogout: () => void;
   onLogin: () => void;
+  generatingGemIds?: string[];
 }
 
 export const AppSidebar: React.FC<AppSidebarProps> = ({
@@ -80,7 +84,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   isSyncing,
   onOpenSettings,
   onLogout,
-  onLogin
+  onLogin,
+  generatingGemIds = []
 }) => {
   const getIcon = (iconName: string) => {
     switch (iconName) {
@@ -101,10 +106,18 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   return (
     <aside 
       className={cn(
-        "bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 flex flex-col",
-        sidebarOpen ? "w-72" : "w-0 -translate-x-full lg:w-20 lg:translate-x-0"
+        "bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 flex flex-col z-30 h-full relative",
+        sidebarOpen ? "w-64" : "w-20"
       )}
     >
+      <button 
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="absolute -right-3 top-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full p-1 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors z-40 text-slate-500 dark:text-slate-400 cursor-pointer"
+      >
+        {sidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+      </button>
+
+      {/* Brand Identity Header / Studio Switcher */}
       <div className={cn(
         "flex flex-col items-center border-b border-slate-100 dark:border-slate-800 shrink-0 transition-all duration-300",
         sidebarOpen ? "p-8" : "p-4"
@@ -120,13 +133,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         />
         {sidebarOpen && (
           <motion.div 
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center text-center"
+            className="mt-2 text-center flex flex-col items-center"
           >
-            <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
-              {brandGuidelines.name}
-            </span>
+            <span className="font-medium text-sm text-slate-900 dark:text-slate-100">{brandGuidelines?.name || 'Brand Studio'}</span>
             <p className="text-[9px] text-slate-500 font-medium tracking-widest uppercase mt-1">Creative Suite</p>
             <div className="mt-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
               <Sparkles size={12} />
@@ -143,12 +154,13 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         {GENERIC_GEMS.map((gem) => {
           const isSelected = selectedGem.id === gem.id;
           const isAudio = gem.type === 'audio';
+          const isGeneratingThisGem = generatingGemIds.includes(gem.id);
           return (
             <button
               key={gem.id}
               onClick={() => onSelectGem(gem)}
               className={cn(
-                "w-full flex items-center gap-3 p-3 rounded-sm transition-all group border cursor-pointer",
+                "w-full flex items-center gap-3 p-3 rounded-sm transition-all group border cursor-pointer relative",
                 isSelected
                   ? isAudio
                     ? "bg-violet-50 dark:bg-violet-950/20 text-violet-600 dark:text-violet-400 border-violet-100 dark:border-violet-900/60 shadow-sm"
@@ -159,7 +171,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               )}
             >
               <div className={cn(
-                "shrink-0", 
+                "shrink-0 relative", 
                 isSelected 
                   ? isAudio 
                     ? "text-violet-600 dark:text-violet-400" 
@@ -169,6 +181,9 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300"
               )}>
                 {getIcon(gem.icon)}
+                {isGeneratingThisGem && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                )}
               </div>
               {sidebarOpen && (
                 <div className="text-left overflow-hidden flex-1">
@@ -186,16 +201,23 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 </div>
               )}
               {sidebarOpen && (
-                <div className={cn(
-                  "shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full transition-colors",
-                  isSelected
-                    ? isAudio
-                      ? "text-violet-600 bg-violet-100 dark:text-violet-300 dark:bg-violet-950/50"
-                      : "text-rose-600 bg-rose-100 dark:text-rose-300 dark:bg-rose-950/50"
-                    : "text-amber-500 bg-amber-500/10"
-                )}>
-                  {gem.cost}
-                </div>
+                isGeneratingThisGem ? (
+                  <div className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 animate-pulse">
+                    <Loader2 size={10} className="animate-spin" />
+                    <span>Active</span>
+                  </div>
+                ) : (
+                  <div className={cn(
+                    "shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full transition-colors",
+                    isSelected
+                      ? isAudio
+                        ? "text-violet-600 bg-violet-100 dark:text-violet-300 dark:bg-violet-950/50"
+                        : "text-rose-600 bg-rose-100 dark:text-rose-300 dark:bg-rose-950/50"
+                      : "text-amber-500 bg-amber-500/10"
+                  )}>
+                    {gem.cost}
+                  </div>
+                )
               )}
             </button>
           );

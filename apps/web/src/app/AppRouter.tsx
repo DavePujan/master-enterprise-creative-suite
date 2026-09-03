@@ -74,11 +74,15 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         }
       } else if (currentPath === '/brand-init' && brandSetupComplete) {
         navigateTo('/workspace');
-      } else if (currentPath === '/workspace' && !brandSetupComplete) {
-        navigateTo('/brand-init');
+      } else if (currentPath === '/workspace' && !brandSetupComplete && !isInitialDataLoading) {
+        // Only redirect if brand setup is genuinely absent from both state and storage
+        const cached = localStorage.getItem('brandSetupComplete');
+        if (cached !== 'true') {
+          navigateTo('/brand-init');
+        }
       }
     }
-  }, [user, loading, isInitialDataLoading, brandSetupComplete, currentPath, navigateTo]);
+  }, [user?.uid, loading, isInitialDataLoading, brandSetupComplete, currentPath, navigateTo]);
 
   if (currentPath.startsWith('/legal')) {
     return (

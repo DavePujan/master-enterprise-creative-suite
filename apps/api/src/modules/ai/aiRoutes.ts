@@ -36,7 +36,42 @@ aiRouter.post("/generate-content", async (req, res) => {
 
   let holdId: string | null = null;
   let jobId: string | null = null;
-  const creditsRequired = 5;
+
+  // Dynamically determine exact required credits based on model and operation
+  const requestedModel = (data?.model || "").toLowerCase();
+  let creditsRequired = 5;
+  if (requestedModel.includes("flash-image") || requestedModel.includes("schnell")) {
+    creditsRequired = 2;
+  } else if (requestedModel.includes("gpt-image-2") || requestedModel.includes("fal studio")) {
+    creditsRequired = 3;
+  } else if (requestedModel.includes("flux/dev") || requestedModel.includes("flux-pro")) {
+    creditsRequired = 4;
+  } else if (requestedModel.includes("veo-3.1-lite")) {
+    creditsRequired = 10;
+  } else if (requestedModel.includes("veo-3.1-fast")) {
+    creditsRequired = 20;
+  } else if (requestedModel.includes("veo-3.1") || requestedModel.includes("kling")) {
+    creditsRequired = 40;
+  } else if (requestedModel.includes("seedance")) {
+    creditsRequired = 80;
+  } else {
+    // Short fast prompt / rewrite / title / auto-write operations
+    const contentsStr = JSON.stringify(data?.contents || "");
+    const sysStr = JSON.stringify(data?.config?.systemInstruction || "");
+    const combinedStr = contentsStr + " " + sysStr;
+    if (
+      combinedStr.includes("generateFastPrompt") ||
+      combinedStr.includes("rewrite") ||
+      combinedStr.includes("tagline") ||
+      combinedStr.includes("Commercial Art Director") ||
+      combinedStr.includes("USER CREATIVE INTENT") ||
+      combinedStr.includes("autowrite")
+    ) {
+      creditsRequired = 1;
+    } else if (combinedStr.includes("Brand Identity Expert") || combinedStr.includes("brand documents")) {
+      creditsRequired = 2;
+    }
+  }
 
   try {
     // 1. Two-phase credit reservation
@@ -76,8 +111,10 @@ aiRouter.post("/generate-content", async (req, res) => {
     const result = await orchestrateGenerateContent(data!, userIdentifier);
 
     // 4. On success: capture hold and settle to ledger
+    let newBalance: number | undefined;
     if (holdId) {
-      await creditService.captureCredits(holdId, `capture_${clientKey}`);
+      const captureResult = await creditService.captureCredits(holdId, `capture_${clientKey}`);
+      newBalance = captureResult.newBalance ?? (captureResult as any)?.new_balance;
       if (jobId) {
         await aiJobRepository.completeJob({
           jobId,
@@ -100,9 +137,12 @@ aiRouter.post("/generate-content", async (req, res) => {
       }
     }
 
-    return res.json(result);
+    return res.json({
+      ...result,
+      newBalance
+    });
   } catch (err: any) {
-    // On failure: release hold back to available balance
+    // On failure: release hold back to available balance immediately
     if (holdId) {
       await creditService.releaseCredits(holdId, err?.message || "AI Generation Failed");
     }

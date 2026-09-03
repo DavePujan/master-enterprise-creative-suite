@@ -424,7 +424,7 @@ export default function LandingPage({ onOpenWorkspace, onLogin, navigateTo }: La
                       {legalTab === 'privacy' && (
                         <>
                           <p className="font-bold text-slate-800">1. Data Storage and Protection</p>
-                          <p>Writopedia AI holds corporate security in absolute priority. Any brand asset, including logos, target keywords, custom text copy, or draft guidelines, are locked to your private user account using Firebase authentication and enterprise-grade rules config.</p>
+                          <p>Writopedia AI holds corporate security in absolute priority. Any brand asset, including logos, target keywords, custom text copy, or draft guidelines, are locked to your private user account using Supabase enterprise authentication and PostgreSQL Row Level Security (RLS).</p>
                           <p className="font-bold text-slate-800">2. AI Training Exclusions</p>
                           <p>We do not use customer data, uploaded logos, or generated templates to train public models. Your intellectual property is strictly protected.</p>
                         </>

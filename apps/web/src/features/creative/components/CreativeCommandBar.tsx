@@ -13,6 +13,9 @@ import {
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
+import { generateImageAutoWriteIdea } from '../services/imageAutoWriteService.js';
+import { getImageModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
+import type { ImageAutoWriteIdea } from '@shared-types/imageAutoWrite.js';
 import { resizeImageIfNeeded } from '@utils/image.js';
 import { cn } from '@web/lib/utils.js';
 
@@ -40,6 +43,9 @@ export interface CreativeCommandBarProps {
   selectedModel: string;
   selectedPresentationTheme: any;
   setSelectedPresentationTheme: (theme: any) => void;
+  aspectRatio?: string;
+  imageStyle?: string;
+  bakeLogoOnGeneration?: boolean;
   isGenerating: boolean;
   handleGenerate: () => Promise<void>;
 }
@@ -68,9 +74,14 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   selectedModel,
   selectedPresentationTheme,
   setSelectedPresentationTheme,
+  aspectRatio,
+  imageStyle,
+  bakeLogoOnGeneration,
   isGenerating,
   handleGenerate
 }) => {
+  const [activeIdeaPreview, setActiveIdeaPreview] = React.useState<ImageAutoWriteIdea | null>(null);
+
   const generateCustomThemes = (guidelines: any) => {
     const brandColors = guidelines?.colors && guidelines.colors.length > 0 ? guidelines.colors : ['#0f172a', '#334155'];
     const pColor = brandColors[0] || '#0f172a';
@@ -169,16 +180,38 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
             onClick={async () => {
               try {
                 setIsGeneratingCreativePrompt(true);
-                const prm = await generateFastPrompt(
-                  'creative', 
-                  brandGuidelines.name, 
-                  selectedGem.name, 
-                  selectedGem.id, 
-                  !!productContext, 
-                  !!faceContext,
-                  brandGuidelines
-                );
-                setPrompt(prm);
+                if (selectedGem.type === 'image') {
+                  const caps = getImageModelCapabilities(selectedModel);
+                  const res = await generateImageAutoWriteIdea({
+                    userIntent: prompt,
+                    brandGuidelines,
+                    imageConfig: {
+                      aspectRatio: aspectRatio || '1:1',
+                      selectedModel,
+                      style: imageStyle,
+                      bakeLogoOnGeneration: !!bakeLogoOnGeneration,
+                      hasProductContext: !!productContext,
+                      productName: productContext?.name,
+                      hasFaceContext: !!faceContext,
+                      faceName: faceContext?.name,
+                      ingredients: ingredientsContexts.map(i => i.name)
+                    },
+                    capabilities: caps
+                  });
+                  setPrompt(res.idea.prompt);
+                  setActiveIdeaPreview(res.idea);
+                } else {
+                  const prm = await generateFastPrompt(
+                    'creative', 
+                    brandGuidelines.name, 
+                    selectedGem.name, 
+                    selectedGem.id, 
+                    !!productContext, 
+                    !!faceContext,
+                    brandGuidelines
+                  );
+                  setPrompt(prm);
+                }
               } catch (e) {
                 console.error(e);
               } finally {
@@ -187,7 +220,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
             }}
             disabled={isGeneratingCreativePrompt}
             className="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-amber-400 flex items-center gap-1.5 transition-all font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer border border-dashed border-slate-300 dark:border-slate-700 px-2 py-0.5 rounded-sm hover:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 animate-pulse-once"
-            title="Generate short creative prompt with AI Assistant"
+            title="Generate structured brand-aligned image prompt with AI Commercial Art Director"
             type="button"
           >
             {isGeneratingCreativePrompt ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
@@ -399,7 +432,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
         </div>
       )}
 
-      {(selectedGem.type === 'video' || (selectedGem.type === 'image' && selectedModel === 'openai/gpt-image-2')) && (
+      {(selectedGem.type === 'image' || selectedGem.type === 'video') && (
         <div className="space-y-4 pb-2 pt-1">
           <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <div className="flex items-center justify-between">
@@ -407,15 +440,17 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                 <Sparkles size={12} className="text-amber-500 animate-pulse" />
                 Ingredients Reference Images ({ingredientsContexts.length}/3)
               </span>
-              {selectedModel === 'veo-3.1-generate-preview' || (selectedGem.type === 'image' && selectedModel === 'openai/gpt-image-2') ? (
+              {selectedGem.type === 'image' ? (
+                <span className="text-[9px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
+                  Prompt Guided Elements
+                </span>
+              ) : selectedModel === 'veo-3.1-generate-preview' ? (
                 <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider bg-emerald-500/10 px-1.5 py-0.5 rounded-xs">
-                  Active ({selectedGem.type === 'image' ? 'Commercial Plus' : 'Cinematic High'})
+                  Active (Cinematic High)
                 </span>
               ) : (
                 <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider bg-amber-500/10 px-1.5 py-0.5 rounded-xs">
-                  {selectedGem.type === 'image' 
-                    ? 'Switch to "Commercial Plus" to Activate References' 
-                    : 'Switch to "Cinematic High" to Activate References'}
+                  Switch to "Cinematic High" to Activate References
                 </span>
               )}
             </div>
@@ -621,6 +656,38 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
               </label>
             )}
           </div>
+        </div>
+      )}
+
+      {activeIdeaPreview && selectedGem.type === 'image' && (
+        <div className="flex items-start justify-between gap-3 p-3 bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 rounded-sm text-xs animate-in fade-in slide-in-from-top-1">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-[11px] text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                <Sparkles size={11} className="animate-pulse" />
+                {activeIdeaPreview.title}
+              </span>
+              <span className="text-[10px] text-slate-400">· Creative Concept</span>
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+              {activeIdeaPreview.concept}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pt-1.5 border-t border-amber-500/10 text-[10px] text-slate-400 dark:text-slate-500">
+              <span>Framing: <strong className="text-slate-700 dark:text-slate-300 font-medium">{activeIdeaPreview.visualDirection.composition}</strong></span>
+              <span>·</span>
+              <span>Lighting: <strong className="text-slate-700 dark:text-slate-300 font-medium">{activeIdeaPreview.visualDirection.lighting}</strong></span>
+              <span>·</span>
+              <span>Mood: <strong className="text-slate-700 dark:text-slate-300 font-medium">{activeIdeaPreview.visualDirection.mood}</strong></span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveIdeaPreview(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer transition-colors"
+            title="Dismiss Creative Concept"
+          >
+            <X size={13} />
+          </button>
         </div>
       )}
 

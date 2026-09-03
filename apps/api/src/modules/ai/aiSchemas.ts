@@ -51,26 +51,26 @@ export function validateGenerateContentInput(body: any): { data?: ValidatedGener
     return { error: { status: 400, message: "Missing required 'contents' payload", code: "MISSING_CONTENTS" } };
   }
 
-  // Validate contents length
+  // Validate contents length (Supports rich multimodal image/audio payloads up to 40MB)
   if (typeof contents === 'string') {
     if (contents.length === 0) {
       return { error: { status: 400, message: "'contents' cannot be empty", code: "EMPTY_CONTENTS" } };
     }
-    if (contents.length > 100000) {
-      return { error: { status: 400, message: "Contents exceed maximum allowable length of 100,000 characters", code: "PAYLOAD_TOO_LARGE" } };
+    if (contents.length > 40000000) {
+      return { error: { status: 400, message: "Contents exceed maximum allowable length of 40MB", code: "PAYLOAD_TOO_LARGE" } };
     }
   } else if (Array.isArray(contents)) {
     if (contents.length === 0) {
       return { error: { status: 400, message: "'contents' array cannot be empty", code: "EMPTY_CONTENTS" } };
     }
     const totalChars = JSON.stringify(contents).length;
-    if (totalChars > 120000) {
-      return { error: { status: 400, message: "Contents payload exceeds maximum allowable length of 100,000 characters", code: "PAYLOAD_TOO_LARGE" } };
+    if (totalChars > 40000000) {
+      return { error: { status: 400, message: "Contents payload exceeds maximum allowable length of 40MB", code: "PAYLOAD_TOO_LARGE" } };
     }
   } else if (typeof contents === 'object') {
     const totalChars = JSON.stringify(contents).length;
-    if (totalChars > 120000) {
-      return { error: { status: 400, message: "Contents payload exceeds maximum allowable length of 100,000 characters", code: "PAYLOAD_TOO_LARGE" } };
+    if (totalChars > 40000000) {
+      return { error: { status: 400, message: "Contents payload exceeds maximum allowable length of 40MB", code: "PAYLOAD_TOO_LARGE" } };
     }
   } else {
     return { error: { status: 400, message: "Invalid 'contents' type: expected string, object, or array", code: "INVALID_CONTENTS" } };

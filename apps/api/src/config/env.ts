@@ -34,5 +34,5 @@ export const serverConfig: ServerConfig = {
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   databaseUrl: process.env.DATABASE_URL || "",
   databaseConnectionMode: (process.env.DB_CONNECTION_MODE === "serverless" ? "serverless" : "persistent"),
-  dbDriver: (process.env.DB_DRIVER === "firebase" ? "firebase" : "supabase"),
+  dbDriver: "supabase",
 };

@@ -58,6 +58,7 @@ export interface AppShellProps {
   addToHistory: (entry: any) => Promise<void>;
   navigateTo: (path: string) => void;
   handleLogout: () => Promise<void>;
+  generatingGemIds?: string[];
   // Creative State & Props
   aspectRatio: string;
   setAspectRatio: (ratio: string) => void;
@@ -130,8 +131,10 @@ export interface AppShellProps {
   audioVolume: number;
   setAudioVolume: (vol: number) => void;
   audioUrl: string | null;
-  handleTTS: (text: string) => Promise<void>;
+  handleTTS: (text: string, forceBrowserVoice?: boolean) => Promise<void>;
   handleDownloadAudio: () => void;
+  ttsError?: string | null;
+  setTtsError?: (err: string | null) => void;
   // Slideshow
   currentSlide: number;
   setCurrentSlide: React.Dispatch<React.SetStateAction<number>>;
@@ -266,6 +269,7 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
         onDeleteHistoryItem={onDeleteHistoryItem}
         onClearHistory={onClearHistory}
         isSyncing={isSyncing}
+        generatingGemIds={props.generatingGemIds}
         onOpenSettings={() => {
           setEditingGuidelines(JSON.parse(JSON.stringify(brandGuidelines)));
           setShowGuidelines(true);

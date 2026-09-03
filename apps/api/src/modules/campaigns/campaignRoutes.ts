@@ -8,6 +8,10 @@ import { Type } from "@google/genai";
 import { getServerAI } from "../../infrastructure/gemini/serverGeminiClient.js";
 import { renderFalImage, createFalVideoJob, pollFalVideoJob, resolveFalKey } from "../../infrastructure/fal/falClient.js";
 import { generatePollinationsFallback } from "../../infrastructure/fallback/pollinationsFallback.js";
+import { CreditService } from "../../services/creditService.js";
+import { workspaceRepository } from "../../repositories/workspaceRepository.js";
+
+const creditService = new CreditService();
 
 export const campaignRouter = Router();
 
@@ -161,42 +165,71 @@ Construct a gorgeous JSON response matching the precise structure schema request
   }
 });
 
-// Secure Image Generation proxy endpoint calling Fal AI (with fallback support)
+// Secure Image Generation endpoint (delegates to ImageGenerationService)
 campaignRouter.post("/render", async (req, res) => {
   try {
-    const { prompt, size, engine, falKey, guidelines, referenceImages } = req.body;
+    const { prompt, size, engine, guidelines, referenceImages } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: "Missing render prompt text" });
     }
 
-    console.log(
-      `Rendering prompt: "${prompt.slice(0, 40)}..." Engine: ${engine || 'default'}. References: ${
-        referenceImages?.length || 0
-      }`
-    );
-
-    const targetFalKey = resolveFalKey();
-    const useFal = !!targetFalKey;
-
-    if (useFal) {
-      try {
-        const imageUrl = await renderFalImage(prompt, size, engine, undefined, referenceImages);
-        return res.json({
-          url: imageUrl,
-          engine: 'openai/gpt-image-2',
-          isFallback: false
-        });
-      } catch (err: any) {
-        console.error("Fal API call failed, recovering with fallback model:", err.message);
-      }
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated user session required.", code: "AUTH_REQUIRED" });
     }
 
-    // High-Quality Fallback Model (using public Pollinations Flux)
-    const fallbackResult = generatePollinationsFallback(prompt, size, guidelines?.name, !!targetFalKey);
-    return res.json(fallbackResult);
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    let aspectRatio: "1:1" | "16:9" | "9:16" | "4:3" = "1:1";
+    if (size === "16:9" || size === "9:16" || size === "4:3") {
+      aspectRatio = size;
+    }
+
+    let modelKey = "fal-studio";
+    const eng = (engine || "").toLowerCase();
+    if (eng.includes("schnell")) {
+      modelKey = "flux-schnell";
+    } else if (eng.includes("dev") || eng.includes("pro")) {
+      modelKey = "flux-pro";
+    } else if (eng.includes("banana")) {
+      modelKey = "nano-banana-2";
+    } else if (eng.includes("gemini")) {
+      modelKey = "gemini-preview";
+    }
+
+    const { imageGenerationService } = await import("../imageGeneration/imageGenerationService.js");
+
+    const result = await imageGenerationService.generateImage({
+      request: {
+        prompt,
+        aspectRatio,
+        modelKey,
+        guidelines,
+        referenceImages,
+      },
+      workspaceId,
+      userId,
+      idempotencyKey: req.headers["x-idempotency-key"] as string | undefined,
+    });
+
+    return res.json({
+      url: result.images[0]?.url || "",
+      engine: result.model,
+      isFallback: false,
+      newBalance: result.newBalance,
+      assetId: result.images[0]?.assetId,
+    });
   } catch (e: any) {
     console.error("Error rendering creative asset image:", e);
-    return res.status(500).json({ error: e.message || "Failed to render asset image" });
+    const status = e.status || 500;
+    return res.status(status).json({
+      error: e.message || "Failed to render asset image",
+      code: e.code || "RENDER_FAILED",
+      available: e.available,
+      required: e.required,
+    });
   }
 });
 

@@ -37,7 +37,7 @@ export async function renderFalImage(
   const falPayload: any = {
     prompt: prompt,
     image_size: sizeObj,
-    num_inference_steps: engine === 'fal-ai/flux/schnell' ? 4 : 28,
+    num_inference_steps: (engine && engine.includes('schnell')) ? 4 : 28,
     guidance_scale: 3.5,
     sync_mode: true
   };

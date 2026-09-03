@@ -8,22 +8,22 @@ import {
   subscribeUserHistory, 
   addUserHistoryItem, 
   deleteHistoryItem 
-} from '../infrastructure/firebase/repositories/historyRepository.js';
+} from '../infrastructure/repositories/historyRepository.js';
 import { 
   subscribeUserAssets, 
   saveUserAsset 
-} from '../infrastructure/firebase/repositories/assetRepository.js';
+} from '../infrastructure/repositories/assetRepository.js';
 import { 
   subscribeBrandGuidelines, 
   saveBrandGuidelines 
-} from '../infrastructure/firebase/repositories/brandRepository.js';
+} from '../infrastructure/repositories/brandRepository.js';
 import { 
   subscribeUserAccount 
-} from '../infrastructure/firebase/repositories/userRepository.js';
+} from '../infrastructure/repositories/userRepository.js';
 import { 
   submitHumanTouchRequest, 
   subscribeHumanTouchQueue 
-} from '../infrastructure/firebase/repositories/humanTouchRepository.js';
+} from '../infrastructure/repositories/humanTouchRepository.js';
 import { useCanvasEditor } from '../features/canvas/hooks/useCanvasEditor.js';
 import { useCreativeExecution } from '../features/creative/hooks/useCreativeExecution.js';
 import { AppRouter } from './AppRouter.js';
@@ -74,23 +74,8 @@ export function App() {
   const [isInitialDataLoading, setIsInitialDataLoading] = useState(false);
   const isInitialDataLoadedRef = useRef(false);
 
-  // Creative Parameters
-  const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash-image');
-  const [videoShotType, setVideoShotType] = useState<'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling'>('Single Shot');
-  const [imageStyle, setImageStyle] = useState('Photorealistic, 8k resolution');
+  // Creative Preference Toggle
   const [bakeLogoOnGeneration, setBakeLogoOnGeneration] = useState(false);
-  const [voiceEmotion, setVoiceEmotion] = useState<'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming'>('Neutral');
-  const [selectedLanguage, setSelectedLanguage] = useState('English');
-  const [selectedVoice, setSelectedVoice] = useState('Kore');
-  const [selectedPresentationTheme, setSelectedPresentationTheme] = useState<any>(null);
-
-  // Context Reference Attachments
-  const [productContext, setProductContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [faceContext, setFaceContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [firstFrameContext, setFirstFrameContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [lastFrameContext, setLastFrameContext] = useState<{ id: string; name: string; data: string } | null>(null);
-  const [ingredientsContexts, setIngredientsContexts] = useState<{ id: string; name: string; data: string }[]>([]);
 
   // Asset & History Persistence
   const [assets, setAssets] = useState<any[]>([]);
@@ -194,13 +179,16 @@ export function App() {
 
   // Real-time Subscriptions to Cloud Repositories when User is Authenticated
   useEffect(() => {
-    if (!user) {
+    if (!user?.uid) {
       isInitialDataLoadedRef.current = false;
       setIsInitialDataLoading(false);
       return;
     }
 
-    setIsInitialDataLoading(true);
+    // Only set initial data loading flag if we haven't already loaded for this user
+    if (!isInitialDataLoadedRef.current) {
+      setIsInitialDataLoading(true);
+    }
 
     // 1. Subscribe to User History
     const unsubHistory = subscribeUserHistory(user.uid, (items) => {
@@ -229,12 +217,10 @@ export function App() {
       'default',
       (cloudGuidelines) => {
         if (cloudGuidelines) {
-          // Document exists in Firestore
           setBrandGuidelines(cloudGuidelines as BrandGuidelines);
           setBrandSetupComplete(true);
           savePreferences({ brandGuidelines: cloudGuidelines, brandSetupComplete: true });
-        } else {
-          // Document genuinely does NOT exist in Firestore
+        } else if (!isInitialDataLoadedRef.current) {
           setBrandSetupComplete(false);
           savePreferences({ brandGuidelines: null, brandSetupComplete: false });
         }
@@ -242,14 +228,11 @@ export function App() {
         isInitialDataLoadedRef.current = true;
       },
       (err) => {
-        // Read error (e.g. offline, security rule error) - DO NOT clear local session state
-        console.warn("[App] Failed to read cloud brand guidelines from Firestore:", err);
+        console.warn("[App] Failed to read brand guidelines:", err);
         setIsInitialDataLoading(false);
         isInitialDataLoadedRef.current = true;
       }
     );
-
-
 
     // 5. Subscribe to Human Touch Queue (if Admin)
     let unsubQueue = () => {};
@@ -266,26 +249,19 @@ export function App() {
       unsubBrand();
       unsubQueue();
     };
-  }, [user]);
+  }, [user?.uid]);
 
   // History Actions
   const handleSelectGem = (gem: Gem) => {
     setSelectedGem(gem);
-    if (gem.type === 'image') {
-      setSelectedModel('gemini-2.5-flash-image');
-    } else if (gem.type === 'video') {
-      setSelectedModel('veo-3.1-generate-preview');
-    } else {
-      setSelectedModel('gemini-2.5-flash');
-    }
   };
 
   const handleSelectHistoryItem = (item: HistoryItem) => {
-    creativeExecution.setResult(item.result);
-    creativeExecution.setPrompt(item.prompt);
     const gem = GENERIC_GEMS.find(g => g.id === item.gemId);
     if (gem) {
       setSelectedGem(gem);
+      creativeExecution.setGemResult(item.gemId, item.result);
+      creativeExecution.setGemPrompt(item.gemId, item.prompt);
     }
     setView('tools');
   };
@@ -519,42 +495,44 @@ export function App() {
         navigateTo={navigateTo}
         handleLogout={handleLogout}
         // Creative State & Props
-        aspectRatio={aspectRatio}
-        setAspectRatio={setAspectRatio}
-        selectedModel={selectedModel}
-        setSelectedModel={setSelectedModel}
-        videoShotType={videoShotType}
-        setVideoShotType={setVideoShotType}
-        imageStyle={imageStyle}
-        setImageStyle={setImageStyle}
+        // Creative State & Props (isolated per gem)
+        aspectRatio={creativeExecution.aspectRatio}
+        setAspectRatio={creativeExecution.setAspectRatio}
+        selectedModel={creativeExecution.selectedModel}
+        setSelectedModel={creativeExecution.setSelectedModel}
+        videoShotType={creativeExecution.videoShotType}
+        setVideoShotType={creativeExecution.setVideoShotType}
+        imageStyle={creativeExecution.imageStyle}
+        setImageStyle={creativeExecution.setImageStyle}
         bakeLogoOnGeneration={bakeLogoOnGeneration}
         setBakeLogoOnGeneration={setBakeLogoOnGeneration}
-        voiceEmotion={voiceEmotion}
-        setVoiceEmotion={setVoiceEmotion}
+        voiceEmotion={creativeExecution.voiceEmotion}
+        setVoiceEmotion={creativeExecution.setVoiceEmotion}
         result={creativeExecution.result}
         setResult={creativeExecution.setResult}
         isGenerating={creativeExecution.isGenerating}
         videoStatus={creativeExecution.videoStatus}
         prompt={creativeExecution.prompt}
         setPrompt={creativeExecution.setPrompt}
-        selectedLanguage={selectedLanguage}
-        setSelectedLanguage={setSelectedLanguage}
-        selectedVoice={selectedVoice}
-        setSelectedVoice={setSelectedVoice}
+        selectedLanguage={creativeExecution.selectedLanguage}
+        setSelectedLanguage={creativeExecution.setSelectedLanguage}
+        selectedVoice={creativeExecution.selectedVoice}
+        setSelectedVoice={creativeExecution.setSelectedVoice}
         isGeneratingCreativePrompt={creativeExecution.isGeneratingCreativePrompt}
         setIsGeneratingCreativePrompt={creativeExecution.setIsGeneratingCreativePrompt}
-        productContext={productContext}
-        setProductContext={setProductContext}
-        faceContext={faceContext}
-        setFaceContext={setFaceContext}
-        firstFrameContext={firstFrameContext}
-        setFirstFrameContext={setFirstFrameContext}
-        lastFrameContext={lastFrameContext}
-        setLastFrameContext={setLastFrameContext}
-        ingredientsContexts={ingredientsContexts}
-        setIngredientsContexts={setIngredientsContexts}
-        selectedPresentationTheme={selectedPresentationTheme}
-        setSelectedPresentationTheme={setSelectedPresentationTheme}
+        productContext={creativeExecution.productContext}
+        setProductContext={creativeExecution.setProductContext}
+        faceContext={creativeExecution.faceContext}
+        setFaceContext={creativeExecution.setFaceContext}
+        firstFrameContext={creativeExecution.firstFrameContext}
+        setFirstFrameContext={creativeExecution.setFirstFrameContext}
+        lastFrameContext={creativeExecution.lastFrameContext}
+        setLastFrameContext={creativeExecution.setLastFrameContext}
+        ingredientsContexts={creativeExecution.ingredientsContexts}
+        setIngredientsContexts={creativeExecution.setIngredientsContexts}
+        selectedPresentationTheme={creativeExecution.selectedPresentationTheme}
+        setSelectedPresentationTheme={creativeExecution.setSelectedPresentationTheme}
+        generatingGemIds={creativeExecution.generatingGemIds}
         // Canvas State & Handlers
         containerRef={canvasEditor.containerRef}
         logoPosition={canvasEditor.logoPosition}
@@ -592,6 +570,8 @@ export function App() {
         audioUrl={creativeExecution.audioUrl}
         handleTTS={creativeExecution.handleTTS}
         handleDownloadAudio={creativeExecution.handleDownloadAudio}
+        ttsError={creativeExecution.ttsError}
+        setTtsError={creativeExecution.setTtsError}
         // Slideshow
         currentSlide={creativeExecution.currentSlide}
         setCurrentSlide={creativeExecution.setCurrentSlide}
