@@ -175,25 +175,17 @@ export async function generateCreative(
         });
       }
 
-      const renderRes = await fetch("/api/campaign/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: parts[0].text,
-          size: config?.aspectRatio || '1:1',
-          engine: modelId,
-          guidelines: config?.guidelines,
-          referenceImages: referenceImages
-        })
+      const renderData = await apiClient.post<any>("/api/campaign/render", {
+        prompt: parts[0].text,
+        size: config?.aspectRatio || '1:1',
+        engine: modelId,
+        guidelines: config?.guidelines,
+        referenceImages: referenceImages
       });
-      if (!renderRes.ok) {
-        const errText = await renderRes.text();
-        throw new Error(`Fal AI rendering error: ${errText}`);
-      }
-      const renderData = await renderRes.json();
       return {
         type: 'image',
-        data: renderData.url
+        data: renderData.url,
+        newBalance: renderData.newBalance
       };
     }
 
@@ -214,24 +206,24 @@ export async function generateCreative(
         return {
           type: 'image',
           data: `data:image/png;base64,${imagePart.inlineData.data}`,
-          groundingMetadata: response.candidates?.[0]?.groundingMetadata
+          groundingMetadata: response.candidates?.[0]?.groundingMetadata,
+          newBalance: (response as any)?.newBalance
         };
       }
     } catch (gErr: any) {
       console.warn("Gemini image generation failed or quota reached, routing to Fal AI engine:", gErr.message);
-      const renderRes = await fetch("/api/campaign/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      try {
+        const renderData = await apiClient.post<any>("/api/campaign/render", {
           prompt: parts[0].text,
           size: config?.aspectRatio || '1:1',
           engine: 'openai-gpt-image-2',
           guidelines: config?.guidelines
-        })
-      });
-      if (renderRes.ok) {
-        const renderData = await renderRes.json();
-        return { type: 'image', data: renderData.url };
+        });
+        if (renderData?.url) {
+          return { type: 'image', data: renderData.url, newBalance: renderData.newBalance };
+        }
+      } catch (renderErr) {
+        console.error("Fal AI fallback failed:", renderErr);
       }
       throw gErr;
     }
@@ -491,21 +483,12 @@ export async function generateCreative(
 
     const isFalVideo = modelId === 'bytedance/seedance-2.0' || modelId === 'kling-video';
     if (isFalVideo) {
-      const renderRes = await fetch("/api/campaign/video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: concept.visualPrompt,
-          size: config?.aspectRatio || '16:9',
-          engine: modelId,
-          guidelines: config?.guidelines
-        })
+      const queueJson = await apiClient.post<any>("/api/campaign/video", {
+        prompt: concept.visualPrompt,
+        size: config?.aspectRatio || '16:9',
+        engine: modelId,
+        guidelines: config?.guidelines
       });
-      if (!renderRes.ok) {
-        const errorText = await renderRes.text();
-        throw new Error(`Fal AI video generation error: ${errorText}`);
-      }
-      const queueJson = await renderRes.json();
       return {
         type: 'video_op',
         operationId: queueJson.request_id || queueJson.operationId,
@@ -805,22 +788,13 @@ export async function generateImage(
       });
     }
 
-    const renderRes = await fetch("/api/campaign/render", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: parts[0].text,
-        size: aspectRatio,
-        engine: modelId,
-        guidelines: guidelines,
-        referenceImages: referenceImages
-      })
+    const renderData = await apiClient.post<any>("/api/campaign/render", {
+      prompt: parts[0].text,
+      size: aspectRatio,
+      engine: modelId,
+      guidelines: guidelines,
+      referenceImages: referenceImages
     });
-    if (!renderRes.ok) {
-      const errText = await renderRes.text();
-      throw new Error(`Fal AI rendering error: ${errText}`);
-    }
-    const renderData = await renderRes.json();
     return {
       url: renderData.url
     };
@@ -847,19 +821,18 @@ export async function generateImage(
     }
   } catch (gErr: any) {
     console.warn("Gemini image generator failed, recovering with Fal AI:", gErr.message);
-    const renderRes = await fetch("/api/campaign/render", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const renderData = await apiClient.post<any>("/api/campaign/render", {
         prompt: parts[0].text,
         size: aspectRatio,
         engine: 'openai-gpt-image-2',
         guidelines: guidelines
-      })
-    });
-    if (renderRes.ok) {
-      const renderData = await renderRes.json();
-      return { url: renderData.url };
+      });
+      if (renderData?.url) {
+        return { url: renderData.url };
+      }
+    } catch (renderErr) {
+      console.error("Fal image fallback failed:", renderErr);
     }
     throw gErr;
   }
@@ -882,16 +855,7 @@ export async function generateTTS(
 
 export async function pollVideo(operation: any) {
   if (operation && (operation.engine || operation.status_url)) {
-    const res = await fetch("/api/campaign/video-poll", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operation })
-    });
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Fal video poll error: ${errorText}`);
-    }
-    return await res.json();
+    return await apiClient.post<any>("/api/campaign/video-poll", { operation });
   }
   const ai = getAI();
   return await withRetry(() => ai.operations.getVideosOperation({ operation }));

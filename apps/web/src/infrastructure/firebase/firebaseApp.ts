@@ -28,18 +28,6 @@ export const db = rawConfig.firestoreDatabaseId && rawConfig.firestoreDatabaseId
   : getFirestore(app);
 export const storage = getStorage(app);
 
-// Diagnostic connection test on boot
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-testConnection();
-
 // Structured Firestore error logger
 export function handleFirestoreError(error: unknown, operationType?: string, path?: string) {
   const err = error as { code?: string; message?: string };

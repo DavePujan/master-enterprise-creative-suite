@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
 import { resizeImageIfNeeded, compressBase64Image } from '@utils/image.js';
+import { apiClient } from '@web/infrastructure/api/apiClient.js';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { db } from '@web/infrastructure/firebase/firebaseApp.js';
@@ -284,20 +285,13 @@ export function CampaignDeckWorkspace({
         const item = campaignBrief.assets[role];
         
         try {
-          const renderRes = await fetch("/api/campaign/render", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: item.prompt,
-              size: role === 'Hero' ? '16:9' : (role === 'Lifestyle' ? '3:4' : '1:1'),
-              engine: engine,
-              falKey: customFalKey,
-              guidelines: brandGuidelines
-            })
+          const renderData = await apiClient.post<any>("/api/campaign/render", {
+            prompt: item.prompt,
+            size: role === 'Hero' ? '16:9' : (role === 'Lifestyle' ? '3:4' : '1:1'),
+            engine: engine,
+            falKey: customFalKey,
+            guidelines: brandGuidelines
           });
-
-          if (!renderRes.ok) throw new Error("Network rendering error");
-          const renderData = await renderRes.json();
 
           // Save completed asset images individually to global assets
           // Call proxy to get real persistent cloud links if we uploaded to storage inside express
@@ -387,20 +381,13 @@ export function CampaignDeckWorkspace({
     });
 
     try {
-      const renderRes = await fetch("/api/campaign/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: refinementPrompt,
-          size: refinementRole === 'Hero' ? '16:9' : (refinementRole === 'Lifestyle' ? '3:4' : '1:1'),
-          engine: engine,
-          falKey: customFalKey,
-          guidelines: brandGuidelines
-        })
+      const renderData = await apiClient.post<any>("/api/campaign/render", {
+        prompt: refinementPrompt,
+        size: refinementRole === 'Hero' ? '16:9' : (refinementRole === 'Lifestyle' ? '3:4' : '1:1'),
+        engine: engine,
+        falKey: customFalKey,
+        guidelines: brandGuidelines
       });
-
-      if (!renderRes.ok) throw new Error("Render request failed");
-      const renderData = await renderRes.json();
 
       onSaveCampaignAsset(
         `${refinementRole} Regenerated - ${campaign.campaign_title}`,

@@ -4,6 +4,7 @@
  */
 
 import { doc, onSnapshot, setDoc, db, handleFirestoreError } from '../firestore.js';
+import { auth } from '../auth.js';
 import { apiClient } from '../../api/apiClient.js';
 import type { PromptEngineSettings } from '@shared-types/creative.js';
 
@@ -22,30 +23,39 @@ export function subscribeAdminSettings(
       }
     })
     .catch((err) => {
-      console.warn('[AdminRepository] Supabase fetch fallback to Firestore:', err.message);
+      console.warn('[AdminRepository] Supabase fetch error:', err.message);
+      if (!auth.currentUser && onError) {
+        onError(err);
+      }
     });
 
-  // 2. Secondary fallback: Firestore listener
-  const settingsRef = doc(db, 'adminSettings', docId);
-  const unsubscribe = onSnapshot(
-    settingsRef,
-    (snap) => {
-      if (isCancelled) return;
-      if (snap.exists()) {
-        onData(snap.data() as PromptEngineSettings);
-      } else {
-        onData(null);
+  // 2. Secondary fallback: ONLY if active in Firebase Auth
+  if (auth.currentUser) {
+    const settingsRef = doc(db, 'adminSettings', docId);
+    const unsubscribe = onSnapshot(
+      settingsRef,
+      (snap) => {
+        if (isCancelled) return;
+        if (snap.exists()) {
+          onData(snap.data() as PromptEngineSettings);
+        } else {
+          onData(null);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, 'subscribeAdminSettings', `adminSettings/${docId}`);
+        if (onError) onError(err);
       }
-    },
-    (err) => {
-      handleFirestoreError(err, 'subscribeAdminSettings', `adminSettings/${docId}`);
-      if (onError) onError(err);
-    }
-  );
+    );
+
+    return () => {
+      isCancelled = true;
+      unsubscribe();
+    };
+  }
 
   return () => {
     isCancelled = true;
-    unsubscribe();
   };
 }
 
@@ -57,14 +67,16 @@ export async function saveAdminSettings(
   try {
     await apiClient.put(`/api/admin/settings/${docId}`, { value: settings });
   } catch (err) {
-    console.warn('[AdminRepository] API save error, proceeding to dual-save:', err);
+    console.warn('[AdminRepository] API save error:', err);
   }
 
-  // 2. Secondary: Firestore retention sync
-  try {
-    const settingsRef = doc(db, 'adminSettings', docId);
-    await setDoc(settingsRef, settings, { merge: true });
-  } catch (err) {
-    console.warn('[AdminRepository] Firestore sync skipped:', err);
+  // 2. Secondary: Firestore retention sync only if logged into Firebase
+  if (auth.currentUser) {
+    try {
+      const settingsRef = doc(db, 'adminSettings', docId);
+      await setDoc(settingsRef, settings, { merge: true });
+    } catch (err) {
+      console.warn('[AdminRepository] Firestore sync skipped:', err);
+    }
   }
 }

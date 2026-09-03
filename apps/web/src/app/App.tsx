@@ -194,13 +194,16 @@ export function App() {
 
   // Real-time Subscriptions to Cloud Repositories when User is Authenticated
   useEffect(() => {
-    if (!user) {
+    if (!user?.uid) {
       isInitialDataLoadedRef.current = false;
       setIsInitialDataLoading(false);
       return;
     }
 
-    setIsInitialDataLoading(true);
+    // Only set initial data loading flag if we haven't already loaded for this user
+    if (!isInitialDataLoadedRef.current) {
+      setIsInitialDataLoading(true);
+    }
 
     // 1. Subscribe to User History
     const unsubHistory = subscribeUserHistory(user.uid, (items) => {
@@ -229,12 +232,10 @@ export function App() {
       'default',
       (cloudGuidelines) => {
         if (cloudGuidelines) {
-          // Document exists in Firestore
           setBrandGuidelines(cloudGuidelines as BrandGuidelines);
           setBrandSetupComplete(true);
           savePreferences({ brandGuidelines: cloudGuidelines, brandSetupComplete: true });
-        } else {
-          // Document genuinely does NOT exist in Firestore
+        } else if (!isInitialDataLoadedRef.current) {
           setBrandSetupComplete(false);
           savePreferences({ brandGuidelines: null, brandSetupComplete: false });
         }
@@ -242,14 +243,11 @@ export function App() {
         isInitialDataLoadedRef.current = true;
       },
       (err) => {
-        // Read error (e.g. offline, security rule error) - DO NOT clear local session state
-        console.warn("[App] Failed to read cloud brand guidelines from Firestore:", err);
+        console.warn("[App] Failed to read brand guidelines:", err);
         setIsInitialDataLoading(false);
         isInitialDataLoadedRef.current = true;
       }
     );
-
-
 
     // 5. Subscribe to Human Touch Queue (if Admin)
     let unsubQueue = () => {};
@@ -266,7 +264,7 @@ export function App() {
       unsubBrand();
       unsubQueue();
     };
-  }, [user]);
+  }, [user?.uid]);
 
   // History Actions
   const handleSelectGem = (gem: Gem) => {

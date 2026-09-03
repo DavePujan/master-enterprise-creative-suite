@@ -44,12 +44,22 @@ export function useAuth() {
     if (isSupabase) {
       const unsubscribe = subscribeAuthState((supaUser) => {
         if (supaUser) {
-          setUser({
-            uid: supaUser.id,
-            email: supaUser.email || null,
-            displayName: supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
-            photoURL: supaUser.user_metadata?.avatar_url || null,
-            getIdToken: async () => (await getCurrentAccessToken()) || "",
+          setUser((prev) => {
+            if (
+              prev &&
+              prev.uid === supaUser.id &&
+              prev.email === (supaUser.email || null)
+            ) {
+              // Retain identical object reference so components don't re-render or re-subscribe on tab focus
+              return prev;
+            }
+            return {
+              uid: supaUser.id,
+              email: supaUser.email || null,
+              displayName: supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
+              photoURL: supaUser.user_metadata?.avatar_url || null,
+              getIdToken: async () => (await getCurrentAccessToken()) || "",
+            };
           });
         } else {
           setUser(null);
@@ -62,12 +72,21 @@ export function useAuth() {
     // Firebase fallback
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
-        setUser({
-          uid: currentUser.uid,
-          email: currentUser.email,
-          displayName: currentUser.displayName,
-          photoURL: currentUser.photoURL,
-          getIdToken: async () => await currentUser.getIdToken(),
+        setUser((prev) => {
+          if (
+            prev &&
+            prev.uid === currentUser.uid &&
+            prev.email === currentUser.email
+          ) {
+            return prev;
+          }
+          return {
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName: currentUser.displayName,
+            photoURL: currentUser.photoURL,
+            getIdToken: async () => await currentUser.getIdToken(),
+          };
         });
       } else {
         setUser(null);

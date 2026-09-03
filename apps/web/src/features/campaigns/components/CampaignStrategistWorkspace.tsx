@@ -37,6 +37,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { generateCampaignStrategistCampaign, generateCampaignStrategistAsset, generateCampaignAssetBriefs, generateImage, generateCreative, pollVideo, type CampaignStrategistResult } from '@web/infrastructure/ai/geminiService.js';
 import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS } from '@web/infrastructure/ai/modelRegistry.js';
+import { apiClient } from '@web/infrastructure/api/apiClient.js';
 
 interface TextWordLayer {
   id: string;
@@ -594,8 +595,12 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
         setGeneratedAssets(fallbackAssets);
       }
 
-      // Deduct 5 credits for successful briefing setup
-      setCredits(prev => Math.max(0, prev - 5));
+      // Sync server-authoritative balance for successful briefing setup
+      apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+        .then(bal => {
+          if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+        })
+        .catch(() => {});
 
       setCurrentStep('results');
       
@@ -774,7 +779,6 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
     }
 
     setIsExecutingRefine(true);
-    setCredits(prev => Math.max(0, prev - 2));
 
     // Optimistically set the campaign asset status to generating
     setGeneratedAssets(prev => prev.map(a => 
@@ -945,8 +949,12 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
           asset.description,
           selectedTextModel
         );
-        // deduct on success
-        setCredits(prev => Math.max(0, prev - cost));
+        // sync balance with server
+        apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+          .then(bal => {
+            if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+          })
+          .catch(() => {});
         setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'completed', content: output } : a));
       } else if (asset.type === 'image') {
         const finalPrompt = `${asset.description}. Visual style is ${answers.selectedAesthetic || 'Cinematic'}. Premium 4k photograph for ${brandGuidelines.name}. Crisp art direction, ultra highly detailed textures, beautiful dramatic lighting.`;
@@ -976,7 +984,15 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
 
         const res = await generateImage(finalPrompt, brandGuidelines, "1:1", selectedImageModel, attachedReferences, bakeLogoImmediately);
         if (res && res.url) {
-          setCredits(prev => Math.max(0, prev - cost));
+          if ((res as any)?.newBalance !== undefined) {
+            setCredits((res as any).newBalance);
+          } else {
+            apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+              .then(bal => {
+                if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+              })
+              .catch(() => {});
+          }
           setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'completed', url: res.url } : a));
         } else {
           throw new Error("Empty image payload received.");
@@ -995,12 +1011,20 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
           model: selectedVideoModel
         });
 
+        if (res?.newBalance !== undefined) {
+          setCredits(res.newBalance);
+        } else {
+          apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+            .then(bal => {
+              if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+            })
+            .catch(() => {});
+        }
+
         if (res?.type === 'video_op' && res.operation) {
-          setCredits(prev => Math.max(0, prev - cost));
           setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'pending', videoOperation: res.operation } : a));
           triggerVideoPolling(id, res.operation);
         } else if (res?.url) {
-          setCredits(prev => Math.max(0, prev - cost));
           setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'completed', url: res.url } : a));
         } else {
           throw new Error("No operations or URLs generated.");

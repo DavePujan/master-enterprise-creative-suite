@@ -4,6 +4,7 @@
  */
 
 import { doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, limit, db, handleFirestoreError } from '../firestore.js';
+import { auth } from '../auth.js';
 import { apiClient } from '../../api/apiClient.js';
 import type { HistoryItem } from '@shared-types/user.js';
 
@@ -31,42 +32,51 @@ export function subscribeUserHistory(
       }
     })
     .catch((err) => {
-      console.warn('[HistoryRepository] Supabase fetch fallback to Firestore:', err.message);
+      console.warn('[HistoryRepository] Supabase fetch error:', err.message);
+      if (!auth.currentUser && onError) {
+        onError(err);
+      }
     });
 
-  // 2. Secondary fallback: Firestore listener
-  const historyColRef = collection(db, 'users', userId, 'historyLogs');
-  const q = query(historyColRef, orderBy('timestamp', 'desc'), limit(limitCount));
+  // 2. Secondary fallback: ONLY if active in Firebase Auth
+  if (auth.currentUser) {
+    const historyColRef = collection(db, 'users', userId, 'historyLogs');
+    const q = query(historyColRef, orderBy('timestamp', 'desc'), limit(limitCount));
 
-  const unsubscribe = onSnapshot(
-    q,
-    (snapshot) => {
-      if (isCancelled) return;
-      const items: HistoryItem[] = [];
-      snapshot.forEach((docSnap) => {
-        const d = docSnap.data();
-        items.push({
-          id: docSnap.id,
-          gemId: d.gemId || '',
-          prompt: d.prompt || '',
-          title: d.title || '',
-          result: d.result,
-          timestamp: d.timestamp || Date.now()
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        if (isCancelled) return;
+        const items: HistoryItem[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          items.push({
+            id: docSnap.id,
+            gemId: d.gemId || '',
+            prompt: d.prompt || '',
+            title: d.title || '',
+            result: d.result,
+            timestamp: d.timestamp || Date.now()
+          });
         });
-      });
-      if (items.length > 0) {
-        onData(items);
+        if (items.length > 0) {
+          onData(items);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, 'subscribeUserHistory', `users/${userId}/historyLogs`);
+        if (onError) onError(err);
       }
-    },
-    (err) => {
-      handleFirestoreError(err, 'subscribeUserHistory', `users/${userId}/historyLogs`);
-      if (onError) onError(err);
-    }
-  );
+    );
+
+    return () => {
+      isCancelled = true;
+      unsubscribe();
+    };
+  }
 
   return () => {
     isCancelled = true;
-    unsubscribe();
   };
 }
 
@@ -84,18 +94,20 @@ export async function addUserHistoryItem(
       resultSummary: item.result || {}
     });
   } catch (err) {
-    console.warn('[HistoryRepository] API save error, proceeding to dual-save:', err);
+    console.warn('[HistoryRepository] API save error:', err);
   }
 
-  // 2. Secondary: Firestore retention sync
-  try {
-    const historyRef = doc(db, 'users', userId, 'historyLogs', historyId);
-    await setDoc(historyRef, {
-      ...item,
-      timestamp: item.timestamp || Date.now()
-    });
-  } catch (err) {
-    console.warn('[HistoryRepository] Firestore sync skipped:', err);
+  // 2. Secondary: Firestore retention sync only if logged into Firebase
+  if (auth.currentUser) {
+    try {
+      const historyRef = doc(db, 'users', userId, 'historyLogs', historyId);
+      await setDoc(historyRef, {
+        ...item,
+        timestamp: item.timestamp || Date.now()
+      });
+    } catch (err) {
+      console.warn('[HistoryRepository] Firestore sync skipped:', err);
+    }
   }
 }
 
@@ -104,11 +116,13 @@ export async function updateHistoryTitle(
   historyId: string,
   title: string
 ): Promise<void> {
-  try {
-    const historyRef = doc(db, 'users', userId, 'historyLogs', historyId);
-    await updateDoc(historyRef, { title });
-  } catch (err) {
-    console.warn('[HistoryRepository] updateHistoryTitle skipped:', err);
+  if (auth.currentUser) {
+    try {
+      const historyRef = doc(db, 'users', userId, 'historyLogs', historyId);
+      await updateDoc(historyRef, { title });
+    } catch (err) {
+      console.warn('[HistoryRepository] updateHistoryTitle skipped:', err);
+    }
   }
 }
 
@@ -120,11 +134,13 @@ export async function deleteHistoryItem(userId: string, historyId: string): Prom
     console.warn('[HistoryRepository] API delete error:', err);
   }
 
-  // 2. Secondary: Firestore delete
-  try {
-    const historyRef = doc(db, 'users', userId, 'historyLogs', historyId);
-    await deleteDoc(historyRef);
-  } catch (err) {
-    console.warn('[HistoryRepository] Firestore delete skipped:', err);
+  // 2. Secondary: Firestore delete only if logged into Firebase
+  if (auth.currentUser) {
+    try {
+      const historyRef = doc(db, 'users', userId, 'historyLogs', historyId);
+      await deleteDoc(historyRef);
+    } catch (err) {
+      console.warn('[HistoryRepository] Firestore delete skipped:', err);
+    }
   }
 }

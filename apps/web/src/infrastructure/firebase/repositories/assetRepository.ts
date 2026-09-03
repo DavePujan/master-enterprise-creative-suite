@@ -4,6 +4,7 @@
  */
 
 import { doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, db, handleFirestoreError } from '../firestore.js';
+import { auth } from '../auth.js';
 import { uploadAssetToStorage } from '../storage.js';
 import { apiClient } from '../../api/apiClient.js';
 import type { Asset } from '@shared-types/creative.js';
@@ -31,40 +32,49 @@ export function subscribeUserAssets(
       }
     })
     .catch((err) => {
-      console.warn('[AssetRepository] Supabase fetch fallback to Firestore:', err.message);
+      console.warn('[AssetRepository] Supabase fetch error:', err.message);
+      if (!auth.currentUser && onError) {
+        onError(err);
+      }
     });
 
-  // 2. Secondary fallback: Firestore listener
-  const assetsColRef = collection(db, 'users', userId, 'assets');
-  const unsubscribe = onSnapshot(
-    assetsColRef,
-    (snapshot) => {
-      if (isCancelled) return;
-      const loaded: Asset[] = [];
-      snapshot.forEach((docSnap) => {
-        const d = docSnap.data();
-        loaded.push({
-          id: docSnap.id,
-          name: d.name || d.title || 'Untitled Asset',
-          data: d.content || d.data || '',
-          type: d.type || 'image',
-          selected: false,
-          analysis: d.analysis
+  // 2. Secondary fallback: ONLY if active in Firebase Auth
+  if (auth.currentUser) {
+    const assetsColRef = collection(db, 'users', userId, 'assets');
+    const unsubscribe = onSnapshot(
+      assetsColRef,
+      (snapshot) => {
+        if (isCancelled) return;
+        const loaded: Asset[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          loaded.push({
+            id: docSnap.id,
+            name: d.name || d.title || 'Untitled Asset',
+            data: d.content || d.data || '',
+            type: d.type || 'image',
+            selected: false,
+            analysis: d.analysis
+          });
         });
-      });
-      if (loaded.length > 0) {
-        onData(loaded);
+        if (loaded.length > 0) {
+          onData(loaded);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, 'subscribeUserAssets', `users/${userId}/assets`);
+        if (onError) onError(err);
       }
-    },
-    (err) => {
-      handleFirestoreError(err, 'subscribeUserAssets', `users/${userId}/assets`);
-      if (onError) onError(err);
-    }
-  );
+    );
+
+    return () => {
+      isCancelled = true;
+      unsubscribe();
+    };
+  }
 
   return () => {
     isCancelled = true;
-    unsubscribe();
   };
 }
 
@@ -76,7 +86,7 @@ export async function saveUserAsset(
   type: 'image' | 'doc' | 'video' | 'audio',
   prompt?: string
 ): Promise<string> {
-  // Upload to Storage if data URL, otherwise store as is
+  // Upload to Storage (Supabase Storage if active, or hosted/data URL)
   const hostedUrl = await uploadAssetToStorage(userId, assetId, dataUrl, type);
 
   // 1. Primary: Save to Supabase PostgreSQL (public.assets)
@@ -88,22 +98,24 @@ export async function saveUserAsset(
       prompt: prompt || ''
     });
   } catch (err) {
-    console.warn('[AssetRepository] API save error, proceeding to dual-save:', err);
+    console.warn('[AssetRepository] API save error:', err);
   }
 
-  // 2. Secondary: Firestore retention sync
-  try {
-    const assetRef = doc(db, 'users', userId, 'assets', assetId);
-    await setDoc(assetRef, {
-      name,
-      title: name,
-      content: hostedUrl,
-      type,
-      prompt: prompt || '',
-      timestamp: Date.now()
-    });
-  } catch (err) {
-    console.warn('[AssetRepository] Firestore sync skipped:', err);
+  // 2. Secondary: Firestore retention sync only if logged into Firebase
+  if (auth.currentUser) {
+    try {
+      const assetRef = doc(db, 'users', userId, 'assets', assetId);
+      await setDoc(assetRef, {
+        name,
+        title: name,
+        content: hostedUrl,
+        type,
+        prompt: prompt || '',
+        timestamp: Date.now()
+      });
+    } catch (err) {
+      console.warn('[AssetRepository] Firestore sync skipped:', err);
+    }
   }
 
   return hostedUrl;
@@ -114,14 +126,16 @@ export async function updateUserAsset(
   assetId: string,
   updates: Partial<Asset>
 ): Promise<void> {
-  try {
-    const assetRef = doc(db, 'users', userId, 'assets', assetId);
-    const mappedUpdates: any = { ...updates };
-    if (updates.data) mappedUpdates.content = updates.data;
-    if (updates.name) mappedUpdates.title = updates.name;
-    await updateDoc(assetRef, mappedUpdates);
-  } catch (err) {
-    console.warn('[AssetRepository] updateUserAsset skipped:', err);
+  if (auth.currentUser) {
+    try {
+      const assetRef = doc(db, 'users', userId, 'assets', assetId);
+      const mappedUpdates: any = { ...updates };
+      if (updates.data) mappedUpdates.content = updates.data;
+      if (updates.name) mappedUpdates.title = updates.name;
+      await updateDoc(assetRef, mappedUpdates);
+    } catch (err) {
+      console.warn('[AssetRepository] updateUserAsset skipped:', err);
+    }
   }
 }
 
@@ -133,11 +147,13 @@ export async function deleteUserAsset(userId: string, assetId: string): Promise<
     console.warn('[AssetRepository] API delete error:', err);
   }
 
-  // 2. Secondary: Firestore delete
-  try {
-    const assetRef = doc(db, 'users', userId, 'assets', assetId);
-    await deleteDoc(assetRef);
-  } catch (err) {
-    console.warn('[AssetRepository] Firestore delete skipped:', err);
+  // 2. Secondary: Firestore delete only if logged into Firebase
+  if (auth.currentUser) {
+    try {
+      const assetRef = doc(db, 'users', userId, 'assets', assetId);
+      await deleteDoc(assetRef);
+    } catch (err) {
+      console.warn('[AssetRepository] Firestore delete skipped:', err);
+    }
   }
 }

@@ -6,6 +6,7 @@ import { generateCreative, generateImage, generateTTS, pollVideo } from '@web/in
 import { getQuotaErrorMessage } from '@web/infrastructure/ai/geminiClient.js';
 import { loadPreferences, savePreferences } from '@web/lib/preferences.js';
 import { downloadFile } from '@web/lib/utils.js';
+import { apiClient } from '@web/infrastructure/api/apiClient.js';
 
 export interface UseCreativeExecutionOptions {
   user?: any;
@@ -377,7 +378,15 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         bakeLogo: bakeLogoOnGeneration
       });
 
-      setCredits(prev => prev - getActiveCost());
+      if (res?.newBalance !== undefined) {
+        setCredits(res.newBalance);
+      } else {
+        apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+          .then(bal => {
+            if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+          })
+          .catch(() => {});
+      }
       
       if (res?.type === 'video_op') {
         setResult(null);

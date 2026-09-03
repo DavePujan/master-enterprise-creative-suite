@@ -8,6 +8,10 @@ import { Type } from "@google/genai";
 import { getServerAI } from "../../infrastructure/gemini/serverGeminiClient.js";
 import { renderFalImage, createFalVideoJob, pollFalVideoJob, resolveFalKey } from "../../infrastructure/fal/falClient.js";
 import { generatePollinationsFallback } from "../../infrastructure/fallback/pollinationsFallback.js";
+import { CreditService } from "../../services/creditService.js";
+import { workspaceRepository } from "../../repositories/workspaceRepository.js";
+
+const creditService = new CreditService();
 
 export const campaignRouter = Router();
 
@@ -169,31 +173,91 @@ campaignRouter.post("/render", async (req, res) => {
       return res.status(400).json({ error: "Missing render prompt text" });
     }
 
+    const userId = (req as any).user?.uid;
+    const workspaceId =
+      (req as any).user?.workspaceId ||
+      (userId ? await workspaceRepository.ensurePersonalWorkspace(userId, (req as any).user?.email || "") : null);
+
+    let holdId: string | null = null;
+    let creditsRequired = 3;
+    const eng = (engine || "").toLowerCase();
+    if (eng.includes("schnell")) {
+      creditsRequired = 2;
+    } else if (eng.includes("dev") || eng.includes("pro")) {
+      creditsRequired = 4;
+    } else if (eng.includes("gpt-image-2") || eng.includes("fal studio")) {
+      creditsRequired = 3;
+    }
+
+    if (workspaceId && userId) {
+      const clientKey =
+        (req.headers["x-idempotency-key"] as string) ||
+        `render_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+      const reservation = await creditService.reserveCredits({
+        workspaceId,
+        userId,
+        amount: creditsRequired,
+        referenceId: clientKey,
+        description: `Fal Image Render (${engine || "standard"})`,
+        idempotencyKey: `hold_${clientKey}`,
+      });
+
+      if (!reservation.success) {
+        return res.status(402).json({
+          error: "Insufficient credits available in workspace.",
+          code: "INSUFFICIENT_CREDITS",
+          available: reservation.available,
+          required: creditsRequired,
+        });
+      }
+
+      holdId = reservation.holdId || (reservation as any).hold_id || null;
+    }
+
     console.log(
       `Rendering prompt: "${prompt.slice(0, 40)}..." Engine: ${engine || 'default'}. References: ${
         referenceImages?.length || 0
       }`
     );
 
-    const targetFalKey = resolveFalKey();
-    const useFal = !!targetFalKey;
+    try {
+      const targetFalKey = resolveFalKey();
+      const useFal = !!targetFalKey;
+      let resultUrl: string | null = null;
 
-    if (useFal) {
-      try {
-        const imageUrl = await renderFalImage(prompt, size, engine, undefined, referenceImages);
-        return res.json({
-          url: imageUrl,
-          engine: 'openai/gpt-image-2',
-          isFallback: false
-        });
-      } catch (err: any) {
-        console.error("Fal API call failed, recovering with fallback model:", err.message);
+      if (useFal) {
+        try {
+          resultUrl = await renderFalImage(prompt, size, engine, undefined, referenceImages);
+        } catch (err: any) {
+          console.error("Fal API call failed, recovering with fallback model:", err.message);
+        }
       }
-    }
 
-    // High-Quality Fallback Model (using public Pollinations Flux)
-    const fallbackResult = generatePollinationsFallback(prompt, size, guidelines?.name, !!targetFalKey);
-    return res.json(fallbackResult);
+      if (!resultUrl) {
+        // High-Quality Fallback Model (using public Pollinations Flux)
+        const fallbackResult = generatePollinationsFallback(prompt, size, guidelines?.name, !!targetFalKey);
+        resultUrl = fallbackResult.url;
+      }
+
+      let newBalance: number | undefined;
+      if (holdId) {
+        const captureResult = await creditService.captureCredits(holdId, `capture_${holdId}`);
+        newBalance = captureResult.newBalance;
+      }
+
+      return res.json({
+        url: resultUrl,
+        engine: engine || 'openai/gpt-image-2',
+        isFallback: !targetFalKey,
+        newBalance
+      });
+    } catch (renderError: any) {
+      if (holdId) {
+        await creditService.releaseCredits(holdId, renderError?.message || "Render Failed");
+      }
+      throw renderError;
+    }
   } catch (e: any) {
     console.error("Error rendering creative asset image:", e);
     return res.status(500).json({ error: e.message || "Failed to render asset image" });
