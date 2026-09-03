@@ -4,21 +4,39 @@
  */
 
 import { doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, db, handleFirestoreError } from '../firestore.js';
+import { apiClient } from '../../api/apiClient.js';
 import type { HumanTouchRequest } from '@shared-types/user.js';
 
 export async function submitHumanTouchRequest(
   requestId: string,
   requestData: HumanTouchRequest
 ): Promise<void> {
-  // 1. User specific subcollection (if userId provided)
-  if (requestData.userId) {
-    const userRequestRef = doc(db, 'users', requestData.userId, 'humanTouchRequests', requestId);
-    await setDoc(userRequestRef, requestData);
+  // 1. Primary: Save to Supabase PostgreSQL (public.human_touch_requests)
+  try {
+    await apiClient.post('/api/human-touch', {
+      originalPrompt: requestData.originalPrompt,
+      assetType: requestData.assetType || 'image',
+      assetUrl: requestData.assetUrl || '',
+      modelsUsed: requestData.modelsUsed || '',
+      userComment: requestData.userComment || 'Review requested',
+      emailReceipt: requestData.userEmail || requestData.emailReceipt || 'business@writopedia.com'
+    });
+  } catch (err) {
+    console.warn('[HumanTouchRepository] API submit error, proceeding to dual-save:', err);
   }
 
-  // 2. Global collection for Admin queue
-  const globalRequestRef = doc(db, 'humanTouchRequests', requestId);
-  await setDoc(globalRequestRef, requestData);
+  // 2. Secondary: Firestore retention sync
+  try {
+    if (requestData.userId) {
+      const userRequestRef = doc(db, 'users', requestData.userId, 'humanTouchRequests', requestId);
+      await setDoc(userRequestRef, requestData);
+    }
+
+    const globalRequestRef = doc(db, 'humanTouchRequests', requestId);
+    await setDoc(globalRequestRef, requestData);
+  } catch (err) {
+    console.warn('[HumanTouchRepository] Firestore sync skipped:', err);
+  }
 }
 
 export function subscribeHumanTouchQueue(

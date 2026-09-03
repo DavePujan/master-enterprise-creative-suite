@@ -110,6 +110,56 @@ export class AssetRepository {
       updatedAt: d.updated_at,
     }));
   }
+
+  async getById(id: string, workspaceId: string): Promise<AssetRecord | null> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return null;
+
+    const { data, error } = await supabase
+      .from("assets")
+      .select("*")
+      .eq("id", id)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      workspaceId: data.workspace_id,
+      uploadedBy: data.uploaded_by,
+      name: data.name,
+      storageBucket: data.storage_bucket,
+      storagePath: data.storage_path,
+      storageGeneration: data.storage_generation,
+      type: data.type,
+      prompt: data.prompt,
+      analysis: data.analysis,
+      fileSizeBytes: data.file_size_bytes,
+      mimeType: data.mime_type,
+      sha256: data.sha256,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  }
+
+  async delete(id: string, workspaceId: string): Promise<boolean> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return false;
+
+    const { error } = await supabase
+      .from("assets")
+      .delete()
+      .eq("id", id)
+      .eq("workspace_id", workspaceId);
+
+    if (error) {
+      console.error("AssetRepository.delete error:", error);
+      return false;
+    }
+
+    return true;
+  }
 }
 
 export const assetRepository = new AssetRepository();

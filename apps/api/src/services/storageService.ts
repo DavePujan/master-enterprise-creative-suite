@@ -68,6 +68,36 @@ export class StorageService {
   }
 
   /**
+   * Generates a signed download URL (alias for getSignedUrl).
+   */
+  async getSignedDownloadUrl(storagePath: string, expiresIn = 3600): Promise<string> {
+    const url = await this.getSignedUrl(storagePath, expiresIn);
+    if (!url) throw new Error("Failed to generate signed download URL");
+    return url;
+  }
+
+  /**
+   * Creates a signed upload URL for direct browser uploads.
+   */
+  async createSignedUploadUrl(
+    storagePath: string,
+    expiresIn = 3600
+  ): Promise<{ signedUrl: string; token: string }> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) throw new Error("Supabase storage client not configured");
+
+    const { data, error } = await supabase.storage
+      .from(this.bucketName)
+      .createSignedUploadUrl(storagePath);
+
+    if (error || !data) {
+      throw error || new Error("Failed to generate signed upload URL");
+    }
+
+    return { signedUrl: data.signedUrl, token: data.token };
+  }
+
+  /**
    * Uploads binary buffer directly to private storage bucket.
    */
   async uploadFile(params: {

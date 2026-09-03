@@ -12,6 +12,11 @@ import { billingRouter } from "../modules/billing/billingRoutes.js";
 import { humanTouchRouter } from "../modules/humanTouch/humanTouchRoutes.js";
 import { salesRouter } from "../modules/sales/salesRoutes.js";
 import { proxyRouter } from "../modules/proxy/proxyRoutes.js";
+import { brandRouter } from "../modules/brand/brandRoutes.js";
+import { historyRouter } from "../modules/history/historyRoutes.js";
+import { assetRouter } from "../modules/assets/assetRoutes.js";
+import { adminRouter } from "../modules/admin/adminRoutes.js";
+import { workspaceRouter } from "../modules/workspaces/workspaceRoutes.js";
 
 const ALLOWED_ORIGIN_PATTERNS = [
   /^http:\/\/localhost(:\d+)?$/,
@@ -54,6 +59,11 @@ export function createExpressApp(): Express {
   app.use("/api/campaign", aiRateLimiter, campaignRouter);
   app.use("/api/payment", billingRateLimiter, billingRouter);
   app.use("/api/contact-sales", salesRateLimiter, salesRouter);
+  app.use("/api/brand-guidelines", brandRouter);
+  app.use("/api/history", historyRouter);
+  app.use("/api/assets", assetRouter);
+  app.use("/api/admin", adminRouter);
+  app.use("/api/workspaces", workspaceRouter);
   app.use("/api", humanTouchRouter);
   app.use("/api", proxyRateLimiter, proxyRouter);
 

@@ -71,3 +71,22 @@ humanTouchRouter.post("/human-touch", async (req, res) => {
     return res.status(500).json({ error: e.message || "Failed to dispatch human touch request" });
   }
 });
+
+humanTouchRouter.get("/human-touch/queue", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: User session required." });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    const requests = await humanTouchRepository.listByWorkspace(workspaceId, limit);
+    return res.json({ success: true, requests });
+  } catch (e: any) {
+    console.error("Error fetching human touch queue:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch human touch queue" });
+  }
+});

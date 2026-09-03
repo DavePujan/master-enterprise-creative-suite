@@ -8,9 +8,55 @@
 import { Router } from "express";
 import { billingService } from "../../services/billingService.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
+import { creditRepository } from "../../repositories/creditRepository.js";
 import { PLAN_PRICING_CATALOG, type PlanId } from "../../../../../packages/types/billing.js";
 
 export const billingRouter = Router();
+
+billingRouter.get("/balance", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: User session required." });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const balanceRecord = await creditRepository.getBalance(workspaceId);
+    return res.json({
+      success: true,
+      workspaceId,
+      balance: balanceRecord?.balance ?? 0,
+      heldBalance: balanceRecord?.heldBalance ?? 0,
+      availableBalance: balanceRecord?.availableBalance ?? 0,
+      lifetimeGranted: balanceRecord?.lifetimeGranted ?? 0,
+      lifetimeSpent: balanceRecord?.lifetimeSpent ?? 0,
+    });
+  } catch (err: any) {
+    console.error("GET /api/payment/balance error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load balance" });
+  }
+});
+
+billingRouter.get("/ledger", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: User session required." });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    const transactions = await creditRepository.getLedgerHistory(workspaceId, limit);
+    return res.json({ success: true, workspaceId, transactions });
+  } catch (err: any) {
+    console.error("GET /api/payment/ledger error:", err);
+    return res.status(500).json({ error: err.message || "Failed to load ledger history" });
+  }
+});
 
 billingRouter.post("/razorpay-order", async (req, res) => {
   try {

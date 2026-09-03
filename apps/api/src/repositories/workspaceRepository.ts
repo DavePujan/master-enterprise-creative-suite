@@ -119,7 +119,69 @@ export class WorkspaceRepository {
       lifetime_spent: 0,
     });
 
+    // Record welcome grant in immutable credit ledger
+    await supabase.from("credit_ledger").insert({
+      workspace_id: ws.id,
+      actor_user_id: userId,
+      amount: 50,
+      resulting_balance: 50,
+      type: "signup_grant",
+      idempotency_key: `signup_grant_${ws.id}`,
+      description: "Welcome signup grant of 50 credits",
+      metadata: { initial_grant: true, is_personal: true }
+    });
+
     return ws.id;
+  }
+
+  /**
+   * Lists all workspaces accessible by a user.
+   */
+  async getUserWorkspaces(userId: string): Promise<WorkspaceRecord[]> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("workspace_id, role, workspaces(*)")
+      .eq("user_id", userId);
+
+    if (error || !data) {
+      console.error("WorkspaceRepository.getUserWorkspaces error:", error);
+      return [];
+    }
+
+    return data
+      .filter((d: any) => d.workspaces)
+      .map((d: any) => ({
+        id: d.workspaces.id,
+        name: d.workspaces.name,
+        ownerId: d.workspaces.owner_id,
+        isPersonal: d.workspaces.is_personal,
+        role: d.role,
+        createdAt: d.workspaces.created_at,
+        updatedAt: d.workspaces.updated_at,
+      }));
+  }
+
+  /**
+   * Lists members of a given workspace.
+   */
+  async getWorkspaceMembers(workspaceId: string): Promise<any[]> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("workspace_id, user_id, role, joined_at, profiles(*)")
+      .eq("workspace_id", workspaceId);
+
+    if (error || !data) {
+      console.error("WorkspaceRepository.getWorkspaceMembers error:", error);
+      return [];
+    }
+
+    return data;
   }
 }
 

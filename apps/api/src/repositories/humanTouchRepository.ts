@@ -69,6 +69,39 @@ export class HumanTouchRepository {
       updatedAt: data.updated_at,
     };
   }
+
+  async listByWorkspace(workspaceId: string, limit = 50): Promise<HumanTouchRecord[]> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from("human_touch_requests")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error || !data) {
+      console.error("HumanTouchRepository.listByWorkspace error:", error);
+      return [];
+    }
+
+    return data.map((d: any) => ({
+      id: d.id,
+      workspaceId: d.workspace_id,
+      requesterId: d.requester_id,
+      assetType: d.asset_type,
+      storageBucket: d.storage_bucket,
+      storagePath: d.storage_path,
+      originalPrompt: d.original_prompt,
+      modelsUsed: d.models_used,
+      userComment: d.user_comment,
+      emailReceipt: d.email_receipt,
+      status: d.status,
+      createdAt: d.created_at,
+      updatedAt: d.updated_at,
+    }));
+  }
 }
 
 export const humanTouchRepository = new HumanTouchRepository();

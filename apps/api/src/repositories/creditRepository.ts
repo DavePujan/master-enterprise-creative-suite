@@ -114,6 +114,28 @@ export class CreditRepository {
 
     return data as any;
   }
+
+  /**
+   * Retrieves transaction history from immutable credit_ledger.
+   */
+  async getLedgerHistory(workspaceId: string, limit = 50): Promise<any[]> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from("credit_ledger")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error("CreditRepository.getLedgerHistory error:", error);
+      return [];
+    }
+
+    return data || [];
+  }
 }
 
 export const creditRepository = new CreditRepository();
