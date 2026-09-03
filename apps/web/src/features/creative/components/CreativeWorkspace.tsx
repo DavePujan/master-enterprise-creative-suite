@@ -2,6 +2,7 @@ import React from 'react';
 import { Sparkles, Layers, Image as ImageIcon, Video as VideoIcon, FileText, LayoutDashboard, Presentation, Target, BookOpen, Volume2, Music } from 'lucide-react';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
+import type { CapabilityDetail } from '@shared-types/imageGeneration.js';
 import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, getImageModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
 import { cn } from '@web/lib/utils.js';
 import { CreativeOutputCanvas } from './CreativeOutputCanvas.js';
@@ -119,6 +120,37 @@ export interface CreativeWorkspaceProps {
   getBrandStyles: () => React.CSSProperties;
   handleGenerate: () => Promise<void>;
 }
+
+const renderCapabilityPill = (label: string, detail?: CapabilityDetail) => {
+  if (!detail) return null;
+  const status = detail.status;
+  let colorClass = "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20";
+  if (status === "native") {
+    colorClass = "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20";
+  } else if (status === "application") {
+    colorClass = "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20";
+  } else if (status === "reference") {
+    colorClass = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20";
+  } else if (status === "prompt") {
+    colorClass = "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20";
+  } else if (status === "unsupported") {
+    colorClass = "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20";
+  }
+
+  const tooltip = `${detail.badgeLabel}: ${detail.reason}${detail.parameter ? ` (Parameter: ${detail.parameter})` : ''}`;
+
+  return (
+    <span
+      className="flex items-center gap-1 text-slate-650 dark:text-slate-350 cursor-help transition-opacity hover:opacity-90"
+      title={tooltip}
+    >
+      {label}:
+      <span className={cn("font-bold text-[10px] px-1.5 py-0.5 rounded-xs tracking-tight shadow-xs", colorClass)}>
+        {detail.badgeLabel}
+      </span>
+    </span>
+  );
+};
 
 export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
   const {
@@ -304,7 +336,7 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
       {(selectedGem.type === 'image' || selectedGem.type === 'video') && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2 bg-slate-50/70 dark:bg-slate-900/30 rounded-sm border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 w-full select-none animate-in fade-in slide-in-from-top-1">
           <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
-            Model Support
+            Model Capabilities
           </span>
           <span className="hidden sm:inline h-3.5 w-px bg-slate-200 dark:bg-slate-800" />
           <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
@@ -329,57 +361,32 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
               return (
                 <>
                   <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                    Logo Overlay: 
-                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsLogoOverlay ? "text-emerald-600 dark:text-emerald-400" : "text-slate-450 dark:text-slate-500")}>
-                      {caps.supportsLogoOverlay ? 'Supported' : 'Unsupported'}
-                    </span>
-                  </span>
+                  {renderCapabilityPill('Aspect Ratio', caps.aspectRatio)}
                   <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                    Face Reference: 
-                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsFaceReference === 'supported' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                      {caps.supportsFaceReference === 'supported' ? 'Supported' : 'Unsupported'}
-                    </span>
-                  </span>
+                  {renderCapabilityPill('Logo Overlay', caps.logoOverlay)}
                   <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                    Product Placement: 
-                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsProductReference === 'supported' ? "text-emerald-600 dark:text-emerald-400" : (caps.supportsProductReference === 'inspirational' ? "text-amber-600 dark:text-amber-500 font-bold" : "text-slate-450 dark:text-slate-500"))}>
-                      {caps.supportsProductReference === 'supported' ? 'Supported' : (caps.supportsProductReference === 'inspirational' ? 'Inspirational Only' : 'Unsupported')}
-                    </span>
-                  </span>
+                  {renderCapabilityPill('Face Reference', caps.faceReference)}
                   <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-                  <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                    Ingredients Input: 
-                    <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", caps.supportsIngredientsInput === 'supported' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                      {caps.supportsIngredientsInput === 'supported' ? 'Supported' : 'Unsupported'}
-                    </span>
-                  </span>
+                  {renderCapabilityPill('Product Reference', caps.productReference)}
+                  <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+                  {renderCapabilityPill('Ingredients', caps.ingredients)}
                 </>
               );
             })()
           ) : (
             <>
               <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
+              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350 cursor-help" title="Native parameter supported for first frame image conditioning">
                 First Frame Input: 
-                <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", selectedModel !== 'veo-3.1-lite-generate-preview' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                  {selectedModel !== 'veo-3.1-lite-generate-preview' ? 'Supported' : 'Unsupported'}
+                <span className={cn("font-bold text-[10px] px-1.5 py-0.5 rounded-xs tracking-tight shadow-xs", selectedModel !== 'veo-3.1-lite-generate-preview' ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" : "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20")}>
+                  {selectedModel !== 'veo-3.1-lite-generate-preview' ? 'Provider Native' : 'Unavailable'}
                 </span>
               </span>
               <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
+              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350 cursor-help" title="Native parameter supported for end frame interpolation">
                 Last Frame Input: 
-                <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", selectedModel === 'veo-3.1-generate-preview' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                  {selectedModel === 'veo-3.1-generate-preview' ? 'Supported' : 'Unsupported'}
-                </span>
-              </span>
-              <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
-                Ingredients Input: 
-                <span className={cn("font-bold text-[10px] px-1 bg-slate-100 dark:bg-slate-800/80 rounded-xs", selectedModel === 'veo-3.1-generate-preview' ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500")}>
-                  {selectedModel === 'veo-3.1-generate-preview' ? 'Supported' : 'Unsupported'}
+                <span className={cn("font-bold text-[10px] px-1.5 py-0.5 rounded-xs tracking-tight shadow-xs", selectedModel === 'veo-3.1-generate-preview' ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" : "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20")}>
+                  {selectedModel === 'veo-3.1-generate-preview' ? 'Provider Native' : 'Unavailable'}
                 </span>
               </span>
             </>

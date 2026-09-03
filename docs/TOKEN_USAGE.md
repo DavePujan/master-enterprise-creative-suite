@@ -1,52 +1,44 @@
-# Token Usage Architecture & Costing (INR)
+# Token Usage Architecture & Costing (INR & Credits)
 
-This document outlines the token budget and real-world cost estimation in Indian Rupees (INR) for the Studio AI application.
+This document outlines the token budget, real-world cost estimation, and user credit deduction schedules for the Studio AI application.
+
+---
+
+## 🎨 Image Generation Credit Deduction Schedule
+
+Image generation uses a two-phase credit hold reservation (`credit_holds`) in PostgreSQL, capturing upon verified generation and permanent Supabase Storage archival. Unsuccessful requests automatically release held credits with zero net deduction.
+
+Credit rates are set strictly between **2 and 5 credits** based on provider inference compute:
+
+| Model Product Key | Provider Model ID | Quality Tier | Credits Deducted | Est. Provider Cost | Description |
+| :--- | :--- | :--- | :---: | :---: | :--- |
+| **`flux-schnell`** | `fal-ai/flux/schnell` | Fast | **2 Credits** | ~$0.003 | 4-step rapid photorealistic diffusion |
+| **`gemini-preview`** | `gemini-2.5-flash-image` | Fast | **2 Credits** | ~$0.015 | Rapid multimodal concept ideation |
+| **`nano-banana-2`** | `fal-ai/nano-banana-2` | Fast | **2 Credits** | ~$0.015 | Fast next-gen creative diffusion with resolution scaling |
+| **`fal-studio`** | `openai/gpt-image-2` | Standard | **3 Credits** | ~$0.030 | High-fidelity commercial advertising visual engine |
+| **`flux-pro`** | `fal-ai/flux/dev` | Premium | **4 Credits** | ~$0.045 | 28-step high-detail commercial advertising render |
+
+---
 
 ## 💸 Economic Overview
-Studio AI leverages Google's Gemini models for high-impact brand intelligence. Prices below are calculated based on a premium exchange rate as requested.
+Studio AI leverages Google's Gemini models for text reasoning and strategy intelligence, alongside Fal AI and Google for image synthesis.
 **Current Exchange Rate**: 1 USD = ₹93.00
 
-### 🟢 Model Unit Costs
-| Model Tier | Input Cost (per 1M tokens) | Output Cost (per 1M tokens) |
-| :--- | :--- | :--- |
-| **Gemini 1.5 Flash** (Standard) | **₹6.975** ($0.075) | **₹27.90** ($0.30) |
-| **Gemini 1.5 Pro** (High Quality) | **₹116.25** ($1.25) | **₹465.00** ($5.00) |
+### 🟢 Text Model Unit Costs
+| Model Tier | Input Cost (per 1M tokens) | Output Cost (per 1M tokens) | User Credits |
+| :--- | :--- | :--- | :---: |
+| **Gemini 2.5 Flash** (Standard) | **₹6.975** ($0.075) | **₹27.90** ($0.30) | 1c |
+| **Gemini 2.5 Pro** (High Quality) | **₹116.25** ($1.25) | **₹465.00** ($5.00) | 5c |
 
 ---
 
-## 📥 Input Stage (Context Costing)
-
-### 1. Fixed Context Overhead (~500 - 800 Tokens)
-Static instructions including system persona, brand guidelines, and JSON schemas.
-- **Cost (Flash Tier)**: ~₹0.0035 - ₹0.0056 per request.
-- **Cost (Pro Tier)**: ~₹0.058 - ₹0.093 per request.
-
-### 2. Multi-modal Context & Visual Analysis
-Visual assets require specialized processing tokens.
-- **Image/Logo Processing**: Fixed at **~258 tokens** per image.
-- **Cost (Flash Tier)**: **₹0.0018** per image.
-- **Cost (Pro Tier)**: **₹0.030** per image.
+## 📥 Context Stage Overhead
+- **Static Context Overhead**: ~500 - 800 tokens (system instructions, brand guidelines, and schema enforcement).
+- **Multi-modal Image Processing**: ~258 tokens per reference asset.
 
 ---
 
-## 📊 Estimated Total Cost per Feature (Standard Flash)
-
-| Feature Service | Avg. Input Tokens | Avg. Output Tokens | Total Est. Cost (INR) |
-| :--- | :---: | :---: | :--- |
-| **Social Caption Pack** | 600 | 800 | **₹0.027** |
-| **Strategy & Reasoning**| 800 | 1,200 | **₹0.039** |
-| **Initial Brand Setup** | 200 | 1,500 | **₹0.043** |
-| **Agentic Campaign Mix**| 3,000 | 5,000 | **₹0.160** |
-
----
-
-## 🧠 Model Logic & Optimization
-- **Efficiency Layer**: **Gemini 1.5 Flash** is the default workhorse for 95% of tasks, keeping average campaign generation costs under ₹0.20 per run.
-- **Intelligence Layer**: **Gemini 1.5 Pro** provides deeper nuance for complex strategy docs at roughly **16.6x** the cost profile.
-- **Context Window**: Both models support up to 1M+ tokens, allowing massive document uploads (brand bibles, market research) for highly grounded results.
-
----
-
-## 🛡 Quota & Operational Guardrails
-- **Backoff Handling**: The system automatically retries on 429 errors using an exponential backoff strategy (up to 5 retries).
-- **Cost Control**: Users can switch between standard and high-quality models via the Settings menu to manage their credit burn rate.
+## 🛡 Credit Safety & Operational Guardrails
+- **Two-Phase Holds**: Credits are reserved upfront via PostgreSQL `reserve_credits_for_ai` RPC. If generation succeeds, the hold is captured and immutably ledgered in `credit_ledger`. If provider generation fails or times out, `release_credit_hold` releases the reservation immediately.
+- **Idempotency Protection**: Every generation request accepts an `X-Idempotency-Key` header, preventing duplicate credit deductions during network retries or tab reloads.
+- **Model-Aware Capability Enforcement**: Invalid requests (e.g., requesting facial identity conditioning on models that do not support it) are rejected at validation time with HTTP 400 with 0 credit deduction.

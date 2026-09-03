@@ -26,12 +26,13 @@ export class CapabilityValidator {
     const { capabilities } = model;
 
     // 1. Validate Aspect Ratio
-    if (!capabilities.aspectRatios.includes(request.aspectRatio)) {
+    const allowedRatios = capabilities.aspectRatio?.values || capabilities.aspectRatios;
+    if (!allowedRatios.includes(request.aspectRatio)) {
       return {
         valid: false,
         error: {
           status: 400,
-          message: `Aspect ratio '${request.aspectRatio}' is not supported by model '${model.label}'. Supported ratios: ${capabilities.aspectRatios.join(", ")}`,
+          message: `Aspect ratio '${request.aspectRatio}' is not supported by model '${model.label}'. Supported ratios: ${allowedRatios.join(", ")}`,
           code: "UNSUPPORTED_ASPECT_RATIO",
         },
       };
@@ -39,12 +40,13 @@ export class CapabilityValidator {
 
     // 2. Validate Face Reference
     if (request.faceReference?.enabled) {
-      if (capabilities.supportsFaceReference === "unsupported") {
+      const faceStatus = capabilities.faceReference?.status;
+      if (faceStatus === "unsupported" || capabilities.supportsFaceReference === "unsupported") {
         return {
           valid: false,
           error: {
             status: 400,
-            message: `Face reference is not supported by model '${model.label}'.`,
+            message: `Face reference is unavailable for model '${model.label}' (${capabilities.faceReference?.reason || "Endpoint does not accept reference images"}).`,
             code: "UNSUPPORTED_FACE_REFERENCE",
           },
         };
@@ -53,12 +55,13 @@ export class CapabilityValidator {
 
     // 3. Validate Product Placement / Preservation
     if (request.productReference?.enabled) {
-      if (capabilities.supportsProductReference === "unsupported") {
+      const prodStatus = capabilities.productReference?.status;
+      if (prodStatus === "unsupported" || capabilities.supportsProductReference === "unsupported") {
         return {
           valid: false,
           error: {
             status: 400,
-            message: `Product reference is not supported by model '${model.label}'.`,
+            message: `Product reference is unavailable for model '${model.label}' (${capabilities.productReference?.reason || "Endpoint does not accept reference images"}).`,
             code: "UNSUPPORTED_PRODUCT_REFERENCE",
           },
         };
@@ -67,12 +70,13 @@ export class CapabilityValidator {
 
     // 4. Validate Ingredients Input
     if (request.ingredients && request.ingredients.length > 0) {
-      if (capabilities.supportsIngredientsInput === "unsupported") {
+      const ingStatus = capabilities.ingredients?.status;
+      if (ingStatus === "unsupported" || capabilities.supportsIngredientsInput === "unsupported") {
         return {
           valid: false,
           error: {
             status: 400,
-            message: `Ingredients input is not supported by model '${model.label}'.`,
+            message: `Ingredients input is unavailable for model '${model.label}'.`,
             code: "UNSUPPORTED_INGREDIENTS",
           },
         };
