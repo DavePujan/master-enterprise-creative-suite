@@ -21,6 +21,7 @@ import { pcmToWav } from '@utils/audio.js';
 import type { Gem, SlideStructure, StorylineStructure } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import type { NormalizedImageResult, NormalizedImageRequest } from '@shared-types/imageGeneration.js';
+import type { NormalizedTextRequest, NormalizedTextResult, BrandContextSnapshot } from '@shared-types/textGeneration.js';
 
 export {
   generateFastPrompt,
@@ -266,37 +267,43 @@ export async function generateCreative(
   }
 
   if (gem.type === 'text') {
-    const ai = getAI();
-    const modelId = config?.model || 'gemini-2.5-flash';
     const isCaptions = gem.id === 'strategy-captions';
+    const task = isCaptions ? 'caption' : 'copy';
 
-    const strictFormatting = isCaptions
-      ? "\n\nCRITICAL FORMATTING INSTRUCTION: Deliver clean, high-converting, platform-ready social media captions with engaging hooks, emojis, body copy, hashtags, and platform recommendations. ABSOLUTELY DO NOT output any raw SVG code, HTML tags, CSS, XML, programming code, or internal thoughts. Output ONLY formatted Markdown copy."
-      : "\n\nCRITICAL FORMATTING INSTRUCTION: Deliver clean, high-impact brand copywriting in Markdown format. ABSOLUTELY DO NOT output any raw SVG code, HTML tags, XML, or code blocks. Output ONLY formatted Markdown text.";
+    const brandSnapshot: BrandContextSnapshot = config?.guidelines ? {
+      name: config.guidelines.name,
+      industry: config.guidelines.industry,
+      tone: config.guidelines.tone,
+      pillars: config.guidelines.pillars,
+      colors: config.guidelines.colors,
+      location: config.guidelines.location,
+      targetAudience: (config.guidelines as any).targetAudience || config.guidelines.mission,
+    } : {};
 
-    const parts: any[] = [{ text: `${gem.systemInstruction}\n${guidelinesContext}${strictFormatting}\n\nPrompt: ${prompt}` }];
+    const multimodalAssets = config?.assets?.map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      data: a.data,
+      type: a.type,
+    }));
 
-    await appendAssetsToParts(parts, config?.assets);
+    const textReq: NormalizedTextRequest = {
+      task,
+      input: prompt,
+      quality: 'standard',
+      brandContext: brandSnapshot,
+      multimodalAssets: multimodalAssets && multimodalAssets.length > 0 ? multimodalAssets : undefined,
+    };
 
-    const response = await withRetry(() =>
-      ai.models.generateContent({
-        model: modelId,
-        contents: { parts },
-        config: {
-          systemInstruction: `${gem.systemInstruction}\n\nStrict Rule: Output ONLY clean human-readable marketing copy in Markdown. Never generate SVG, HTML, code tags, or developer metadata.`
-        }
-      })
-    );
-
-    let cleanedText = response.text || '';
-    // Strip any accidental raw <svg>...</svg> blocks or ```xml ```svg code fences
-    cleanedText = cleanedText.replace(/<svg[\s\S]*?<\/svg>/gi, '').trim();
-    cleanedText = cleanedText.replace(/```(?:svg|xml|html)?\s*<svg[\s\S]*?<\/svg>\s*```/gi, '').trim();
+    const res = await apiClient.post<NormalizedTextResult & { newBalance?: number }>('/api/text/generate', textReq);
 
     return {
       type: 'text',
-      data: cleanedText,
-      groundingMetadata: response.candidates?.[0]?.groundingMetadata
+      data: res.text,
+      modelUsed: res.modelUsed,
+      creditsCharged: res.creditsCharged,
+      newBalance: res.newBalance,
+      groundingMetadata: res.groundingMetadata
     };
   }
 

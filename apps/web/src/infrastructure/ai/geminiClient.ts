@@ -86,13 +86,12 @@ export function getQuotaErrorMessage(error: any): string {
 
 export async function generateHistoryTitle(prompt: string, context?: string): Promise<string> {
   try {
-    const ai = getAI();
-    const contextPrompt = context ? ` for ${context}` : '';
-    const response = await withRetry(() => ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Generate a very short, punchy 2 to 4-word title${contextPrompt} for this user prompt: "${prompt}". Return ONLY the plain text title, no punctuation, no quotes, no markdown.`
-    }));
-    return response.text?.trim() || prompt.slice(0, 30);
+    const res = await apiClient.post<{ text: string }>('/api/text/generate', {
+      task: 'title',
+      input: context ? `${prompt} (${context})` : prompt,
+      quality: 'fast'
+    });
+    return res.text?.trim() || prompt.slice(0, 30);
   } catch (e) {
     return prompt.slice(0, 30);
   }

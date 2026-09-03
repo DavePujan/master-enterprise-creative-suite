@@ -5,3 +5,4 @@ export * from './user.js';
 export * from './tierPolicy.js';
 export * from './imageGeneration.js';
 export * from './imageAutoWrite.js';
+export * from './textGeneration.js';
