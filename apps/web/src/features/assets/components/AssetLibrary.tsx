@@ -6,10 +6,9 @@ import { analyzeAsset, generateImage } from '@web/infrastructure/ai/geminiServic
 import type { AssetAnalysis } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import { resizeImageIfNeeded } from '@utils/image.js';
-import { db } from '@web/infrastructure/firebase/firebaseApp.js';
 import { useAuth } from '@web/features/auth/hooks/useAuth.js';
-import { uploadAssetToStorage } from '@web/infrastructure/firebase/storage.js';
-import { saveUserAsset, deleteUserAsset } from '@web/infrastructure/firebase/repositories/assetRepository.js';
+import { uploadAssetToStorage } from '@web/infrastructure/storage/storageClient.js';
+import { saveUserAsset, deleteUserAsset } from '@web/infrastructure/repositories/assetRepository.js';
 import { cn, downloadFile } from '@web/lib/utils.js';
 
 export interface Asset {

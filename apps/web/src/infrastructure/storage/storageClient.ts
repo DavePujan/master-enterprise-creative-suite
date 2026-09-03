@@ -1,14 +1,10 @@
 /**
- * Firebase Storage Client & Asset Upload Helper.
- * Preserves exact asset storage path: `users/${userId}/assets/${cleanAssetId}.${ext}`
+ * Production Supabase Storage Client.
+ * Handles client-side asset uploads directly to the 'user-assets' Supabase bucket.
+ * Enforces canonical paths: `${userId}/${cleanAssetId}.${ext}`.
  */
 
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { storage } from './firebaseApp.js';
-import { auth } from './auth.js';
 import { getSupabaseClient } from '../supabase/supabaseClient.js';
-
-export { storage };
 
 export async function uploadAssetToStorage(
   userId: string,
@@ -16,7 +12,7 @@ export async function uploadAssetToStorage(
   data: string,
   _type?: string
 ): Promise<string> {
-  // If not a data URL or if it's already a hosted URL, return as-is
+  // If not a data URL or already hosted, return as-is
   if (!data || !data.startsWith('data:')) {
     return data;
   }
@@ -35,7 +31,6 @@ export async function uploadAssetToStorage(
   const cleanAssetId = assetId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = `${userId}/${cleanAssetId}.${ext}`;
 
-  // 1. Primary: Upload to Supabase Storage if Supabase client is active
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -54,26 +49,25 @@ export async function uploadAssetToStorage(
           .upload(filePath, blob, { upsert: true, contentType: mime });
 
         if (!error && uploadData) {
+          // Attempt signed URL first (bucket is private)
+          const { data: signedData, error: signErr } = await supabase.storage
+            .from('user-assets')
+            .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
+
+          if (!signErr && signedData?.signedUrl) {
+            return signedData.signedUrl;
+          }
+
           const { data: publicUrlData } = supabase.storage
             .from('user-assets')
             .getPublicUrl(filePath);
           return publicUrlData.publicUrl;
+        } else if (error) {
+          console.warn('[StorageClient] Upload error:', error.message);
         }
       }
     } catch (e) {
-      console.warn('[Storage] Supabase storage upload skipped:', e);
-    }
-  }
-
-  // 2. Secondary fallback: Firebase Storage ONLY if user is logged into Firebase Auth
-  if (auth.currentUser) {
-    try {
-      const storagePath = `users/${userId}/assets/${cleanAssetId}.${ext}`;
-      const storageRef = ref(storage, storagePath);
-      await uploadString(storageRef, data, 'data_url');
-      return await getDownloadURL(storageRef);
-    } catch (error) {
-      console.warn('[Storage] Firebase storage upload error:', error);
+      console.warn('[StorageClient] Failed to process upload:', e);
     }
   }
 

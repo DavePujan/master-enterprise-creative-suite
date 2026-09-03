@@ -1,9 +1,8 @@
 /**
  * Centralized Authenticated API Client.
- * Automatically attaches Firebase ID Bearer token to all outgoing API requests.
+ * Automatically attaches Supabase JWT Bearer token to all outgoing API requests.
  */
 
-import { auth } from '../firebase/auth.js';
 import { getCurrentAccessToken } from '../supabase/auth.js';
 
 export interface RequestOptions extends RequestInit {
@@ -13,23 +12,12 @@ export interface RequestOptions extends RequestInit {
 export class ApiClient {
   private async getAuthToken(): Promise<string | null> {
     try {
-      // 1. Primary: Supabase Access Token
       const supaToken = await getCurrentAccessToken();
       if (supaToken) {
         return supaToken;
       }
-    } catch {
-      // Ignore and fallback to Firebase
-    }
-
-    try {
-      // 2. Secondary: Firebase ID Token
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        return await currentUser.getIdToken();
-      }
     } catch (err) {
-      console.warn("[ApiClient] Failed to obtain Firebase ID token:", err);
+      console.warn("[ApiClient] Failed to obtain Supabase access token:", err);
     }
     return null;
   }
@@ -100,6 +88,14 @@ export class ApiClient {
     return this.request<T>(endpoint, {
       ...options,
       method: 'PUT',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  patch<T = any>(endpoint: string, body?: any, options?: RequestOptions): Promise<T> {
+    return this.request<T>(endpoint, {
+      ...options,
+      method: 'PATCH',
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   }

@@ -8,22 +8,22 @@ import {
   subscribeUserHistory, 
   addUserHistoryItem, 
   deleteHistoryItem 
-} from '../infrastructure/firebase/repositories/historyRepository.js';
+} from '../infrastructure/repositories/historyRepository.js';
 import { 
   subscribeUserAssets, 
   saveUserAsset 
-} from '../infrastructure/firebase/repositories/assetRepository.js';
+} from '../infrastructure/repositories/assetRepository.js';
 import { 
   subscribeBrandGuidelines, 
   saveBrandGuidelines 
-} from '../infrastructure/firebase/repositories/brandRepository.js';
+} from '../infrastructure/repositories/brandRepository.js';
 import { 
   subscribeUserAccount 
-} from '../infrastructure/firebase/repositories/userRepository.js';
+} from '../infrastructure/repositories/userRepository.js';
 import { 
   submitHumanTouchRequest, 
   subscribeHumanTouchQueue 
-} from '../infrastructure/firebase/repositories/humanTouchRepository.js';
+} from '../infrastructure/repositories/humanTouchRepository.js';
 import { useCanvasEditor } from '../features/canvas/hooks/useCanvasEditor.js';
 import { useCreativeExecution } from '../features/creative/hooks/useCreativeExecution.js';
 import { AppRouter } from './AppRouter.js';

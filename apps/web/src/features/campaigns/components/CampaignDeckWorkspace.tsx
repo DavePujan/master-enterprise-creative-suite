@@ -30,9 +30,8 @@ import { resizeImageIfNeeded, compressBase64Image } from '@utils/image.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { db } from '@web/infrastructure/firebase/firebaseApp.js';
 import { useAuth } from '@web/features/auth/hooks/useAuth.js';
-import { submitHumanTouchRequest } from '@web/infrastructure/firebase/repositories/humanTouchRepository.js';
+import { submitHumanTouchRequest } from '@web/infrastructure/repositories/humanTouchRepository.js';
 
 interface AssetDetail {
   title: string;

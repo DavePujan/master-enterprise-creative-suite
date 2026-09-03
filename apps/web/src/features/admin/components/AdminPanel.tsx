@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '@web/infrastructure/firebase/firebaseApp.js';
-import { uploadAssetToStorage } from '@web/infrastructure/firebase/storage.js';
-import { subscribeAdminSettings, saveAdminSettings } from '../../../infrastructure/firebase/repositories/adminRepository.js';
-import { subscribeHumanTouchQueue, updateHumanTouchRequestStatus, deleteHumanTouchRequest } from '../../../infrastructure/firebase/repositories/humanTouchRepository.js';
-import { subscribeSalesSubmissions, updateSalesSubmissionStatus, deleteSalesSubmission } from '../../../infrastructure/firebase/repositories/salesRepository.js';
-import { saveUserAsset } from '../../../infrastructure/firebase/repositories/assetRepository.js';
+import { uploadAssetToStorage } from '@web/infrastructure/storage/storageClient.js';
+import { subscribeAdminSettings, saveAdminSettings } from '@web/infrastructure/repositories/adminRepository.js';
+import { subscribeHumanTouchQueue, updateHumanTouchRequestStatus, deleteHumanTouchRequest } from '@web/infrastructure/repositories/humanTouchRepository.js';
+import { subscribeSalesSubmissions, updateSalesSubmissionStatus, deleteSalesSubmission } from '@web/infrastructure/repositories/salesRepository.js';
+import { saveUserAsset } from '@web/infrastructure/repositories/assetRepository.js';
 import { 
   ShieldAlert, 
   CheckCircle, 
