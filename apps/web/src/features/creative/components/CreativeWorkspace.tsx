@@ -37,6 +37,18 @@ export interface CreativeWorkspaceProps {
   setSelectedLanguage: (lang: string) => void;
   selectedVoice: string;
   setSelectedVoice: (voice: string) => void;
+  audioGenerationType?: 'voiceover' | 'music';
+  setAudioGenerationType?: (val: 'voiceover' | 'music') => void;
+  musicMode?: 'clip' | 'full-track';
+  setMusicMode?: (val: 'clip' | 'full-track') => void;
+  musicGenre?: string;
+  setMusicGenre?: (val: string) => void;
+  musicMood?: string;
+  setMusicMood?: (val: string) => void;
+  speakerMode?: 'single' | 'two-speaker';
+  setSpeakerMode?: (val: 'single' | 'two-speaker') => void;
+  speakerTwoVoice?: string;
+  setSpeakerTwoVoice?: (val: string) => void;
   isGeneratingCreativePrompt: boolean;
   setIsGeneratingCreativePrompt: (val: boolean) => void;
   productContext: { id: string; name: string; data: string } | null;
@@ -330,6 +342,147 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
             ))}
           </div>
         )}
+
+        {selectedGem.type === 'audio' && (
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Mode Switcher: Voiceover vs Music */}
+            <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Mode</span>
+              <button
+                type="button"
+                onClick={() => props.setAudioGenerationType?.('voiceover')}
+                className={cn(
+                  "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5",
+                  props.audioGenerationType !== 'music'
+                    ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white"
+                    : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                )}
+              >
+                <Volume2 size={13} />
+                <span>Voiceover (TTS)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => props.setAudioGenerationType?.('music')}
+                className={cn(
+                  "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5",
+                  props.audioGenerationType === 'music'
+                    ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white"
+                    : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                )}
+              >
+                <Music size={13} />
+                <span>Music (Lyria 3.5)</span>
+              </button>
+            </div>
+
+            {/* When Voiceover is active */}
+            {props.audioGenerationType !== 'music' && (
+              <>
+                <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Emotion</span>
+                  {(['Professional', 'Cheerful', 'Energetic', 'Calming', 'Dramatic'] as const).map(emotion => (
+                    <button
+                      key={emotion}
+                      type="button"
+                      onClick={() => setVoiceEmotion(emotion as any)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
+                        voiceEmotion === emotion
+                          ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
+                          : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      {emotion}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Speakers</span>
+                  <button
+                    type="button"
+                    onClick={() => props.setSpeakerMode?.('single')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
+                      props.speakerMode !== 'two-speaker'
+                        ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
+                        : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    Single
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => props.setSpeakerMode?.('two-speaker')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
+                      props.speakerMode === 'two-speaker'
+                        ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
+                        : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    Two Speakers
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* When Music is active */}
+            {props.audioGenerationType === 'music' && (
+              <>
+                <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Format</span>
+                  <button
+                    type="button"
+                    onClick={() => props.setMusicMode?.('clip')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
+                      props.musicMode !== 'full-track'
+                        ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
+                        : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                    title="Lyria 3.5 Clip (30s, 5 credits)"
+                  >
+                    30s Clip (5c)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => props.setMusicMode?.('full-track')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
+                      props.musicMode === 'full-track'
+                        ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
+                        : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                    title="Lyria 3.5 Pro (Full track, 10 credits)"
+                  >
+                    Full Track (10c)
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Genre</span>
+                  {(['Cinematic', 'Electronic', 'Lofi Beat', 'Acoustic', 'Corporate'] as const).map(genre => (
+                    <button
+                      key={genre}
+                      type="button"
+                      onClick={() => props.setMusicGenre?.(genre)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
+                        props.musicGenre === genre
+                          ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
+                          : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      {genre}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Dynamic Model capabilities / possibilities display */}
@@ -406,6 +559,11 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         selectedVoice={props.selectedVoice}
         setSelectedVoice={props.setSelectedVoice}
         voiceEmotion={props.voiceEmotion}
+        audioGenerationType={props.audioGenerationType}
+        musicMode={props.musicMode}
+        musicGenre={props.musicGenre}
+        musicMood={props.musicMood}
+        speakerMode={props.speakerMode}
         isGeneratingCreativePrompt={props.isGeneratingCreativePrompt}
         setIsGeneratingCreativePrompt={props.setIsGeneratingCreativePrompt}
         prompt={props.prompt}

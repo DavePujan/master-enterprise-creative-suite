@@ -23,6 +23,12 @@ export interface GemExecutionState {
   voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
   selectedVoice: string;
   selectedLanguage: string;
+  audioGenerationType: 'voiceover' | 'music';
+  musicMode: 'clip' | 'full-track';
+  musicGenre: string;
+  musicMood: string;
+  speakerMode: 'single' | 'two-speaker';
+  speakerTwoVoice: string;
   productContext: { id: string; name: string; data: string } | null;
   faceContext: { id: string; name: string; data: string } | null;
   firstFrameContext: { id: string; name: string; data: string } | null;
@@ -102,6 +108,12 @@ export const getDefaultGemState = (gem: Gem, guidelines?: BrandGuidelines): GemE
     voiceEmotion: 'Neutral',
     selectedVoice: loadPreferences().audioVoice || 'Kore',
     selectedLanguage: 'English',
+    audioGenerationType: 'voiceover',
+    musicMode: 'clip',
+    musicGenre: 'Cinematic Electronic',
+    musicMood: 'Uplifting',
+    speakerMode: 'single',
+    speakerTwoVoice: 'Puck',
     productContext: null,
     faceContext: null,
     firstFrameContext: null,
@@ -265,6 +277,12 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     updateActiveState({ selectedVoice: val });
   }, [updateActiveState]);
   const setSelectedLanguage = useCallback((val: string) => updateActiveState({ selectedLanguage: val }), [updateActiveState]);
+  const setAudioGenerationType = useCallback((val: 'voiceover' | 'music') => updateActiveState({ audioGenerationType: val }), [updateActiveState]);
+  const setMusicMode = useCallback((val: 'clip' | 'full-track') => updateActiveState({ musicMode: val }), [updateActiveState]);
+  const setMusicGenre = useCallback((val: string) => updateActiveState({ musicGenre: val }), [updateActiveState]);
+  const setMusicMood = useCallback((val: string) => updateActiveState({ musicMood: val }), [updateActiveState]);
+  const setSpeakerMode = useCallback((val: 'single' | 'two-speaker') => updateActiveState({ speakerMode: val }), [updateActiveState]);
+  const setSpeakerTwoVoice = useCallback((val: string) => updateActiveState({ speakerTwoVoice: val }), [updateActiveState]);
   const setSelectedPresentationTheme = useCallback((val: any) => updateActiveState({ selectedPresentationTheme: val }), [updateActiveState]);
   const setProductContext = useCallback((val: any) => updateActiveState({ productContext: val }), [updateActiveState]);
   const setFaceContext = useCallback((val: any) => updateActiveState({ faceContext: val }), [updateActiveState]);
@@ -470,7 +488,16 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         videoShotType: currentTargetState.videoShotType,
         imageStyle: currentTargetState.imageStyle,
         assets: selectedAssets,
-        bakeLogo: bakeLogoOnGeneration
+        bakeLogo: bakeLogoOnGeneration,
+        voiceEmotion: currentTargetState.voiceEmotion,
+        selectedVoice: currentTargetState.selectedVoice,
+        audioGenerationType: currentTargetState.audioGenerationType,
+        musicMode: currentTargetState.musicMode,
+        musicGenre: currentTargetState.musicGenre,
+        musicMood: currentTargetState.musicMood,
+        speakerMode: currentTargetState.speakerMode,
+        speakerTwoVoice: currentTargetState.speakerTwoVoice,
+        selectedLanguageCode: currentTargetState.selectedLanguage === 'Hindi' ? 'hi-IN' : (currentTargetState.selectedLanguage === 'Marathi' ? 'mr-IN' : (currentTargetState.selectedLanguage === 'Gujarati' ? 'gu-IN' : (currentTargetState.selectedLanguage === 'Tamil' ? 'ta-IN' : (currentTargetState.selectedLanguage === 'Bengali' ? 'bn-IN' : 'en-US')))),
       });
 
       // 3. Settle / sync authoritative credits from server
@@ -911,6 +938,18 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     setSelectedVoice,
     selectedLanguage: activeState.selectedLanguage,
     setSelectedLanguage,
+    audioGenerationType: activeState.audioGenerationType,
+    setAudioGenerationType,
+    musicMode: activeState.musicMode,
+    setMusicMode,
+    musicGenre: activeState.musicGenre,
+    setMusicGenre,
+    musicMood: activeState.musicMood,
+    setMusicMood,
+    speakerMode: activeState.speakerMode,
+    setSpeakerMode,
+    speakerTwoVoice: activeState.speakerTwoVoice,
+    setSpeakerTwoVoice,
     productContext: activeState.productContext,
     setProductContext,
     faceContext: activeState.faceContext,

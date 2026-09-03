@@ -22,6 +22,8 @@ import type { Gem, SlideStructure, StorylineStructure } from '@shared-types/crea
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import type { NormalizedImageResult, NormalizedImageRequest } from '@shared-types/imageGeneration.js';
 import type { NormalizedTextRequest, NormalizedTextResult, BrandContextSnapshot } from '@shared-types/textGeneration.js';
+import { generateAudio } from '../../features/creative/services/audioStudioService.js';
+import type { AudioGenerationResponse, OfficialGeminiVoice } from '@shared-types/audioGeneration.js';
 
 export {
   generateFastPrompt,
@@ -101,6 +103,19 @@ export async function generateCreative(
     imageStyle?: string;
     assets?: any[];
     bakeLogo?: boolean;
+    voiceEmotion?: string;
+    selectedVoice?: string;
+    audioGenerationType?: 'voiceover' | 'music';
+    musicMode?: 'clip' | 'full-track';
+    musicGenre?: string;
+    musicMood?: string;
+    tempoBpm?: number;
+    vocalsMode?: 'instrumental' | 'with-vocals';
+    speakerMode?: 'single' | 'two-speaker';
+    speakerTwoVoice?: string;
+    selectedLanguageCode?: string;
+    targetDurationSeconds?: number;
+    voicePace?: 'slow' | 'normal' | 'fast';
   }
 ) {
   const guidelinesContext = config?.guidelines
@@ -585,42 +600,90 @@ export async function generateCreative(
   }
 
   if (gem.type === 'audio') {
-    const ai = getAI();
-    const logicModelId = MODELS.TEXT_FAST;
-    const accentStyle = config?.guidelines?.voiceAccentStyle || 'Indian English';
-
-    let audioScriptPrompt = `Generate a voice-over script or monologue for '${gem.name}' based on this user prompt: '${prompt}'. 
-      ${guidelinesContext}
-  
-      CULTURAL AND PHRASING CONTEXT:
-      The brand voiceover preference is '${accentStyle}'.
-      The text script MUST be written naturally to sound authentic when spoken in '${accentStyle}'.
-      - If Hinglish is the active style, generate natural-flowing dialogue containing a beautiful, creative mix of Hindi and English.
-      - If Indian English is active, write elegant, formal, or high-fashion Indian-style phrasing.
-      Keep the script concise (30-65 words), clear, and suitable for the requested duration. Avoid any stage directions, narration descriptions, sound effect markers, or conversational filler! Return ONLY the direct speakable voiceover script text.`;
-
-    const scriptResponse = await withRetry(() =>
-      ai.models.generateContent({
-        model: logicModelId,
-        contents: audioScriptPrompt
-      })
-    );
-    const script = scriptResponse.text?.trim() || "Hello, this is a generated audio track.";
-
+    const isMusic = config?.audioGenerationType === 'music';
     try {
-      const audioData = await generateTTS(script, 'Kore', 'Professional');
-      return {
-        type: 'audio',
-        data: audioData,
-        script: script
-      };
-    } catch (ttsErr) {
-      console.error("Audio generation failed:", ttsErr);
-      return {
-        type: 'text',
-        data: `Script: ${script}\n\n(Voice synthesis unavailable)`,
-        groundingMetadata: scriptResponse.candidates?.[0]?.groundingMetadata
-      };
+      if (isMusic) {
+        const musicRes = await generateAudio({
+          generationType: 'music',
+          prompt,
+          mode: config?.musicMode || 'clip',
+          genre: config?.musicGenre,
+          mood: config?.musicMood,
+          tempoBpm: config?.tempoBpm,
+          vocalsMode: config?.vocalsMode || 'instrumental',
+          idempotencyKey: `music_${Date.now()}`
+        });
+
+        if (musicRes.success && musicRes.musicResult) {
+          const audioBase64 = musicRes.musicResult.audioBase64;
+          const mime = musicRes.musicResult.mimeType || 'audio/mp3';
+          const audioData = audioBase64.startsWith('data:') ? audioBase64 : `data:${mime};base64,${audioBase64}`;
+          return {
+            type: 'audio',
+            data: audioData,
+            script: musicRes.musicResult.lyrics || musicRes.musicResult.structure || 'Custom Music Soundtrack',
+            audioTitle: `Music: ${config?.musicGenre || 'Original Soundtrack'}`,
+            mode: 'music',
+            storageUrl: musicRes.musicResult.storageUrl,
+            newBalance: musicRes.newBalance,
+          };
+        }
+        throw new Error("Music generation response invalid.");
+      } else {
+        // Voiceover mode via Gemini 3.1 Flash TTS
+        const voice = (config?.selectedVoice as OfficialGeminiVoice) || 'Kore';
+        const speakerMode = config?.speakerMode || 'single';
+        const voiceRes = await generateAudio({
+          generationType: 'voiceover',
+          userIntent: prompt,
+          brandContext: config?.guidelines ? {
+            name: config.guidelines.name,
+            industry: config.guidelines.industry,
+            tone: config.guidelines.tone,
+            pillars: config.guidelines.pillars,
+            targetAudience: (config.guidelines as any).targetAudience || config.guidelines.mission,
+            location: config.guidelines.location,
+          } : undefined,
+          languageCode: config?.selectedLanguageCode || 'en-US',
+          targetDurationSeconds: config?.targetDurationSeconds || 30,
+          voiceConfig: {
+            speakerMode: speakerMode === 'two-speaker' ? 'two-speaker' : 'single',
+            speakers: speakerMode === 'two-speaker'
+              ? [
+                  { name: 'Speaker 1', voice },
+                  { name: 'Speaker 2', voice: (config?.speakerTwoVoice as OfficialGeminiVoice) || 'Puck' }
+                ]
+              : [
+                  { name: 'Narrator', voice }
+                ]
+          },
+          performanceConfig: {
+            emotion: (config?.voiceEmotion as any) || 'Professional',
+            pace: (config?.voicePace as any) || 'normal',
+            accent: config?.guidelines?.voiceAccentStyle || 'Indian English',
+            tagsEnabled: true,
+          },
+          idempotencyKey: `vo_${Date.now()}`
+        });
+
+        if (voiceRes.success && voiceRes.voiceoverResult) {
+          const audioBase64 = voiceRes.voiceoverResult.audioBase64;
+          const audioData = audioBase64.startsWith('data:') ? audioBase64 : `data:audio/wav;base64,${audioBase64}`;
+          return {
+            type: 'audio',
+            data: audioData,
+            script: voiceRes.voiceoverResult.transcript,
+            audioTitle: `Voiceover (${voiceRes.voiceoverResult.voice})`,
+            mode: 'voiceover',
+            storageUrl: voiceRes.voiceoverResult.storageUrl,
+            newBalance: voiceRes.newBalance,
+          };
+        }
+        throw new Error("Voiceover generation response invalid.");
+      }
+    } catch (audioErr: any) {
+      console.error("Governed audio generation error:", audioErr);
+      throw audioErr;
     }
   }
 
@@ -811,6 +874,27 @@ export async function generateTTS(
   voice: string = 'Kore',
   emotion: string = 'Professional'
 ): Promise<string> {
+  try {
+    const res = await apiClient.post<AudioGenerationResponse>("/api/audio/generate", {
+      generationType: "voiceover",
+      transcript: text,
+      voiceConfig: {
+        speakerMode: "single",
+        speakers: [{ name: "Speaker", voice: voice as any }]
+      },
+      performanceConfig: {
+        emotion: emotion as any,
+        pace: "normal",
+        tagsEnabled: true
+      }
+    });
+    if (res?.voiceoverResult?.audioBase64) {
+      return `data:audio/wav;base64,${res.voiceoverResult.audioBase64}`;
+    }
+  } catch (audioGenErr) {
+    console.warn("Direct /api/audio/generate TTS call failed, falling back to /api/ai/tts:", audioGenErr);
+  }
+
   const data = await apiClient.post<{ audioPcmBase64?: string }>("/api/ai/tts", { text, voice, emotion });
   if (data?.audioPcmBase64) {
     return pcmToWav(data.audioPcmBase64);
