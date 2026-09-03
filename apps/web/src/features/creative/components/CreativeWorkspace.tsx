@@ -422,6 +422,9 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         selectedModel={props.selectedModel}
         selectedPresentationTheme={props.selectedPresentationTheme}
         setSelectedPresentationTheme={props.setSelectedPresentationTheme}
+        aspectRatio={props.aspectRatio}
+        imageStyle={props.imageStyle}
+        bakeLogoOnGeneration={props.bakeLogoOnGeneration}
         isGenerating={props.isGenerating}
         handleGenerate={props.handleGenerate}
       />

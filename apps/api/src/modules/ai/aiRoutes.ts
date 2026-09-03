@@ -55,11 +55,20 @@ aiRouter.post("/generate-content", async (req, res) => {
   } else if (requestedModel.includes("seedance")) {
     creditsRequired = 80;
   } else {
-    // Short fast prompt / rewrite / title operations
+    // Short fast prompt / rewrite / title / auto-write operations
     const contentsStr = JSON.stringify(data?.contents || "");
-    if (contentsStr.includes("generateFastPrompt") || contentsStr.includes("rewrite") || contentsStr.includes("tagline")) {
+    const sysStr = JSON.stringify(data?.config?.systemInstruction || "");
+    const combinedStr = contentsStr + " " + sysStr;
+    if (
+      combinedStr.includes("generateFastPrompt") ||
+      combinedStr.includes("rewrite") ||
+      combinedStr.includes("tagline") ||
+      combinedStr.includes("Commercial Art Director") ||
+      combinedStr.includes("USER CREATIVE INTENT") ||
+      combinedStr.includes("autowrite")
+    ) {
       creditsRequired = 1;
-    } else if (contentsStr.includes("Brand Identity Expert") || contentsStr.includes("brand documents")) {
+    } else if (combinedStr.includes("Brand Identity Expert") || combinedStr.includes("brand documents")) {
       creditsRequired = 2;
     }
   }
