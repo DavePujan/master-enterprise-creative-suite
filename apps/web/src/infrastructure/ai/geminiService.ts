@@ -306,21 +306,13 @@ export async function generateCreative(
   if (gem.type === 'text') {
     const ai = getAI();
     const modelId = config?.model || 'gemini-2.5-flash';
-    const parts: any[] = [{ text: `${gem.systemInstruction}\n${guidelinesContext}\n\nPrompt: ${prompt}` }];
+    const isCaptions = gem.id === 'strategy-captions';
 
-    if (config?.guidelines?.logo) {
-      const supportedLogo = await getSupportedLogoData(config.guidelines.logo);
-      if (supportedLogo) {
-        parts.push({
-          inlineData: {
-            mimeType: supportedLogo.mimeType,
-            data: supportedLogo.data
-          }
-        });
-        parts[0].text +=
-          "\n\nIMPORTANT: Use the provided logo image as the definitive brand mark. In your generated SVG, represent this logo accurately using SVG paths/shapes or include a clear placeholder for it. Ensure it is well-positioned and blends with the brand aesthetics. Place it as a clear, well-positioned element with a transparent background—DO NOT place it inside a box, label, or rounded rectangle.";
-      }
-    }
+    const strictFormatting = isCaptions
+      ? "\n\nCRITICAL FORMATTING INSTRUCTION: Deliver clean, high-converting, platform-ready social media captions with engaging hooks, emojis, body copy, hashtags, and platform recommendations. ABSOLUTELY DO NOT output any raw SVG code, HTML tags, CSS, XML, programming code, or internal thoughts. Output ONLY formatted Markdown copy."
+      : "\n\nCRITICAL FORMATTING INSTRUCTION: Deliver clean, high-impact brand copywriting in Markdown format. ABSOLUTELY DO NOT output any raw SVG code, HTML tags, XML, or code blocks. Output ONLY formatted Markdown text.";
+
+    const parts: any[] = [{ text: `${gem.systemInstruction}\n${guidelinesContext}${strictFormatting}\n\nPrompt: ${prompt}` }];
 
     await appendAssetsToParts(parts, config?.assets);
 
@@ -329,14 +321,19 @@ export async function generateCreative(
         model: modelId,
         contents: { parts },
         config: {
-          systemInstruction: gem.systemInstruction
+          systemInstruction: `${gem.systemInstruction}\n\nStrict Rule: Output ONLY clean human-readable marketing copy in Markdown. Never generate SVG, HTML, code tags, or developer metadata.`
         }
       })
     );
 
+    let cleanedText = response.text || '';
+    // Strip any accidental raw <svg>...</svg> blocks or ```xml ```svg code fences
+    cleanedText = cleanedText.replace(/<svg[\s\S]*?<\/svg>/gi, '').trim();
+    cleanedText = cleanedText.replace(/```(?:svg|xml|html)?\s*<svg[\s\S]*?<\/svg>\s*```/gi, '').trim();
+
     return {
       type: 'text',
-      data: response.text,
+      data: cleanedText,
       groundingMetadata: response.candidates?.[0]?.groundingMetadata
     };
   }

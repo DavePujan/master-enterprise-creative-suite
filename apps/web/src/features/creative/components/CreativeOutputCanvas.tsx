@@ -31,6 +31,14 @@ import { generateImage } from '@web/infrastructure/ai/geminiService.js';
 import { cn, downloadFile } from '@web/lib/utils.js';
 import { type TextWordLayer } from '../../canvas/hooks/useCanvasEditor.js';
 
+function cleanTextContent(content: any): string {
+  if (typeof content !== 'string') return '';
+  return content
+    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+    .replace(/```(?:svg|xml|html)?\s*<svg[\s\S]*?<\/svg>\s*```/gi, '')
+    .trim();
+}
+
 export interface CreativeOutputCanvasProps {
   result: any;
   setResult: React.Dispatch<React.SetStateAction<any>>;
@@ -843,16 +851,20 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
             )}
 
             {result.type === 'text' && (
-              <div className="w-full max-w-3xl bg-white dark:bg-slate-900 p-6 md:p-10 rounded-sm shadow-sm border border-slate-100 dark:border-slate-800 relative text-left">
+              <div className="w-full max-w-3xl bg-white dark:bg-slate-900 p-6 md:p-10 rounded-sm shadow-sm border border-slate-200 dark:border-slate-800 relative text-left">
                 <div className="space-y-8">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-50 dark:border-slate-800">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-sm bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-900 dark:text-white">
                         <Volume2 size={20} />
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Creative Narrative</h4>
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">AI Voiceover Preview</p>
+                        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                          {selectedGem.id === 'strategy-captions' ? 'Social Captions' : selectedGem.name || 'Brand Copy'}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          {selectedGem.id === 'strategy-captions' ? 'Platform Ready Copy & Hashtags' : 'AI Content & Voiceover Preview'}
+                        </p>
                       </div>
                     </div>
 
@@ -868,7 +880,7 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                       
                       <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 p-1 rounded-sm border border-slate-100 dark:border-slate-700">
                         <button 
-                          onClick={() => handleTTS(result.data)}
+                          onClick={() => handleTTS(cleanTextContent(result.data))}
                           disabled={isTTSLoading}
                           className={cn(
                             "h-10 px-4 rounded-sm transition-all disabled:opacity-50 flex items-center gap-2 font-bold text-xs cursor-pointer",
@@ -908,7 +920,7 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                   </div>
 
                   <div className="markdown-body" style={getBrandStyles()}>
-                    <ReactMarkdown>{result.data}</ReactMarkdown>
+                    <ReactMarkdown>{cleanTextContent(result.data)}</ReactMarkdown>
                   </div>
 
                   {audioDuration > 0 && (
@@ -974,7 +986,7 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
               <div className="w-full max-w-6xl bg-white dark:bg-slate-900 p-6 md:p-10 rounded-sm shadow-sm border border-slate-100 dark:border-slate-800 relative grid grid-cols-1 lg:grid-cols-2 gap-10 text-left">
                 <div className="space-y-8">
                   <div className="markdown-body" style={getBrandStyles()}>
-                    <ReactMarkdown>{result.data.copy}</ReactMarkdown>
+                    <ReactMarkdown>{cleanTextContent(result.data.copy)}</ReactMarkdown>
                   </div>
                   <GroundingSources metadata={result.groundingMetadata} />
                 </div>

@@ -94,7 +94,7 @@ body {
 
 /* Markdown Formatting & Typography Improvements */
 .markdown-body {
-  @apply relative max-w-none;
+  @apply relative max-w-none text-slate-800 dark:text-slate-100;
   font-family: var(--brand-font-secondary, var(--font-sans));
 }
 
@@ -103,61 +103,55 @@ body {
 }
 
 .markdown-body h1 {
-  @apply text-3xl sm:text-4xl font-extrabold tracking-tight mt-10 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4;
-  color: var(--brand-color-0, #0f172a);
+  @apply text-3xl sm:text-4xl font-extrabold tracking-tight mt-10 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4 text-slate-900;
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
 
-[dark] .markdown-body h1 {
-  color: var(--brand-color-0, white);
+.dark .markdown-body h1 {
+  color: #f8fafc;
 }
 
 .markdown-body h2 {
-  @apply text-xl sm:text-2xl font-bold tracking-tight mt-10 mb-4 flex items-center gap-2;
-  color: var(--brand-color-1, #1e293b);
+  @apply text-xl sm:text-2xl font-bold tracking-tight mt-10 mb-4 flex items-center gap-2 text-slate-800;
   letter-spacing: -0.01em;
 }
 
-[dark] .markdown-body h2 {
-  color: var(--brand-color-1, #f1f5f9);
+.dark .markdown-body h2 {
+  color: #f1f5f9;
 }
 
 .markdown-body h2::before {
   content: "";
-  @apply w-1.5 h-6 inline-block rounded-sm;
-  background-color: var(--brand-color-0, #0f172a);
+  @apply w-1.5 h-6 inline-block rounded-sm bg-slate-800;
 }
 
-[dark] .markdown-body h2::before {
-  background-color: var(--brand-color-0, white);
+.dark .markdown-body h2::before {
+  background-color: #38bdf8;
 }
 
 .markdown-body h3 {
-  @apply text-lg sm:text-xl font-bold mt-8 mb-3 uppercase tracking-wide;
-  color: var(--brand-color-2, #334155);
+  @apply text-lg sm:text-xl font-bold mt-8 mb-3 uppercase tracking-wide text-slate-700;
 }
 
-[dark] .markdown-body h3 {
-  color: var(--brand-color-2, #e2e8f0);
+.dark .markdown-body h3 {
+  color: #93c5fd;
 }
 
 .markdown-body p {
-  @apply leading-relaxed mb-6 text-base sm:text-lg font-light;
-  color: var(--brand-body-color, #475569);
+  @apply leading-relaxed mb-6 text-base sm:text-lg font-normal text-slate-700;
 }
 
-[dark] .markdown-body p {
-  color: var(--brand-body-color, #94a3b8);
+.dark .markdown-body p {
+  color: #f1f5f9;
 }
 
 .markdown-body strong {
-  @apply font-bold;
-  color: var(--brand-color-0, #0f172a);
+  @apply font-bold text-slate-900;
 }
 
-[dark] .markdown-body strong {
-  color: var(--brand-color-0, white);
+.dark .markdown-body strong {
+  color: #ffffff;
 }
 
 .markdown-body ul, .markdown-body ol {
@@ -165,26 +159,31 @@ body {
 }
 
 .markdown-body li {
-  @apply text-base sm:text-lg relative pl-6 font-light leading-relaxed;
-  color: var(--brand-body-color, #475569);
+  @apply text-base sm:text-lg relative pl-6 font-normal leading-relaxed text-slate-700;
 }
 
-[dark] .markdown-body li {
-  color: var(--brand-body-color, #94a3b8);
+.dark .markdown-body li {
+  color: #f1f5f9;
 }
 
 .markdown-body ul li::before {
   content: "•";
-  @apply absolute left-0 font-bold;
-  color: var(--brand-color-1, #94a3b8);
+  @apply absolute left-0 font-bold text-slate-400;
+}
+
+.dark .markdown-body ul li::before {
+  color: #38bdf8;
 }
 
 .markdown-body blockquote {
-  @apply border-l-4 pl-6 py-2 italic bg-slate-50/50 dark:bg-slate-800/50 rounded-r-sm;
-  border-color: var(--brand-color-2, #e2e8f0);
-  color: var(--brand-color-2, #64748b);
+  @apply border-l-4 pl-6 py-3 italic bg-slate-50 border-slate-300 text-slate-600 rounded-r-sm;
+}
+
+.dark .markdown-body blockquote {
+  @apply bg-slate-800/80 border-sky-500 text-slate-200;
 }
 
 .markdown-body hr {
-  @apply my-10 border-slate-100 dark:border-slate-800;
+  @apply my-10 border-slate-200 dark:border-slate-800;
 }
+
