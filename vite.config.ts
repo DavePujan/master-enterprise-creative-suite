@@ -9,6 +9,12 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        '@web': path.resolve(__dirname, 'apps/web/src'),
+        '@api': path.resolve(__dirname, 'apps/api/src'),
+        '@contracts': path.resolve(__dirname, 'packages/contracts'),
+        '@shared-types': path.resolve(__dirname, 'packages/types'),
+        '@errors': path.resolve(__dirname, 'packages/errors'),
+        '@utils': path.resolve(__dirname, 'packages/utils'),
       },
     },
     server: {
