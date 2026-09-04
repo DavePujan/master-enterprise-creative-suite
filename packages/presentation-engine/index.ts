@@ -21,7 +21,9 @@ export * from './layouts/layoutEngine.js';
 
 // Typography & Geometry
 export * from './typography/fontMapping.js';
+export * from './typography/textMeasure.js';
 export * from './geometry/coordinateConverter.js';
+
 
 // Theme
 export * from './theme/brandThemeResolver.js';
@@ -29,3 +31,5 @@ export * from './theme/chartPaletteResolver.js';
 
 // Validation
 export * from './validation/documentValidator.js';
+export * from './validation/patchValidator.js';
+

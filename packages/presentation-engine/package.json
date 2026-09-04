@@ -1,0 +1,9 @@
+{
+  "name": "@presentation-engine",
+  "version": "1.0.0",
+  "description": "Platform-independent presentation layout, geometry, typography, and domain engine",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "private": true
+}
