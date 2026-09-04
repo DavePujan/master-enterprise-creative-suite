@@ -20,9 +20,15 @@ export interface GemExecutionState {
   videoDuration: string;
   videoShotType: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
   imageStyle: string;
-  voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
+  voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
   selectedVoice: string;
   selectedLanguage: string;
+  audioGenerationType: 'voiceover' | 'music';
+  musicMode: 'clip' | 'full-track';
+  musicGenre: string;
+  musicMood: string;
+  speakerMode: 'single' | 'two-speaker';
+  speakerTwoVoice: string;
   productContext: { id: string; name: string; data: string } | null;
   faceContext: { id: string; name: string; data: string } | null;
   firstFrameContext: { id: string; name: string; data: string } | null;
@@ -99,9 +105,15 @@ export const getDefaultGemState = (gem: Gem, guidelines?: BrandGuidelines): GemE
     videoDuration: defaultDuration,
     videoShotType: defaultShotType,
     imageStyle: 'Photorealistic, 8k resolution',
-    voiceEmotion: 'Neutral',
+    voiceEmotion: 'Professional',
     selectedVoice: loadPreferences().audioVoice || 'Kore',
     selectedLanguage: 'English',
+    audioGenerationType: 'voiceover',
+    musicMode: 'clip',
+    musicGenre: 'Cinematic Electronic',
+    musicMood: 'Uplifting',
+    speakerMode: 'single',
+    speakerTwoVoice: 'Puck',
     productContext: null,
     faceContext: null,
     firstFrameContext: null,
@@ -141,7 +153,7 @@ export interface UseCreativeExecutionOptions {
   aspectRatio?: string;
   videoShotType?: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
   imageStyle?: string;
-  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
+  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
   selectedLanguage?: string;
   selectedVoice?: string;
   selectedPresentationTheme?: any;
@@ -174,11 +186,8 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const selectedGemRef = useRef(selectedGem);
+  selectedGemRef.current = selectedGem;
   const pollIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-
-  useEffect(() => {
-    selectedGemRef.current = selectedGem;
-  }, [selectedGem]);
 
   // Clean up all background intervals and audio on unmount
   useEffect(() => {
@@ -207,9 +216,9 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
   // Helper to update active gem's state slice
   const updateActiveState = useCallback(
     (patch: Partial<GemExecutionState> | ((prev: GemExecutionState) => Partial<GemExecutionState>)) => {
-      const activeGemId = selectedGemRef.current.id;
+      const activeGemId = selectedGem.id;
       setGemStates(prev => {
-        const current = prev[activeGemId] || getDefaultGemState(selectedGemRef.current, brandGuidelines);
+        const current = prev[activeGemId] || getDefaultGemState(selectedGem, brandGuidelines);
         const updates = typeof patch === 'function' ? patch(current) : patch;
         return {
           ...prev,
@@ -220,7 +229,7 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         };
       });
     },
-    [brandGuidelines]
+    [selectedGem, brandGuidelines]
   );
 
   // Helper to update ANY specific gem's state slice (targeted)
@@ -265,6 +274,12 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     updateActiveState({ selectedVoice: val });
   }, [updateActiveState]);
   const setSelectedLanguage = useCallback((val: string) => updateActiveState({ selectedLanguage: val }), [updateActiveState]);
+  const setAudioGenerationType = useCallback((val: 'voiceover' | 'music') => updateActiveState({ audioGenerationType: val }), [updateActiveState]);
+  const setMusicMode = useCallback((val: 'clip' | 'full-track') => updateActiveState({ musicMode: val }), [updateActiveState]);
+  const setMusicGenre = useCallback((val: string) => updateActiveState({ musicGenre: val }), [updateActiveState]);
+  const setMusicMood = useCallback((val: string) => updateActiveState({ musicMood: val }), [updateActiveState]);
+  const setSpeakerMode = useCallback((val: 'single' | 'two-speaker') => updateActiveState({ speakerMode: val }), [updateActiveState]);
+  const setSpeakerTwoVoice = useCallback((val: string) => updateActiveState({ speakerTwoVoice: val }), [updateActiveState]);
   const setSelectedPresentationTheme = useCallback((val: any) => updateActiveState({ selectedPresentationTheme: val }), [updateActiveState]);
   const setProductContext = useCallback((val: any) => updateActiveState({ productContext: val }), [updateActiveState]);
   const setFaceContext = useCallback((val: any) => updateActiveState({ faceContext: val }), [updateActiveState]);
@@ -470,7 +485,16 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         videoShotType: currentTargetState.videoShotType,
         imageStyle: currentTargetState.imageStyle,
         assets: selectedAssets,
-        bakeLogo: bakeLogoOnGeneration
+        bakeLogo: bakeLogoOnGeneration,
+        voiceEmotion: currentTargetState.voiceEmotion,
+        selectedVoice: currentTargetState.selectedVoice,
+        audioGenerationType: currentTargetState.audioGenerationType,
+        musicMode: currentTargetState.musicMode,
+        musicGenre: currentTargetState.musicGenre,
+        musicMood: currentTargetState.musicMood,
+        speakerMode: currentTargetState.speakerMode,
+        speakerTwoVoice: currentTargetState.speakerTwoVoice,
+        selectedLanguageCode: currentTargetState.selectedLanguage === 'Hindi' ? 'hi-IN' : (currentTargetState.selectedLanguage === 'Marathi' ? 'mr-IN' : (currentTargetState.selectedLanguage === 'Gujarati' ? 'gu-IN' : (currentTargetState.selectedLanguage === 'Tamil' ? 'ta-IN' : (currentTargetState.selectedLanguage === 'Bengali' ? 'bn-IN' : 'en-US')))),
       });
 
       // 3. Settle / sync authoritative credits from server
@@ -911,6 +935,18 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     setSelectedVoice,
     selectedLanguage: activeState.selectedLanguage,
     setSelectedLanguage,
+    audioGenerationType: activeState.audioGenerationType,
+    setAudioGenerationType,
+    musicMode: activeState.musicMode,
+    setMusicMode,
+    musicGenre: activeState.musicGenre,
+    setMusicGenre,
+    musicMood: activeState.musicMood,
+    setMusicMood,
+    speakerMode: activeState.speakerMode,
+    setSpeakerMode,
+    speakerTwoVoice: activeState.speakerTwoVoice,
+    setSpeakerTwoVoice,
     productContext: activeState.productContext,
     setProductContext,
     faceContext: activeState.faceContext,

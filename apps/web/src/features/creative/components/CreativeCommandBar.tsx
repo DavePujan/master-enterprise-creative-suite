@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   Globe, 
   Volume2, 
+  Music,
   Sparkles, 
   Palette, 
   Image as ImageIcon, 
@@ -15,9 +16,11 @@ import type { BrandGuidelines } from '@shared-types/brand.js';
 import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
 import { generateImageAutoWriteIdea } from '../services/imageAutoWriteService.js';
 import { generateTextAutoWriteIdea } from '../services/textAutoWriteService.js';
+import { generateAudioAutoWriteIdea } from '../services/audioStudioService.js';
 import { getImageModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
 import type { ImageAutoWriteIdea } from '@shared-types/imageAutoWrite.js';
 import type { TextAutoWriteIdea, CaptionEmotion } from '@shared-types/textAutoWrite.js';
+import type { AudioAutoWriteIdea } from '@shared-types/audioAutoWrite.js';
 import { resizeImageIfNeeded } from '@utils/image.js';
 import { cn } from '@web/lib/utils.js';
 
@@ -28,7 +31,14 @@ export interface CreativeCommandBarProps {
   setSelectedLanguage: (lang: string) => void;
   selectedVoice: string;
   setSelectedVoice: (voice: string) => void;
-  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
+  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
+  audioGenerationType?: 'voiceover' | 'music';
+  musicMode?: 'clip' | 'full-track';
+  musicGenre?: string;
+  musicMood?: string;
+  speakerMode?: 'single' | 'two-speaker';
+  speakerTwoVoice?: string;
+  setSpeakerTwoVoice?: (voice: string) => void;
   isGeneratingCreativePrompt: boolean;
   setIsGeneratingCreativePrompt: (val: boolean) => void;
   prompt: string;
@@ -81,11 +91,19 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   aspectRatio,
   imageStyle,
   bakeLogoOnGeneration,
+  audioGenerationType,
+  musicMode,
+  musicGenre,
+  musicMood,
+  speakerMode,
+  speakerTwoVoice,
+  setSpeakerTwoVoice,
   isGenerating,
   handleGenerate
 }) => {
   const [activeIdeaPreview, setActiveIdeaPreview] = React.useState<ImageAutoWriteIdea | null>(null);
   const [activeTextIdeaPreview, setActiveTextIdeaPreview] = React.useState<TextAutoWriteIdea | null>(null);
+  const [activeAudioIdeaPreview, setActiveAudioIdeaPreview] = React.useState<AudioAutoWriteIdea | null>(null);
 
   const generateCustomThemes = (guidelines: any) => {
     const brandColors = guidelines?.colors && guidelines.colors.length > 0 ? guidelines.colors : ['#0f172a', '#334155'];
@@ -146,7 +164,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-4">
           <label className="text-xs font-bold text-slate-900 dark:text-slate-300 uppercase tracking-widest">Command Input</label>
-          {selectedGem.id === 'brand-copy' && (
+          {(selectedGem.id === 'brand-copy' || (selectedGem.type === 'audio' && audioGenerationType !== 'music')) && (
             <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
               <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-sm border border-slate-200 dark:border-slate-700">
                 <Globe size={12} className="text-slate-500" />
@@ -161,22 +179,67 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                   <option value="Gujarati">Gujarati</option>
                   <option value="Bengali">Bengali</option>
                   <option value="Tamil">Tamil</option>
+                  <option value="Telugu">Telugu</option>
+                  <option value="Spanish">Spanish</option>
+                  <option value="French">French</option>
                 </select>
               </div>
               <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-sm border border-slate-200 dark:border-slate-700">
                 <Volume2 size={12} className="text-slate-500" />
+                {speakerMode === 'two-speaker' && (
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">Speaker 1:</span>
+                )}
                 <select 
                   value={selectedVoice}
                   onChange={(e) => setSelectedVoice(e.target.value)}
                   className="text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-transparent border-none focus:ring-0 p-0 cursor-pointer"
                 >
-                  <option value="Kore">Kore (Female)</option>
-                  <option value="Puck">Puck (Male)</option>
-                  <option value="Charon">Charon (Male)</option>
-                  <option value="Fenrir">Fenrir (Male)</option>
-                  <option value="Zephyr">Zephyr (Female)</option>
+                  <option value="Kore">Kore (Female - Warm)</option>
+                  <option value="Puck">Puck (Male - Dynamic)</option>
+                  <option value="Charon">Charon (Male - Deep)</option>
+                  <option value="Fenrir">Fenrir (Male - Resonant)</option>
+                  <option value="Zephyr">Zephyr (Female - Calm)</option>
+                  <option value="Aoede">Aoede (Female - Expressive)</option>
+                  <option value="Callirrhoe">Callirrhoe (Female - Commercial)</option>
+                  <option value="Enceladus">Enceladus (Male - Cinematic)</option>
+                  <option value="Iapetus">Iapetus (Male - Executive)</option>
+                  <option value="Achird">Achird (Female - Professional)</option>
+                  <option value="Despina">Despina (Female - Energetic)</option>
+                  <option value="Rasalgethi">Rasalgethi (Male - Storyteller)</option>
                 </select>
               </div>
+              {speakerMode === 'two-speaker' && (
+                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-sm border border-slate-200 dark:border-slate-700 animate-in fade-in slide-in-from-left-2">
+                  <Volume2 size={12} className="text-rose-500" />
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">Speaker 2:</span>
+                  <select 
+                    value={speakerTwoVoice || 'Puck'}
+                    onChange={(e) => setSpeakerTwoVoice?.(e.target.value)}
+                    className="text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-transparent border-none focus:ring-0 p-0 cursor-pointer"
+                  >
+                    <option value="Puck">Puck (Male - Dynamic)</option>
+                    <option value="Kore">Kore (Female - Warm)</option>
+                    <option value="Charon">Charon (Male - Deep)</option>
+                    <option value="Fenrir">Fenrir (Male - Resonant)</option>
+                    <option value="Zephyr">Zephyr (Female - Calm)</option>
+                    <option value="Aoede">Aoede (Female - Expressive)</option>
+                    <option value="Callirrhoe">Callirrhoe (Female - Commercial)</option>
+                    <option value="Enceladus">Enceladus (Male - Cinematic)</option>
+                    <option value="Iapetus">Iapetus (Male - Executive)</option>
+                    <option value="Achird">Achird (Female - Professional)</option>
+                    <option value="Despina">Despina (Female - Energetic)</option>
+                    <option value="Rasalgethi">Rasalgethi (Male - Storyteller)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+          {selectedGem.type === 'audio' && audioGenerationType === 'music' && (
+            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span className="px-2 py-0.5 rounded-xs bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                Lyria Engine: {musicMode === 'full-track' ? 'Pro (Full Track)' : 'Clip (30s)'}
+              </span>
+              <span className="text-[10px] text-slate-400">· Genre: {musicGenre || 'Cinematic'}</span>
             </div>
           )}
         </div>
@@ -229,6 +292,27 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                   });
                   setPrompt(res.idea.formattedCopy);
                   setActiveTextIdeaPreview(res.idea);
+                } else if (selectedGem.type === 'audio') {
+                  const res = await generateAudioAutoWriteIdea({
+                    userIntent: prompt,
+                    brandContext: {
+                      name: brandGuidelines.name,
+                      industry: brandGuidelines.industry,
+                      tone: brandGuidelines.tone,
+                      pillars: brandGuidelines.pillars,
+                      colors: brandGuidelines.colors,
+                      location: brandGuidelines.location,
+                      targetAudience: (brandGuidelines as any).targetAudience || brandGuidelines.mission,
+                    },
+                    activeMode: audioGenerationType || 'voiceover',
+                    targetLanguage: selectedLanguage,
+                  });
+                  if (audioGenerationType === 'music') {
+                    setPrompt(res.idea.musicDirection.musicalBrief);
+                  } else {
+                    setPrompt(res.idea.voiceoverScript);
+                  }
+                  setActiveAudioIdeaPreview(res.idea);
                 } else {
                   const prm = await generateFastPrompt(
                     'creative', 
@@ -756,6 +840,60 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
             onClick={() => setActiveTextIdeaPreview(null)}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer transition-colors"
             title="Dismiss Creative Concept"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {activeAudioIdeaPreview && selectedGem.type === 'audio' && (
+        <div className="flex items-start justify-between gap-3 p-3 bg-violet-500/5 dark:bg-violet-500/10 border border-violet-500/20 rounded-sm text-xs animate-in fade-in slide-in-from-top-1">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-extrabold text-[11px] text-violet-600 dark:text-violet-400 uppercase tracking-wider flex items-center gap-1">
+                <Sparkles size={11} className="animate-pulse" />
+                {activeAudioIdeaPreview.conceptTitle}
+              </span>
+              <span className="text-[10px] text-slate-400">· {activeAudioIdeaPreview.angle}</span>
+              <span className="px-1.5 py-0.5 rounded-xs bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 font-bold text-[9px] uppercase tracking-wider">
+                Voice: {activeAudioIdeaPreview.voiceDirection.recommendedVoice} ({activeAudioIdeaPreview.voiceDirection.emotion})
+              </span>
+              <span className="px-1.5 py-0.5 rounded-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[9px] uppercase tracking-wider">
+                Music: {activeAudioIdeaPreview.musicDirection.genre} · {activeAudioIdeaPreview.musicDirection.tempoBpm} BPM
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed font-medium">
+              {activeAudioIdeaPreview.voiceDirection.performanceNotes}
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 mt-2 pt-1.5 border-t border-violet-500/10">
+              <button
+                type="button"
+                onClick={() => setPrompt(activeAudioIdeaPreview.voiceoverScript)}
+                className="px-2 py-0.5 bg-violet-100 hover:bg-violet-200 dark:bg-violet-900/40 dark:hover:bg-violet-900/70 text-violet-700 dark:text-violet-300 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                title="Populate Command Input with Voiceover Script"
+              >
+                <Volume2 size={11} />
+                Use Voiceover Script
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrompt(activeAudioIdeaPreview.musicDirection.musicalBrief)}
+                className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                title="Populate Command Input with Music Direction"
+              >
+                <Music size={11} />
+                Use Music Direction
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveAudioIdeaPreview(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer transition-colors"
+            title="Dismiss Audio Creative Concept"
           >
             <X size={13} />
           </button>

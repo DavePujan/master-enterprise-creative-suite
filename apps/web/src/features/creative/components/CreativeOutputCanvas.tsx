@@ -833,28 +833,56 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
             {result.type === 'audio' && (
               <div className="w-full max-w-3xl bg-white dark:bg-slate-900 p-8 rounded-sm shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col items-center gap-6">
                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-900 dark:text-white">
-                  <Volume2 size={40} />
+                  {result.mode === 'music' ? <Music size={36} /> : <Volume2 size={40} />}
                 </div>
-                <div className="text-center space-y-2">
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Audio Track Generated</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Your custom audio track is ready to play.</p>
+                <div className="text-center space-y-1.5">
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="px-2 py-0.5 rounded-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[10px] uppercase tracking-wider">
+                      {result.mode === 'music' ? 'Lyria 3.5 Music' : 'Gemini 3.1 Flash TTS'}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    {result.audioTitle || (result.mode === 'music' ? 'Music Soundtrack Generated' : 'Voiceover Track Generated')}
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {result.mode === 'music'
+                      ? 'AI-composed soundtrack conditioned on your brand brief.'
+                      : 'High-fidelity vocal performance generated with emotional cadence.'}
+                  </p>
                 </div>
                 <audio controls src={result.data} className="w-full max-w-md" />
                 <div className="w-full bg-slate-50 dark:bg-slate-800 p-6 rounded-sm border border-slate-100 dark:border-slate-700 text-left">
-                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Script / Lyrics</h4>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap italic">
-                    "{result.script}"
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 uppercase tracking-wider">
+                    {result.mode === 'music' ? 'Lyrics & Musical Structure' : 'Spoken Voiceover Script'}
+                  </h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed font-mono text-xs">
+                    {result.script}
                   </p>
                 </div>
-                <button 
-                  onClick={() => {
-                    downloadFile(result.data, `${brandGuidelines.name.toLowerCase().replace(/\s+/g, '-')}-audio-${Date.now()}.wav`);
-                  }}
-                  className="btn-primary flex items-center gap-2 cursor-pointer"
-                >
-                  <Download size={16} />
-                  Download Audio
-                </button>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => {
+                      const isMp3 = result.mode === 'music' || (typeof result.data === 'string' && result.data.startsWith('data:audio/mp3'));
+                      const ext = isMp3 ? 'mp3' : 'wav';
+                      const prefix = result.mode === 'music' ? 'soundtrack' : 'voiceover';
+                      downloadFile(result.data, `${brandGuidelines.name.toLowerCase().replace(/\s+/g, '-')}-${prefix}-${Date.now()}.${ext}`);
+                    }}
+                    className="btn-primary flex items-center gap-2 cursor-pointer"
+                  >
+                    <Download size={16} />
+                    Download {result.mode === 'music' ? 'MP3' : 'WAV'} Audio
+                  </button>
+                  {result.storageUrl && (
+                    <a
+                      href={result.storageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 rounded-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      Open Asset Link
+                    </a>
+                  )}
+                </div>
               </div>
             )}
 
