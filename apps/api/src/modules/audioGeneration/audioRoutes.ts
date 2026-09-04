@@ -95,8 +95,19 @@ audioRouter.post("/autowrite", async (req, res) => {
       typeof err?.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 600
         ? err.statusCode
         : 500;
+    let errorMessage = err?.message || "Failed to generate audio concept.";
+    try {
+      if (typeof errorMessage === "string" && errorMessage.trim().startsWith("{")) {
+        const parsed = JSON.parse(errorMessage);
+        if (parsed?.error?.message) {
+          errorMessage = parsed.error.message;
+        }
+      }
+    } catch {
+      // keep original
+    }
     return res.status(statusCode).json({
-      error: err?.message || "Failed to generate audio concept.",
+      error: errorMessage,
       code: err?.code || "AUDIO_AUTOWRITE_FAILED",
       requiredCredits: err?.requiredCredits,
     });

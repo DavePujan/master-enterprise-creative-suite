@@ -19,6 +19,29 @@ import type {
   AudioAutoWriteIdea,
 } from "../../../../../packages/types/audioAutoWrite.js";
 
+function isTransientError(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err?.message || err || "").toLowerCase();
+  const status = err?.status || err?.statusCode || err?.code;
+  return (
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("resource_exhausted") ||
+    msg.includes("quota") ||
+    msg.includes("high demand") ||
+    msg.includes("unavailable") ||
+    msg.includes("overloaded") ||
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("fetch failed")
+  );
+}
+
 export class AudioAutoWriteService {
   async generateAudioIdea(
     request: AudioAutoWriteRequest,
@@ -128,40 +151,46 @@ TARGET LANGUAGE: ${request.targetLanguage || "English"}
 Generate the complete structured Audio Production Brief now.
 `.trim();
 
-      // 4. Invoke Gemini Model (with bounded fallback to gemini-3.6-flash if primary quota exhausted)
+      // 4. Invoke Gemini Model with resilient fallback across candidate models
       const ai = getServerAI();
       let response: any;
       let modelUsed: string = AUDIO_MODELS.script;
 
-      try {
-        response = await ai.models.generateContent({
-          model: AUDIO_MODELS.script,
-          contents: userMessage,
-          config: {
-            systemInstruction,
-            temperature: 0.7,
-          },
-        });
-      } catch (scriptErr: any) {
-        const isQuota =
-          scriptErr?.status === 429 ||
-          scriptErr?.statusCode === 429 ||
-          scriptErr?.message?.includes("429") ||
-          scriptErr?.message?.includes("RESOURCE_EXHAUSTED");
-        if (isQuota) {
-          console.log("Primary script model quota exhausted, failing over to gemini-3.6-flash...");
+      const candidateModels = [
+        AUDIO_MODELS.script,
+        ...AUDIO_MODELS.scriptFallbacks,
+      ];
+
+      let lastError: any = null;
+      for (const candidateModel of candidateModels) {
+        try {
+          console.log(`[AudioAutoWrite] Dispatching prompt to ${candidateModel}...`);
           response = await ai.models.generateContent({
-            model: "gemini-3.6-flash",
+            model: candidateModel,
             contents: userMessage,
             config: {
               systemInstruction,
               temperature: 0.7,
             },
           });
-          modelUsed = "gemini-3.6-flash";
-        } else {
+          modelUsed = candidateModel;
+          console.log(`[AudioAutoWrite] Success with model: ${candidateModel}`);
+          break;
+        } catch (scriptErr: any) {
+          lastError = scriptErr;
+          if (isTransientError(scriptErr)) {
+            console.warn(
+              `[AudioAutoWrite] Model ${candidateModel} transient failure (${scriptErr?.status || scriptErr?.statusCode || "503/429"}): ${scriptErr?.message?.slice(0, 100)}. Failing over to next candidate...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            continue;
+          }
           throw scriptErr;
         }
+      }
+
+      if (!response) {
+        throw lastError || new Error("All candidate models failed for Audio Auto-Write.");
       }
 
       const rawText = response.text?.trim() || "{}";
@@ -184,7 +213,7 @@ Generate the complete structured Audio Production Brief now.
       if (jobId) {
         await aiJobRepository.completeJob({
           jobId,
-          modelUsed: AUDIO_MODELS.script,
+          modelUsed,
           creditsCharged: creditsToCharge,
           outputs: [],
         });
@@ -193,7 +222,7 @@ Generate the complete structured Audio Production Brief now.
       return {
         success: true,
         idea: parsed,
-        modelUsed: AUDIO_MODELS.script,
+        modelUsed,
         creditsCharged: creditsToCharge,
         newBalance: captureResult.newBalance,
       };

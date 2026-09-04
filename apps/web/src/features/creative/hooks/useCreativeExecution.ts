@@ -20,7 +20,7 @@ export interface GemExecutionState {
   videoDuration: string;
   videoShotType: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
   imageStyle: string;
-  voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
+  voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
   selectedVoice: string;
   selectedLanguage: string;
   audioGenerationType: 'voiceover' | 'music';
@@ -105,7 +105,7 @@ export const getDefaultGemState = (gem: Gem, guidelines?: BrandGuidelines): GemE
     videoDuration: defaultDuration,
     videoShotType: defaultShotType,
     imageStyle: 'Photorealistic, 8k resolution',
-    voiceEmotion: 'Neutral',
+    voiceEmotion: 'Professional',
     selectedVoice: loadPreferences().audioVoice || 'Kore',
     selectedLanguage: 'English',
     audioGenerationType: 'voiceover',
@@ -153,7 +153,7 @@ export interface UseCreativeExecutionOptions {
   aspectRatio?: string;
   videoShotType?: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
   imageStyle?: string;
-  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
+  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
   selectedLanguage?: string;
   selectedVoice?: string;
   selectedPresentationTheme?: any;
@@ -186,11 +186,8 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const selectedGemRef = useRef(selectedGem);
+  selectedGemRef.current = selectedGem;
   const pollIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-
-  useEffect(() => {
-    selectedGemRef.current = selectedGem;
-  }, [selectedGem]);
 
   // Clean up all background intervals and audio on unmount
   useEffect(() => {
@@ -219,9 +216,9 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
   // Helper to update active gem's state slice
   const updateActiveState = useCallback(
     (patch: Partial<GemExecutionState> | ((prev: GemExecutionState) => Partial<GemExecutionState>)) => {
-      const activeGemId = selectedGemRef.current.id;
+      const activeGemId = selectedGem.id;
       setGemStates(prev => {
-        const current = prev[activeGemId] || getDefaultGemState(selectedGemRef.current, brandGuidelines);
+        const current = prev[activeGemId] || getDefaultGemState(selectedGem, brandGuidelines);
         const updates = typeof patch === 'function' ? patch(current) : patch;
         return {
           ...prev,
@@ -232,7 +229,7 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         };
       });
     },
-    [brandGuidelines]
+    [selectedGem, brandGuidelines]
   );
 
   // Helper to update ANY specific gem's state slice (targeted)

@@ -125,14 +125,30 @@ export interface VoiceoverRequest {
 
 export interface VoiceoverResult {
   audioBase64: string;
-  mimeType: "audio/wav";
+  mimeType: "audio/wav" | "audio/mpeg" | "audio/mp3";
   transcript: string;
   durationSeconds: number;
-  voice: OfficialGeminiVoice;
+  voice: OfficialGeminiVoice | string;
   speakers: SpeakerDefinition[];
   modelUsed: string;
+  provider?: "google" | "fal";
   storageUrl?: string;
   storagePath?: string;
+  failoverState?: {
+    primaryProvider: "google" | "fal";
+    primaryModel: string;
+    fallbackUsed: boolean;
+    fallbackProvider?: "google" | "fal";
+    fallbackModel?: string;
+    fallbackReason?: string;
+    retryCount: number;
+    providerRequestId?: string;
+  };
+  providerCost?: {
+    amount: number;
+    currency: string;
+    billingUnit: string;
+  };
 }
 
 export type MusicMode = "clip" | "full-track";
@@ -178,4 +194,5 @@ export interface AudioGenerationResponse {
   newBalance?: number;
   fallbackUsed?: boolean;
   fallbackReason?: string;
+  failoverState?: any;
 }

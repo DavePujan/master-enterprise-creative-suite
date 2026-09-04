@@ -31,12 +31,14 @@ export interface CreativeCommandBarProps {
   setSelectedLanguage: (lang: string) => void;
   selectedVoice: string;
   setSelectedVoice: (voice: string) => void;
-  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
+  voiceEmotion?: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
   audioGenerationType?: 'voiceover' | 'music';
   musicMode?: 'clip' | 'full-track';
   musicGenre?: string;
   musicMood?: string;
   speakerMode?: 'single' | 'two-speaker';
+  speakerTwoVoice?: string;
+  setSpeakerTwoVoice?: (voice: string) => void;
   isGeneratingCreativePrompt: boolean;
   setIsGeneratingCreativePrompt: (val: boolean) => void;
   prompt: string;
@@ -94,6 +96,8 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   musicGenre,
   musicMood,
   speakerMode,
+  speakerTwoVoice,
+  setSpeakerTwoVoice,
   isGenerating,
   handleGenerate
 }) => {
@@ -160,7 +164,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-4">
           <label className="text-xs font-bold text-slate-900 dark:text-slate-300 uppercase tracking-widest">Command Input</label>
-          {(selectedGem.id === 'brand-copy' || selectedGem.type === 'audio') && (
+          {(selectedGem.id === 'brand-copy' || (selectedGem.type === 'audio' && audioGenerationType !== 'music')) && (
             <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
               <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-sm border border-slate-200 dark:border-slate-700">
                 <Globe size={12} className="text-slate-500" />
@@ -182,6 +186,9 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
               </div>
               <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-sm border border-slate-200 dark:border-slate-700">
                 <Volume2 size={12} className="text-slate-500" />
+                {speakerMode === 'two-speaker' && (
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">Speaker 1:</span>
+                )}
                 <select 
                   value={selectedVoice}
                   onChange={(e) => setSelectedVoice(e.target.value)}
@@ -201,6 +208,38 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                   <option value="Rasalgethi">Rasalgethi (Male - Storyteller)</option>
                 </select>
               </div>
+              {speakerMode === 'two-speaker' && (
+                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-sm border border-slate-200 dark:border-slate-700 animate-in fade-in slide-in-from-left-2">
+                  <Volume2 size={12} className="text-rose-500" />
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">Speaker 2:</span>
+                  <select 
+                    value={speakerTwoVoice || 'Puck'}
+                    onChange={(e) => setSpeakerTwoVoice?.(e.target.value)}
+                    className="text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-transparent border-none focus:ring-0 p-0 cursor-pointer"
+                  >
+                    <option value="Puck">Puck (Male - Dynamic)</option>
+                    <option value="Kore">Kore (Female - Warm)</option>
+                    <option value="Charon">Charon (Male - Deep)</option>
+                    <option value="Fenrir">Fenrir (Male - Resonant)</option>
+                    <option value="Zephyr">Zephyr (Female - Calm)</option>
+                    <option value="Aoede">Aoede (Female - Expressive)</option>
+                    <option value="Callirrhoe">Callirrhoe (Female - Commercial)</option>
+                    <option value="Enceladus">Enceladus (Male - Cinematic)</option>
+                    <option value="Iapetus">Iapetus (Male - Executive)</option>
+                    <option value="Achird">Achird (Female - Professional)</option>
+                    <option value="Despina">Despina (Female - Energetic)</option>
+                    <option value="Rasalgethi">Rasalgethi (Male - Storyteller)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+          {selectedGem.type === 'audio' && audioGenerationType === 'music' && (
+            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span className="px-2 py-0.5 rounded-xs bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                Lyria Engine: {musicMode === 'full-track' ? 'Pro (Full Track)' : 'Clip (30s)'}
+              </span>
+              <span className="text-[10px] text-slate-400">· Genre: {musicGenre || 'Cinematic'}</span>
             </div>
           )}
         </div>

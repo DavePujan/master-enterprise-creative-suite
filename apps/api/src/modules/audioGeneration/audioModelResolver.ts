@@ -5,6 +5,12 @@
 
 export const AUDIO_MODELS = {
   script: "gemini-3.8-flash",
+  scriptFallbacks: [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+  ] as const,
   tts: {
     primary: "gemini-3.1-flash-tts-preview",
     fallback: "gemini-2.5-flash-preview-tts",

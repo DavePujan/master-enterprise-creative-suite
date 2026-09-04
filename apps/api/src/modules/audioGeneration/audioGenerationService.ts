@@ -28,6 +28,7 @@ import {
 } from "./audioPromptBuilder.js";
 import { ttsPcmToWav } from "./ttsPcmToWav.js";
 import { normalizeMusicOutput } from "./musicOutputNormalizer.js";
+import { voiceProviderRouter } from "./providers/voiceProviderRouter.js";
 import type {
   AudioGenerationRequest,
   AudioGenerationResponse,
@@ -36,6 +37,29 @@ import type {
   VoiceoverResult,
   MusicResult,
 } from "../../../../../packages/types/audioGeneration.js";
+
+function isTransientError(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err?.message || err || "").toLowerCase();
+  const status = err?.status || err?.statusCode || err?.code;
+  return (
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("resource_exhausted") ||
+    msg.includes("quota") ||
+    msg.includes("high demand") ||
+    msg.includes("unavailable") ||
+    msg.includes("overloaded") ||
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("fetch failed")
+  );
+}
 
 export class AudioGenerationService {
   /**
@@ -165,149 +189,84 @@ export class AudioGenerationService {
     if (!finalTranscript) {
       const scriptPrompt = buildScriptwriterPrompt(request);
       let scriptRes: any;
-      try {
-        scriptRes = await ai.models.generateContent({
-          model: AUDIO_MODELS.script,
-          contents: scriptPrompt.userMessage,
-          config: {
-            systemInstruction: scriptPrompt.systemInstruction,
-            temperature: 0.7,
-          },
-        });
-      } catch (scriptErr: any) {
-        const isQuota =
-          scriptErr?.status === 429 ||
-          scriptErr?.statusCode === 429 ||
-          scriptErr?.message?.includes("429") ||
-          scriptErr?.message?.includes("RESOURCE_EXHAUSTED");
-        if (isQuota) {
+      const candidateModels = [
+        AUDIO_MODELS.script,
+        ...AUDIO_MODELS.scriptFallbacks,
+      ];
+      let lastScriptErr: any = null;
+      for (const candidateModel of candidateModels) {
+        try {
+          console.log(`[AudioGenerationService] Scriptwriting with model: ${candidateModel}...`);
           scriptRes = await ai.models.generateContent({
-            model: "gemini-3.6-flash",
+            model: candidateModel,
             contents: scriptPrompt.userMessage,
             config: {
               systemInstruction: scriptPrompt.systemInstruction,
               temperature: 0.7,
             },
           });
-        } else {
+          break;
+        } catch (scriptErr: any) {
+          lastScriptErr = scriptErr;
+          if (isTransientError(scriptErr)) {
+            console.warn(
+              `[AudioGenerationService] Script model ${candidateModel} transient failure (${scriptErr?.status || scriptErr?.statusCode || "503/429"}): ${scriptErr?.message?.slice(0, 100)}. Failing over to next candidate...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            continue;
+          }
           throw scriptErr;
         }
+      }
+      if (!scriptRes) {
+        throw lastScriptErr || new Error("Failed to generate voiceover script from creative intent.");
       }
       finalTranscript = scriptRes.text?.trim() || request.userIntent;
     }
 
-    // Step B: Performance Direction Prompt & Multi-Speaker Configuration
-    const isTwoSpeaker = request.voiceConfig?.speakerMode === "two-speaker" && request.voiceConfig?.speakers?.length === 2;
-    const ttsPrompt = buildTTSInstructionPrompt(finalTranscript, request.voiceConfig, request.performanceConfig);
+    // Step B & C: Speech Synthesis via VoiceProviderRouter
+    // Deterministic hierarchy: Google Gemini 3.1 Flash TTS -> bounded retry -> fal.ai Gemini 3.1 Flash TTS -> graceful failure
+    const { result: voiceResult, failoverState } = await voiceProviderRouter.synthesize({
+      transcript: finalTranscript,
+      speakers: request.voiceConfig.speakers,
+      speakerMode: request.voiceConfig.speakerMode,
+      performance: {
+        emotion: request.performanceConfig?.emotion,
+        pace: request.performanceConfig?.pace,
+        accent: request.performanceConfig?.accent,
+        style: request.performanceConfig?.style,
+        tagsEnabled: request.performanceConfig?.tagsEnabled ?? true,
+      },
+      language: request.languageCode || (request.voiceConfig as any)?.targetLanguage || "English",
+      brandContext: request.brandContext,
+    });
 
-    const primaryVoice = request.voiceConfig.speakers[0]?.voice || "Kore";
-    const speechConfig: any = isTwoSpeaker
-      ? {
-          multiSpeakerVoiceConfig: {
-            speakerVoiceConfigs: [
-              {
-                speaker: request.voiceConfig.speakers[0].name,
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: request.voiceConfig.speakers[0].voice },
-                },
-              },
-              {
-                speaker: request.voiceConfig.speakers[1].name,
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: request.voiceConfig.speakers[1].voice },
-                },
-              },
-            ],
-          },
-        }
-      : {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: primaryVoice },
-          },
-        };
+    const isWav = voiceResult.audio.mimeType.includes("wav");
+    const ext = isWav ? "wav" : "mp3";
+    const audioMimeType = isWav ? "audio/wav" : "audio/mpeg";
+    const audioBase64 = voiceResult.audio.bytes.toString("base64");
 
-    // Step C: Speech Synthesis (Gemini 3.1 Flash TTS with bounded retry & configurable fallback)
-    let audioPcmBase64 = "";
-    let modelUsed: string = AUDIO_MODELS.tts.primary;
-    let fallbackUsed = false;
-    let fallbackReason: string | undefined;
-
-    try {
-      const ttsRes = await ai.models.generateContent({
-        model: AUDIO_MODELS.tts.primary,
-        contents: ttsPrompt,
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig,
-        },
-      });
-      audioPcmBase64 = ttsRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
-    } catch (primaryErr: any) {
-      console.warn("Primary TTS model error:", primaryErr?.message || primaryErr);
-
-      // Attempt bounded retry if transient rate limit / quota exhaustion
-      const isRateLimit =
-        primaryErr?.message?.includes("429") ||
-        primaryErr?.message?.includes("RESOURCE_EXHAUSTED") ||
-        primaryErr?.status === 429 ||
-        primaryErr?.statusCode === 429;
-
-      if (isRateLimit) {
-        // Optional configured fallback to Gemini 2.5 Flash TTS
-        try {
-          console.log(`Failing over to documented fallback model: ${AUDIO_MODELS.tts.fallback}...`);
-          const fallbackRes = await ai.models.generateContent({
-            model: AUDIO_MODELS.tts.fallback,
-            contents: ttsPrompt,
-            config: {
-              responseModalities: ["AUDIO"],
-              speechConfig,
-            },
-          });
-          audioPcmBase64 = fallbackRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
-          modelUsed = AUDIO_MODELS.tts.fallback;
-          fallbackUsed = true;
-          fallbackReason = "Primary Gemini 3.1 Flash TTS rate limit / quota exhaustion";
-        } catch (fallbackErr: any) {
-          throw {
-            statusCode: 429,
-            code: "TTS_QUOTA_EXHAUSTED",
-            message: "Voiceover TTS quota exceeded. Please try again shortly.",
-          };
-        }
-      } else {
-        throw primaryErr;
-      }
-    }
-
-    if (!audioPcmBase64) {
-      throw new Error("TTS model did not return any audio data.");
-    }
-
-    // Step D: Server-authoritative PCM to WAV containerization
-    const wavResult = ttsPcmToWav(audioPcmBase64, { sampleRate: 24000, numChannels: 1, bitsPerSample: 16 });
-
-    // Step E: Upload to Supabase Storage (user-assets bucket)
-    const storagePath = `${workspaceId}/audio/voiceover_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.wav`;
+    // Step D: Upload to Supabase Storage (user-assets bucket)
+    const storagePath = `${workspaceId}/audio/voiceover_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
     const supabase = getSupabaseAdmin();
     let storageUrl: string | undefined;
 
     if (supabase) {
       const { error: uploadError } = await supabase.storage
         .from("user-assets")
-        .upload(storagePath, wavResult.wavBuffer, {
-          contentType: "audio/wav",
+        .upload(storagePath, voiceResult.audio.bytes, {
+          contentType: audioMimeType,
           upsert: true,
         });
 
       if (!uploadError) {
-        storageUrl = await storageService.getSignedUrl(storagePath, 86400) || undefined;
+        storageUrl = (await storageService.getSignedUrl(storagePath, 86400)) || undefined;
       } else {
         console.warn("Supabase Storage audio upload failed:", uploadError);
       }
     }
 
-    // Step F: Record asset in public.assets
+    // Step E: Record asset in public.assets with full provider and failover audit metadata
     if (supabase) {
       await assetRepository.create({
         workspaceId,
@@ -315,60 +274,67 @@ export class AudioGenerationService {
         name: `Voiceover: ${finalTranscript.slice(0, 40)}...`,
         type: "audio",
         storagePath,
-        fileSizeBytes: wavResult.byteLength,
-        mimeType: "audio/wav",
+        fileSizeBytes: voiceResult.audio.bytes.length,
+        mimeType: audioMimeType,
         prompt: request.userIntent,
-        sha256: storageService.computeSha256(wavResult.wavBuffer),
+        sha256: storageService.computeSha256(voiceResult.audio.bytes),
         analysis: {
           transcript: finalTranscript,
-          durationSeconds: wavResult.durationSeconds,
-          voice: primaryVoice,
-          model: modelUsed,
-          fallbackUsed,
+          durationSeconds: voiceResult.audio.durationSeconds,
+          voice: voiceResult.voice,
+          model: voiceResult.model,
+          provider: voiceResult.provider,
+          fallbackUsed: failoverState.fallbackUsed,
+          failoverState,
+          providerCost: voiceResult.providerCost,
         },
       });
     }
 
-    // Step G: Capture credit hold
+    // Step F: Capture single credit hold
     const captureResult = await creditService.captureCredits(holdId, `capture_${holdId}`);
 
-    // Step H: Complete AI Job
+    // Step G: Complete AI Job
     if (jobId) {
       await aiJobRepository.completeJob({
         jobId,
-        modelUsed,
+        modelUsed: voiceResult.model,
         creditsCharged: creditsToCharge,
         outputs: [
           {
             storageBucket: "user-assets",
             storagePath,
-            mimeType: "audio/wav",
+            mimeType: audioMimeType,
           },
         ],
       });
     }
 
     const voiceoverResult: VoiceoverResult = {
-      audioBase64: wavResult.wavBase64,
-      mimeType: "audio/wav",
+      audioBase64,
+      mimeType: audioMimeType as any,
       transcript: finalTranscript,
-      durationSeconds: wavResult.durationSeconds,
-      voice: primaryVoice,
+      durationSeconds: voiceResult.audio.durationSeconds,
+      voice: voiceResult.voice,
       speakers: request.voiceConfig.speakers,
-      modelUsed,
+      modelUsed: voiceResult.model,
+      provider: voiceResult.provider,
       storageUrl,
       storagePath,
+      failoverState,
+      providerCost: voiceResult.providerCost,
     };
 
     return {
       success: true,
       generationType: "voiceover",
       voiceoverResult,
-      modelUsed,
+      modelUsed: voiceResult.model,
       creditsCharged: creditsToCharge,
       newBalance: captureResult.newBalance,
-      fallbackUsed,
-      fallbackReason,
+      fallbackUsed: failoverState.fallbackUsed,
+      fallbackReason: failoverState.fallbackReason,
+      failoverState,
     };
   }
 
@@ -442,13 +408,14 @@ export class AudioGenerationService {
         lyriaErr?.statusCode === 429 ||
         lyriaErr?.message?.includes("429") ||
         lyriaErr?.message?.includes("RESOURCE_EXHAUSTED") ||
-        lyriaErr?.message?.includes("Quota exceeded");
+        lyriaErr?.message?.includes("Quota exceeded") ||
+        lyriaErr?.message?.includes("limit: 0");
       if (isQuota) {
         throw {
           statusCode: 429,
-          code: "LYRIA_QUOTA_EXHAUSTED",
+          code: "LYRIA_QUOTA_UNAVAILABLE",
           message:
-            "Music generation (Lyria) quota is currently unavailable on this plan tier. No credits were deducted.",
+            "Music generation (Lyria) is currently blocked by Google provider zero-quota (limit: 0) on this tier. No credits were deducted.",
         };
       }
       throw lyriaErr;

@@ -24,8 +24,8 @@ export interface CreativeWorkspaceProps {
   setImageStyle: (style: string) => void;
   bakeLogoOnGeneration: boolean;
   setBakeLogoOnGeneration: React.Dispatch<React.SetStateAction<boolean>>;
-  voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming';
-  setVoiceEmotion: (emotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming') => void;
+  voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
+  setVoiceEmotion: (emotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic') => void;
   // Output canvas & command bar props
   result: any;
   setResult: React.Dispatch<React.SetStateAction<any>>;
@@ -178,8 +178,20 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
     setImageStyle,
     bakeLogoOnGeneration,
     setBakeLogoOnGeneration,
-    voiceEmotion,
+    voiceEmotion = 'Professional',
     setVoiceEmotion,
+    audioGenerationType = 'voiceover',
+    setAudioGenerationType,
+    musicMode = 'clip',
+    setMusicMode,
+    musicGenre = 'Cinematic',
+    setMusicGenre,
+    musicMood = 'Uplifting',
+    setMusicMood,
+    speakerMode = 'single',
+    setSpeakerMode,
+    speakerTwoVoice = 'Puck',
+    setSpeakerTwoVoice,
     softWarning,
     setSoftWarning,
     isRefineModalOpen,
@@ -282,7 +294,7 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
                 className={cn(
                   "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer",
                   videoShotType === type 
-                    ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm"
+                    ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
                     : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
               >
@@ -350,10 +362,10 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
               <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Mode</span>
               <button
                 type="button"
-                onClick={() => props.setAudioGenerationType?.('voiceover')}
+                onClick={() => setAudioGenerationType?.('voiceover')}
                 className={cn(
                   "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5",
-                  props.audioGenerationType !== 'music'
+                  audioGenerationType !== 'music'
                     ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white"
                     : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
@@ -363,10 +375,10 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
               </button>
               <button
                 type="button"
-                onClick={() => props.setAudioGenerationType?.('music')}
+                onClick={() => setAudioGenerationType?.('music')}
                 className={cn(
                   "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5",
-                  props.audioGenerationType === 'music'
+                  audioGenerationType === 'music'
                     ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white"
                     : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
@@ -377,7 +389,7 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
             </div>
 
             {/* When Voiceover is active */}
-            {props.audioGenerationType !== 'music' && (
+            {audioGenerationType !== 'music' && (
               <>
                 <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
                   <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Emotion</span>
@@ -385,7 +397,7 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
                     <button
                       key={emotion}
                       type="button"
-                      onClick={() => setVoiceEmotion(emotion as any)}
+                      onClick={() => setVoiceEmotion(emotion)}
                       className={cn(
                         "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
                         voiceEmotion === emotion
@@ -402,10 +414,10 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
                   <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Speakers</span>
                   <button
                     type="button"
-                    onClick={() => props.setSpeakerMode?.('single')}
+                    onClick={() => setSpeakerMode?.('single')}
                     className={cn(
                       "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
-                      props.speakerMode !== 'two-speaker'
+                      speakerMode !== 'two-speaker'
                         ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
                         : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                     )}
@@ -414,10 +426,10 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => props.setSpeakerMode?.('two-speaker')}
+                    onClick={() => setSpeakerMode?.('two-speaker')}
                     className={cn(
                       "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
-                      props.speakerMode === 'two-speaker'
+                      speakerMode === 'two-speaker'
                         ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
                         : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                     )}
@@ -429,16 +441,16 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
             )}
 
             {/* When Music is active */}
-            {props.audioGenerationType === 'music' && (
+            {audioGenerationType === 'music' && (
               <>
                 <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
                   <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Format</span>
                   <button
                     type="button"
-                    onClick={() => props.setMusicMode?.('clip')}
+                    onClick={() => setMusicMode?.('clip')}
                     className={cn(
                       "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
-                      props.musicMode !== 'full-track'
+                      musicMode !== 'full-track'
                         ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
                         : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                     )}
@@ -448,10 +460,10 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => props.setMusicMode?.('full-track')}
+                    onClick={() => setMusicMode?.('full-track')}
                     className={cn(
                       "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
-                      props.musicMode === 'full-track'
+                      musicMode === 'full-track'
                         ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
                         : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                     )}
@@ -467,10 +479,10 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
                     <button
                       key={genre}
                       type="button"
-                      onClick={() => props.setMusicGenre?.(genre)}
+                      onClick={() => setMusicGenre?.(genre)}
                       className={cn(
                         "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer",
-                        props.musicGenre === genre
+                        musicGenre === genre
                           ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60"
                           : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                       )}
@@ -564,6 +576,8 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         musicGenre={props.musicGenre}
         musicMood={props.musicMood}
         speakerMode={props.speakerMode}
+        speakerTwoVoice={props.speakerTwoVoice}
+        setSpeakerTwoVoice={props.setSpeakerTwoVoice}
         isGeneratingCreativePrompt={props.isGeneratingCreativePrompt}
         setIsGeneratingCreativePrompt={props.setIsGeneratingCreativePrompt}
         prompt={props.prompt}
