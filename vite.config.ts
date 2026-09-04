@@ -15,6 +15,7 @@ export default defineConfig(() => {
         '@shared-types': path.resolve(__dirname, 'packages/types'),
         '@errors': path.resolve(__dirname, 'packages/errors'),
         '@utils': path.resolve(__dirname, 'packages/utils'),
+        '@presentation-engine': path.resolve(__dirname, 'packages/presentation-engine'),
       },
     },
     server: {

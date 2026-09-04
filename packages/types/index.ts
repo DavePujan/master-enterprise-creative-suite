@@ -9,3 +9,5 @@ export * from './textGeneration.js';
 export * from './textAutoWrite.js';
 export * from './audioGeneration.js';
 export * from './audioAutoWrite.js';
+export * from './presentation.js';
+

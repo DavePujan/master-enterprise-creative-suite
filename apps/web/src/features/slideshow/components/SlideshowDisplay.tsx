@@ -17,6 +17,11 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { BrandLogo } from '@web/features/brand/components/BrandLogo.js';
+import { PresentationDocument, computeSlideLayout } from '@presentation-engine/index.js';
+import { PresentationCanvas } from './PresentationCanvas.js';
+import { SlideThumbnailStrip } from './SlideThumbnailStrip.js';
+import { ExportModal } from './ExportModal.js';
+
 
 interface SlideshowDisplayProps {
   result: any;
@@ -77,7 +82,162 @@ export const SlideshowDisplay: React.FC<SlideshowDisplayProps> = ({
     lineStyle: `linear-gradient(90deg, ${brandGuidelines.colors?.[0] || '#0f172a'}, ${brandGuidelines.colors?.[1] || '#ec4899'})`
   };
 
-  const slide = result.data[currentSlide];
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const canonicalDoc: PresentationDocument | undefined = result?.document;
+
+  if (canonicalDoc && canonicalDoc.slides && canonicalDoc.slides.length > 0) {
+    const activeSlide = canonicalDoc.slides[currentSlide] || canonicalDoc.slides[0];
+    const bgImageUrl = (activeSlide as any).bgImage || (result.data?.[currentSlide]?.bgImage);
+
+    const handleUpdateActiveSlide = (updatedSlide: any) => {
+      const updatedSlides = [...canonicalDoc.slides];
+      updatedSlides[currentSlide] = updatedSlide;
+      const updatedDoc: PresentationDocument = {
+        ...canonicalDoc,
+        slides: updatedSlides,
+        metadata: {
+          ...canonicalDoc.metadata,
+          updatedAt: new Date().toISOString()
+        }
+      };
+      setResult({
+        ...result,
+        document: updatedDoc,
+        data: updatedSlides
+      });
+    };
+
+    const handleAddSlide = () => {
+      const newIndex = canonicalDoc.slides.length;
+      const { layout, elements } = computeSlideLayout(
+        {
+          id: `${canonicalDoc.id}_s${newIndex + 1}`,
+          purpose: 'strategy',
+          title: `Executive Strategic Pillar ${newIndex + 1}`,
+          subtitle: 'Operational initiative description',
+          bulletPoints: ['Key execution milestone', 'Measurable business objective'],
+          logoAssetId: brandGuidelines?.logo?.id,
+          brandName: brandGuidelines?.name || 'Brand'
+        },
+        canonicalDoc.theme,
+        newIndex
+      );
+
+      const newSlide = {
+        id: `${canonicalDoc.id}_s${newIndex + 1}`,
+        index: newIndex,
+        purpose: 'strategy' as const,
+        layout,
+        title: `Executive Strategic Pillar ${newIndex + 1}`,
+        subtitle: 'Operational initiative description',
+        elements,
+        background: { type: 'color' as const, color: canonicalDoc.theme.colors.background },
+        speakerNotes: 'Briefing notes for executive presentation.'
+      };
+
+      const updatedDoc: PresentationDocument = {
+        ...canonicalDoc,
+        slides: [...canonicalDoc.slides, newSlide],
+        metadata: {
+          ...canonicalDoc.metadata,
+          targetSlideCount: canonicalDoc.slides.length + 1,
+          updatedAt: new Date().toISOString()
+        }
+      };
+
+      setResult({
+        ...result,
+        document: updatedDoc,
+        data: updatedDoc.slides
+      });
+      setCurrentSlide(newIndex);
+    };
+
+    const handleDeleteSlide = (idx: number) => {
+      if (canonicalDoc.slides.length <= 1) return;
+      const updatedSlides = canonicalDoc.slides
+        .filter((_, i) => i !== idx)
+        .map((s, i) => ({ ...s, index: i }));
+
+      const updatedDoc: PresentationDocument = {
+        ...canonicalDoc,
+        slides: updatedSlides,
+        metadata: {
+          ...canonicalDoc.metadata,
+          targetSlideCount: updatedSlides.length,
+          updatedAt: new Date().toISOString()
+        }
+      };
+
+      setResult({
+        ...result,
+        document: updatedDoc,
+        data: updatedSlides
+      });
+      setCurrentSlide(Math.min(currentSlide, updatedSlides.length - 1));
+    };
+
+    return (
+      <div className="w-full flex flex-col gap-4">
+        {/* Top Executive Header & Export Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+              Corporate Presentation IR
+            </span>
+            <h2 className="text-sm md:text-base font-bold text-white truncate max-w-md">
+              {canonicalDoc.title}
+            </h2>
+            <span className="text-[10px] text-slate-400 border border-white/10 px-2 py-0.5 rounded">
+              v{canonicalDoc.schemaVersion}.{canonicalDoc.version}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-400 font-medium">
+              Slide {currentSlide + 1} of {canonicalDoc.slides.length}
+            </span>
+            <button
+              onClick={() => setIsExportModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg transition-all"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>Export Presentation</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Presentation Canvas */}
+        <PresentationCanvas
+          slide={activeSlide}
+          theme={canonicalDoc.theme}
+          brandGuidelines={brandGuidelines}
+          bgImageUrl={bgImageUrl}
+          onUpdateSlide={handleUpdateActiveSlide}
+        />
+
+        {/* Thumbnail Strip */}
+        <SlideThumbnailStrip
+          slides={canonicalDoc.slides}
+          currentSlideIndex={currentSlide}
+          theme={canonicalDoc.theme}
+          onSelectSlide={setCurrentSlide}
+          onAddSlide={handleAddSlide}
+          onDeleteSlide={handleDeleteSlide}
+        />
+
+        {/* Export Modal */}
+        <ExportModal
+          document={canonicalDoc}
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+        />
+      </div>
+    );
+  }
+
+  const slide = result.data ? result.data[currentSlide] : null;
+  if (!slide) return null;
   
   // Dynamic defaults for layouts and dragging
   const currentLayout = slide.layout || 'standard';

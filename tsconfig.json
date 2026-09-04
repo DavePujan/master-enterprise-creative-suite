@@ -36,6 +36,9 @@
       ],
       "@utils/*": [
         "./packages/utils/*"
+      ],
+      "@presentation-engine/*": [
+        "./packages/presentation-engine/*"
       ]
     },
     "allowImportingTsExtensions": true,

@@ -7,6 +7,7 @@ import { getQuotaErrorMessage } from '@web/infrastructure/ai/geminiClient.js';
 import { loadPreferences, savePreferences } from '@web/lib/preferences.js';
 import { downloadFile } from '@web/lib/utils.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
+import { presentationClient } from '@web/features/slideshow/services/presentationClient.js';
 
 export interface GemExecutionState {
   prompt: string;
@@ -476,26 +477,47 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         });
       }
 
-      // 2. Perform asynchronous generation
-      const res = await generateCreative(targetGem, fullPrompt, {
-        aspectRatio: currentTargetState.aspectRatio,
-        guidelines: brandGuidelines,
-        model: currentTargetState.selectedModel,
-        videoDuration: currentTargetState.videoDuration,
-        videoShotType: currentTargetState.videoShotType,
-        imageStyle: currentTargetState.imageStyle,
-        assets: selectedAssets,
-        bakeLogo: bakeLogoOnGeneration,
-        voiceEmotion: currentTargetState.voiceEmotion,
-        selectedVoice: currentTargetState.selectedVoice,
-        audioGenerationType: currentTargetState.audioGenerationType,
-        musicMode: currentTargetState.musicMode,
-        musicGenre: currentTargetState.musicGenre,
-        musicMood: currentTargetState.musicMood,
-        speakerMode: currentTargetState.speakerMode,
-        speakerTwoVoice: currentTargetState.speakerTwoVoice,
-        selectedLanguageCode: currentTargetState.selectedLanguage === 'Hindi' ? 'hi-IN' : (currentTargetState.selectedLanguage === 'Marathi' ? 'mr-IN' : (currentTargetState.selectedLanguage === 'Gujarati' ? 'gu-IN' : (currentTargetState.selectedLanguage === 'Tamil' ? 'ta-IN' : (currentTargetState.selectedLanguage === 'Bengali' ? 'bn-IN' : 'en-US')))),
-      });
+      // 2. Perform generation
+      let res: any;
+      const isCorporate = targetGem.id === 'corporate-presentations';
+
+      if (isCorporate) {
+        const presResult = await presentationClient.generatePresentation({
+          prompt: fullPrompt,
+          brandGuidelines,
+          logoAssetId: (brandGuidelines as any)?.logoAssetId || (brandGuidelines?.logo ? 'brand_logo' : undefined),
+          targetSlideCount: 6,
+          productContext: currentTargetState.productContext,
+          customTheme: currentTargetState.selectedPresentationTheme
+        });
+
+        res = {
+          type: 'slideshow',
+          document: presResult.document,
+          data: presResult.document.slides,
+          newBalance: presResult.newBalance
+        };
+      } else {
+        res = await generateCreative(targetGem, fullPrompt, {
+          aspectRatio: currentTargetState.aspectRatio,
+          guidelines: brandGuidelines,
+          model: currentTargetState.selectedModel,
+          videoDuration: currentTargetState.videoDuration,
+          videoShotType: currentTargetState.videoShotType,
+          imageStyle: currentTargetState.imageStyle,
+          assets: selectedAssets,
+          bakeLogo: bakeLogoOnGeneration,
+          voiceEmotion: currentTargetState.voiceEmotion,
+          selectedVoice: currentTargetState.selectedVoice,
+          audioGenerationType: currentTargetState.audioGenerationType,
+          musicMode: currentTargetState.musicMode,
+          musicGenre: currentTargetState.musicGenre,
+          musicMood: currentTargetState.musicMood,
+          speakerMode: currentTargetState.speakerMode,
+          speakerTwoVoice: currentTargetState.speakerTwoVoice,
+          selectedLanguageCode: currentTargetState.selectedLanguage === 'Hindi' ? 'hi-IN' : (currentTargetState.selectedLanguage === 'Marathi' ? 'mr-IN' : (currentTargetState.selectedLanguage === 'Gujarati' ? 'gu-IN' : (currentTargetState.selectedLanguage === 'Tamil' ? 'ta-IN' : (currentTargetState.selectedLanguage === 'Bengali' ? 'bn-IN' : 'en-US')))),
+        });
+      }
 
       // 3. Settle / sync authoritative credits from server
       if (res?.newBalance !== undefined) {
@@ -515,7 +537,6 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         });
         startPolling(res.operation, res.concept, targetGemId, fullPrompt);
       } else if (res?.type === 'slideshow') {
-        const isCorporate = targetGem.id === 'corporate-presentations';
         const newSlides = res.data;
         const updatedSlides = isCorporate
           ? [...newSlides]
@@ -526,14 +547,15 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         updateGemState(targetGemId, {
           result: updatedRes,
           isGenerating: false,
-          currentSlide: isCorporate ? 0 : updatedSlides.length - 1
+          currentSlide: 0
         });
 
         if (isCorporate) {
           const firstSlide = updatedSlides[0];
-          if (firstSlide && firstSlide.visualPrompt) {
+          const bgPrompt = firstSlide?.visualPrompt || firstSlide?.imagePrompt;
+          if (firstSlide && bgPrompt) {
             generateImage(
-              `Presentation background visual for slide titled "${firstSlide.title}": ${firstSlide.visualPrompt}`,
+              `Presentation background visual for slide titled "${firstSlide.title}": ${bgPrompt}`,
               brandGuidelines,
               currentTargetState.aspectRatio || '16:9',
               'gemini-2.5-flash-image'
@@ -541,7 +563,11 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
               if (bgRes?.url) {
                 const finalSlides = [...updatedSlides];
                 finalSlides[0] = { ...finalSlides[0], bgImage: bgRes.url };
-                const finalRes = { ...res, data: finalSlides };
+                const finalDoc = updatedRes.document ? {
+                  ...updatedRes.document,
+                  slides: finalSlides
+                } : undefined;
+                const finalRes = { ...res, document: finalDoc, data: finalSlides };
                 updateGemState(targetGemId, { result: finalRes });
                 addToHistory(finalRes, targetGemId, fullPrompt);
               }
