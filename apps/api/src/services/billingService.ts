@@ -132,10 +132,22 @@ export class BillingService {
 
     // 5. Idempotency Check: If already captured, return existing fulfillment without granting duplicate credits
     if (storedPayment.status === "captured") {
+      const transactionType = plan?.type === "topup" ? "topup_purchase" : "subscription_grant";
+      const replayResult = await creditService.grantCredits({
+        workspaceId: storedPayment.workspaceId,
+        actorUserId: storedPayment.userId,
+        amount: creditsToGrant,
+        type: transactionType,
+        referenceId: storedPayment.orderId,
+        description: `Payment fulfillment for ${plan ? plan.name : storedPayment.planId} (Order: ${storedPayment.orderId}, Payment: ${params.paymentId})`,
+        idempotencyKey: `fulfillment_${params.paymentId}`,
+      });
+
       return {
         success: true,
         alreadyFulfilled: true,
         creditsGranted: creditsToGrant,
+        newBalance: replayResult.newBalance,
       };
     }
 
@@ -176,15 +188,24 @@ export class BillingService {
     }
 
     // 8. Atomic Credit Grant via idempotent stored procedure
+    const transactionType = plan?.type === "topup" ? "topup_purchase" : "subscription_grant";
     const grantResult = await creditService.grantCredits({
       workspaceId: storedPayment.workspaceId,
       actorUserId: storedPayment.userId,
       amount: creditsToGrant,
-      type: "purchase",
+      type: transactionType,
       referenceId: storedPayment.orderId,
       description: `Payment fulfillment for ${plan ? plan.name : storedPayment.planId} (Order: ${storedPayment.orderId}, Payment: ${params.paymentId})`,
       idempotencyKey: `fulfillment_${params.paymentId}`,
     });
+
+    if (!grantResult.success) {
+      console.error(`[BillingService] Credit grant DB failure for order ${storedPayment.orderId}:`, grantResult.error);
+      return {
+        success: false,
+        error: `Credit grant failed: ${grantResult.error || "Database error"}`,
+      };
+    }
 
     return {
       success: true,
@@ -244,6 +265,7 @@ export class BillingService {
 
       const plan = PLAN_PRICING_CATALOG[storedPayment.planId as PlanId];
       const creditsToGrant = plan?.credits || 100;
+      const transactionType = plan?.type === "topup" ? "topup_purchase" : "subscription_grant";
 
       const updated = await paymentRepository.updateStatus({
         orderId,
@@ -256,15 +278,20 @@ export class BillingService {
         return { handled: false, message: `State transition rejected: Order "${orderId}" cannot transition to captured.` };
       }
 
-      await creditService.grantCredits({
+      const grantResult = await creditService.grantCredits({
         workspaceId: storedPayment.workspaceId,
         actorUserId: storedPayment.userId,
         amount: creditsToGrant,
-        type: "purchase",
+        type: transactionType,
         referenceId: orderId,
         description: `Webhook fulfillment for ${plan ? plan.name : storedPayment.planId} (Order: ${orderId})`,
         idempotencyKey: `fulfillment_${paymentId}`,
       });
+
+      if (!grantResult.success) {
+        console.error(`[BillingService] Webhook credit grant DB failure for order ${orderId}:`, grantResult.error);
+        return { handled: false, message: `Failed to grant credits: ${grantResult.error || "Database error"}` };
+      }
 
       return { handled: true, message: `Successfully captured and granted ${creditsToGrant} credits.` };
     }
@@ -292,6 +319,7 @@ export class BillingService {
 
       const plan = PLAN_PRICING_CATALOG[storedPayment.planId as PlanId];
       const creditsToGrant = plan?.credits || 100;
+      const transactionType = plan?.type === "topup" ? "topup_purchase" : "subscription_grant";
 
       const updated = await paymentRepository.updateStatus({
         orderId,
@@ -303,15 +331,20 @@ export class BillingService {
         return { handled: false, message: `State transition rejected: Order "${orderId}" cannot transition to captured.` };
       }
 
-      await creditService.grantCredits({
+      const grantResult = await creditService.grantCredits({
         workspaceId: storedPayment.workspaceId,
         actorUserId: storedPayment.userId,
         amount: creditsToGrant,
-        type: "purchase",
+        type: transactionType,
         referenceId: orderId,
         description: `Webhook order.paid fulfillment for ${plan ? plan.name : storedPayment.planId} (Order: ${orderId})`,
         idempotencyKey: `fulfillment_order_${orderId}`,
       });
+
+      if (!grantResult.success) {
+        console.error(`[BillingService] Webhook order.paid credit grant DB failure for order ${orderId}:`, grantResult.error);
+        return { handled: false, message: `Failed to grant credits: ${grantResult.error || "Database error"}` };
+      }
 
       return { handled: true, message: `Successfully completed order.paid fulfillment.` };
     }
@@ -388,15 +421,21 @@ export class BillingService {
       });
 
       // Grant credits idempotently
+      const transactionType = plan?.type === "topup" ? "topup_purchase" : "subscription_grant";
       const grantResult = await creditService.grantCredits({
         workspaceId: storedPayment.workspaceId,
         actorUserId: storedPayment.userId,
         amount: creditsToGrant,
-        type: "purchase",
+        type: transactionType,
         referenceId: orderId,
         description: `Reconciled payment fulfillment for ${plan ? plan.name : storedPayment.planId} (Order: ${orderId}, Payment: ${capturedPayment.id})`,
         idempotencyKey: `fulfillment_${capturedPayment.id}`,
       });
+
+      if (!grantResult.success) {
+        console.error(`[BillingService] Reconciliation credit grant DB failure for order ${orderId}:`, grantResult.error);
+        return { success: false, error: `Failed to grant credits: ${grantResult.error || "Database error"}` };
+      }
 
       return {
         success: true,
