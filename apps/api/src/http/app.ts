@@ -52,8 +52,15 @@ export function createExpressApp(): Express {
   });
 
 
-  // 2. JSON and URL-encoded payload parsers
-  app.use(express.json({ limit: "50mb" }));
+  // 2. JSON and URL-encoded payload parsers with rawBody capture for cryptographic signature verification
+  app.use(
+    express.json({
+      limit: "50mb",
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // 3. Centralized Authentication Middleware (Default-Deny)

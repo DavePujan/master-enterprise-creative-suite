@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { submitSalesInquiry } from '@web/infrastructure/repositories/salesRepository.js';
+import { apiClient } from '@web/infrastructure/api/apiClient.js';
+import type { PlanId } from '@shared-types/billing.js';
 
 interface EnterprisePlanProps {
   credits?: number;
@@ -298,48 +300,47 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
       return;
     }
 
-    // Parse values
+    // Canonical plan identification
+    const planId = `plan-${plan.name.toLowerCase()}-${billingPeriod === 'monthly' ? 'monthly' : 'yearly'}` as PlanId;
+
     const rateStr = currency === 'INR'
       ? (billingPeriod === 'monthly' ? plan.monthlyPriceInr : plan.annualPriceInr)
       : (billingPeriod === 'monthly' ? plan.monthlyPriceUsd : plan.annualPriceUsd);
 
     const numericRate = parseInt(rateStr.replace(/[^0-9]/g, ''));
     const amountTotal = billingPeriod === 'monthly' ? numericRate : numericRate * 12;
-    const amountInSubunits = Math.round(amountTotal * 100);
 
     const baseCredits = parseInt(plan.credits.replace(/[^0-9]/g, ''));
     const creditsToApply = billingPeriod === 'monthly' ? baseCredits : baseCredits * 12;
 
-    // 1. Ask backend to register order ID securely using secret keys
-    let orderData;
+    // 1. Ask backend to register order ID securely using canonical plan catalog
+    let orderData: { id: string; amount: number; currency: string; planId: string; isSimulated?: boolean };
     try {
-      const orderResponse = await fetch('/api/payment/razorpay-order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          amount: amountInSubunits,
-          currency: currency
-        })
+      orderData = await apiClient.post<{
+        id: string;
+        amount: number;
+        currency: string;
+        planId: string;
+        isSimulated?: boolean;
+      }>('/api/payment/razorpay-order', {
+        planId,
+        currency,
       });
-      if (!orderResponse.ok) {
-        throw new Error(await orderResponse.text());
-      }
-      orderData = await orderResponse.json();
     } catch (err: any) {
-      console.warn("Backend checkout registration failed, utilizing secure sandbox fallback", err);
-      orderData = {
-        id: 'order_fallback_' + Math.random().toString(36).substring(2, 10),
-        isSimulated: true
-      };
+      console.error("Backend checkout registration failed:", err);
+      setIsScriptLoading(false);
+      setPaymentStatus({
+        status: 'failed',
+        message: err.message || 'Failed to initialize checkout order with server. Please try again.'
+      });
+      return;
     }
 
     const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
 
     const options: any = {
       key: rzpKeyId,
-      amount: orderData.amount || amountInSubunits,
+      amount: orderData.amount,
       currency: orderData.currency || currency,
       name: "Writopedia",
       description: `${plan.name} Creative Tier Subscription (${billingPeriod})`,
@@ -349,55 +350,49 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
         setPaymentStatus({ status: 'loading', message: "Authenticating premium subscription setup..." });
         
         try {
-          if (orderData.isSimulated) {
-            setPaymentStatus({
-              status: 'success',
-              paymentId: response.razorpay_payment_id || 'pay_test_' + Math.random().toString(36).substring(7),
-              planName: plan.name,
-              creditsAdded: creditsToApply,
-              amountPaid: amountTotal
-            });
-
-            if (setCredits) {
-              setCredits(prev => prev + creditsToApply);
-            }
-            return;
-          }
-
           // 2. Double-check client success payload securely on server
-          const verifyResponse = await fetch('/api/payment/razorpay-verify', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id || orderData.id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
-            })
+          const verifyData = await apiClient.post<{
+            verified: boolean;
+            paymentId: string;
+            creditsGranted: number;
+            newBalance?: number;
+            alreadyFulfilled?: boolean;
+            message?: string;
+          }>('/api/payment/razorpay-verify', {
+            razorpay_order_id: response.razorpay_order_id || orderData.id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            planId
           });
 
-          if (!verifyResponse.ok) {
-            throw new Error("Cryptographic signature match failure");
-          }
+          const granted = verifyData.creditsGranted || creditsToApply;
 
           setPaymentStatus({
             status: 'success',
-            paymentId: response.razorpay_payment_id || 'pay_test_' + Math.random().toString(36).substring(7),
+            paymentId: response.razorpay_payment_id,
             planName: plan.name,
-            creditsAdded: creditsToApply,
+            creditsAdded: granted,
             amountPaid: amountTotal
           });
 
-          // Add credits to live state which automatically syncs to store
-          if (setCredits) {
-            setCredits(prev => prev + creditsToApply);
+          // Refresh live balance from server truth
+          try {
+            const balRes = await apiClient.get<{ balance: number }>('/api/payment/balance');
+            if (balRes && typeof balRes.balance === 'number' && setCredits) {
+              setCredits(balRes.balance);
+            } else if (setCredits) {
+              setCredits(prev => prev + granted);
+            }
+          } catch {
+            if (setCredits) {
+              setCredits(prev => prev + granted);
+            }
           }
         } catch (verifyErr: any) {
           console.error("Subscription signature verification failed:", verifyErr);
           setPaymentStatus({
             status: 'failed',
-            message: 'Razorpay transaction verification failed. The signature could not be verified securely by the backend.'
+            message: verifyErr.message || 'Razorpay transaction verification failed. Signature verification rejected by server.'
           });
         }
       },

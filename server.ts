@@ -1,11 +1,12 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { serverConfig } from "./apps/api/src/config/env.js";
+import { serverConfig, validatePaymentConfig } from "./apps/api/src/config/env.js";
 import { createExpressApp } from "./apps/api/src/http/app.js";
 import { videoJobWorker } from "./apps/api/src/modules/videoGeneration/videoJobWorker.js";
 
 async function startServer() {
+  validatePaymentConfig();
   const app = createExpressApp();
   const PORT = serverConfig.port;
 

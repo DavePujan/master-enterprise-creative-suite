@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WritopediaLogo } from '@web/features/marketing/components/LandingPage.js';
+import { apiClient } from '@web/infrastructure/api/apiClient.js';
+import type { PlanId } from '@shared-types/billing.js';
 
 interface PricingPageProps {
   onOpenWorkspace: () => void;
@@ -137,35 +139,34 @@ export default function PricingPage({
         ? isYearly ? 'plan-plus-yearly' : 'plan-plus-monthly'
         : isYearly ? 'plan-pilot-yearly' : 'plan-pilot-monthly';
 
-    let orderData;
+    let orderData: { id: string; amount: number; currency: string; planId: string; isSimulated?: boolean };
     try {
-      const orderResponse = await fetch('/api/payment/razorpay-order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          planId,
-          currency: activeCurrency
-        })
+      orderData = await apiClient.post<{
+        id: string;
+        amount: number;
+        currency: string;
+        planId: string;
+        isSimulated?: boolean;
+      }>('/api/payment/razorpay-order', {
+        planId: planId as PlanId,
+        currency: activeCurrency
       });
-      if (!orderResponse.ok) {
-        throw new Error(await orderResponse.text());
-      }
-      orderData = await orderResponse.json();
     } catch (err: any) {
-      console.warn("Backend order creation failed, utilizing secure sandbox fallback", err);
-      orderData = {
-        id: 'order_fallback_' + Math.random().toString(36).substring(2, 10),
-        isSimulated: true
-      };
+      console.error("Backend order creation failed:", err);
+      setIsScriptLoading(false);
+      setPaymentStatus({
+        status: 'failed',
+        message: err.message || 'Failed to initialize subscription checkout with server. Please try again.',
+        planName
+      });
+      return;
     }
 
     const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
 
     const options: any = {
       key: rzpKeyId,
-      amount: orderData.amount || amountInSubunits,
+      amount: orderData.amount,
       currency: orderData.currency || activeCurrency,
       name: "Writopedia",
       description: details.description,
@@ -175,39 +176,20 @@ export default function PricingPage({
         setPaymentStatus({ status: 'loading', message: "Authenticating payment transaction securely...", planName });
         
         try {
-          if (orderData.isSimulated) {
-            setPaymentStatus({
-              status: 'success',
-              paymentId: response.razorpay_payment_id || 'pay_test_' + Math.random().toString(36).substring(7),
-              planName: planName,
-              creditsAdded: creditsToApply,
-              amountPaid: details.amount
-            });
-
-            if (setCredits) {
-              setCredits(prev => prev + creditsToApply);
-            }
-            return;
-          }
-
-          const verifyResponse = await fetch('/api/payment/razorpay-verify', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id || orderData.id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              planId
-            })
+          const verifyData = await apiClient.post<{
+            verified: boolean;
+            paymentId: string;
+            creditsGranted: number;
+            newBalance?: number;
+            alreadyFulfilled?: boolean;
+            message?: string;
+          }>('/api/payment/razorpay-verify', {
+            razorpay_order_id: response.razorpay_order_id || orderData.id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            planId
           });
 
-          if (!verifyResponse.ok) {
-            throw new Error(await verifyResponse.text());
-          }
-
-          const verifyData = await verifyResponse.json();
           const granted = verifyData.creditsGranted || creditsToApply;
 
           setPaymentStatus({
@@ -218,14 +200,24 @@ export default function PricingPage({
             amountPaid: details.amount
           });
 
-          if (setCredits) {
-            setCredits(prev => prev + granted);
+          // Refresh live balance from server truth
+          try {
+            const balRes = await apiClient.get<{ balance: number }>('/api/payment/balance');
+            if (balRes && typeof balRes.balance === 'number' && setCredits) {
+              setCredits(balRes.balance);
+            } else if (setCredits) {
+              setCredits(prev => prev + granted);
+            }
+          } catch {
+            if (setCredits) {
+              setCredits(prev => prev + granted);
+            }
           }
         } catch (verifyErr: any) {
           console.error("Cryptographic signature authorization failed:", verifyErr);
           setPaymentStatus({
             status: 'failed',
-            message: 'Razorpay transaction verification failed. The payment signature could not be verified by the backend.',
+            message: verifyErr.message || 'Razorpay transaction verification failed. Payment signature rejected by server.',
             planName
           });
         }

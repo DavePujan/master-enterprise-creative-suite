@@ -1,14 +1,21 @@
 /**
- * Server-Authoritative Billing Router with Idempotent Payment Fulfillment.
+ * Server-Authoritative Billing Router with Idempotent Payment Fulfillment & Webhook Handler.
  * Delegates business logic to BillingService and persistence to PaymentRepository.
  * Strictly production-oriented: requires authenticated user session and authoritative PostgreSQL workspace.
- * Routes: POST /api/payment/razorpay-order, POST /api/payment/razorpay-verify
+ * Routes:
+ *  - GET  /api/payment/balance
+ *  - GET  /api/payment/ledger
+ *  - POST /api/payment/razorpay-order
+ *  - POST /api/payment/razorpay-verify
+ *  - POST /api/payment/webhook (Public, HMAC-verified via rawBody)
  */
 
 import { Router } from "express";
 import { billingService } from "../../services/billingService.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import { creditRepository } from "../../repositories/creditRepository.js";
+import { verifyWebhookSignature } from "../../infrastructure/payment/razorpayClient.js";
+import { serverConfig } from "../../config/env.js";
 import { PLAN_PRICING_CATALOG, type PlanId } from "../../../../../packages/types/billing.js";
 
 export const billingRouter = Router();
@@ -102,7 +109,6 @@ billingRouter.post("/razorpay-verify", async (req, res) => {
     const userId = req.user.uid;
     const workspaceId =
       req.user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
-    const resolvedPlanId = (planId as PlanId) || "booster-starter";
 
     const fulfillment = await billingService.verifyAndFulfillPayment({
       workspaceId,
@@ -110,13 +116,16 @@ billingRouter.post("/razorpay-verify", async (req, res) => {
       orderId: razorpay_order_id,
       paymentId: razorpay_payment_id,
       signature: razorpay_signature,
-      planId: resolvedPlanId,
+      clientPlanId: planId,
     });
 
     if (fulfillment.alreadyFulfilled) {
-      return res.status(409).json({
-        error: "Payment has already been processed and fulfilled.",
+      return res.status(200).json({
+        verified: true,
         alreadyFulfilled: true,
+        paymentId: razorpay_payment_id,
+        creditsGranted: fulfillment.creditsGranted,
+        message: "Payment has already been processed and fulfilled.",
       });
     }
 
@@ -124,19 +133,45 @@ billingRouter.post("/razorpay-verify", async (req, res) => {
       return res.status(400).json({ error: fulfillment.error || "Payment verification failed" });
     }
 
-    const plan = PLAN_PRICING_CATALOG[resolvedPlanId];
-    const creditsToGrant = plan ? plan.credits : 100;
-
     return res.json({
       verified: true,
       paymentId: razorpay_payment_id,
-      planId: resolvedPlanId,
-      creditsGranted: creditsToGrant,
+      creditsGranted: fulfillment.creditsGranted,
       newBalance: fulfillment.newBalance,
-      message: `Successfully verified payment. ${creditsToGrant} credits granted.`,
+      message: `Successfully verified payment. ${fulfillment.creditsGranted} credits granted.`,
     });
   } catch (err: any) {
     console.error("Razorpay signature verification exception:", err);
     return res.status(500).json({ error: err.message || "Failed to authenticate signatures" });
+  }
+});
+
+/**
+ * Public Razorpay Webhook Endpoint.
+ * Validates cryptographic signature on raw body Buffer using RAZORPAY_WEBHOOK_SECRET.
+ */
+billingRouter.post("/webhook", async (req, res) => {
+  try {
+    const signature = req.headers["x-razorpay-signature"] as string;
+    if (!signature) {
+      return res.status(400).json({ error: "Missing x-razorpay-signature header" });
+    }
+
+    const rawBody = req.rawBody;
+    if (!rawBody) {
+      return res.status(400).json({ error: "Raw body missing for signature verification" });
+    }
+
+    const isValid = verifyWebhookSignature(rawBody, signature, serverConfig.razorpayWebhookSecret);
+    if (!isValid) {
+      console.warn("Razorpay webhook signature verification failed!");
+      return res.status(400).json({ error: "Invalid webhook signature" });
+    }
+
+    const result = await billingService.handleWebhookEvent(req.body);
+    return res.json({ success: true, result });
+  } catch (err: any) {
+    console.error("Error processing Razorpay webhook:", err);
+    return res.status(500).json({ error: "Webhook processing error" });
   }
 });

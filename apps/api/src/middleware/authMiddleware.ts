@@ -11,12 +11,15 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthContextUser;
+      rawBody?: Buffer;
     }
   }
 }
 
-// Explicitly allowlisted public endpoints (landing, sales inquiry, safe media proxy, health probes)
+// Explicitly allowlisted public endpoints (landing, sales inquiry, safe media proxy, health probes, payment webhooks)
 const PUBLIC_ROUTE_PREFIXES = [
+  "/api/payment/webhook",
+  "/payment/webhook",
   "/api/contact-sales",
   "/api/proxy",
   "/api/proxy-image",

@@ -20,6 +20,9 @@ export interface ServerConfig {
   falApiKey: string;
   razorpayKeyId: string;
   razorpayKeySecret: string;
+  razorpayWebhookSecret: string;
+  razorpayMode: "test" | "live";
+  enablePaymentSimulation: boolean;
   supabaseUrl: string;
   supabaseAnonKey: string;
   supabaseServiceRoleKey: string;
@@ -48,6 +51,9 @@ export const serverConfig: ServerConfig = {
   falApiKey: process.env.FAL_API_KEY || process.env.FAL_KEY || "",
   razorpayKeyId: process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "",
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || "",
+  razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || "",
+  razorpayMode: (process.env.RAZORPAY_MODE === "live" ? "live" : "test") as "test" | "live",
+  enablePaymentSimulation: process.env.ENABLE_PAYMENT_SIMULATION === "true",
   supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
@@ -55,3 +61,27 @@ export const serverConfig: ServerConfig = {
   databaseConnectionMode: (process.env.DB_CONNECTION_MODE === "serverless" ? "serverless" : "persistent"),
   dbDriver: "supabase",
 };
+
+/**
+ * Validates Razorpay & Payment configuration invariants on startup.
+ * Throws fatal error if unsafe combinations (e.g. simulation in production) are detected.
+ */
+export function validatePaymentConfig(): void {
+  if (serverConfig.nodeEnv === "production" && serverConfig.enablePaymentSimulation) {
+    throw new Error(
+      "FATAL SECURITY VIOLATION: ENABLE_PAYMENT_SIMULATION cannot be enabled when NODE_ENV=production. Process aborted."
+    );
+  }
+
+  if (serverConfig.razorpayMode === "test" && serverConfig.razorpayKeyId && serverConfig.razorpayKeyId.startsWith("rzp_live_")) {
+    console.warn(
+      "⚠️ WARNING: RAZORPAY_MODE is set to 'test' but RAZORPAY_KEY_ID begins with 'rzp_live_'. Please verify your environment keys."
+    );
+  }
+
+  if (serverConfig.razorpayMode === "live" && serverConfig.razorpayKeyId && serverConfig.razorpayKeyId.startsWith("rzp_test_")) {
+    console.warn(
+      "⚠️ WARNING: RAZORPAY_MODE is set to 'live' but RAZORPAY_KEY_ID begins with 'rzp_test_'. Test credentials cannot process live charges."
+    );
+  }
+}

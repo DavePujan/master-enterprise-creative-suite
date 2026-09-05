@@ -14,7 +14,8 @@ import {
 import { AppIcon } from '@web/shared/components/icons/AppIconRegistry.js';
 import { motion } from 'motion/react';
 import { useCreditGate } from '../context/CreditGateContext.js';
-import { findRecommendedCreditPack } from '@shared-types/billing.js';
+import { findRecommendedCreditPack, PLAN_PRICING_CATALOG } from '@shared-types/billing.js';
+import { apiClient } from '@web/infrastructure/api/apiClient.js';
 
 interface CreditTopUpProps {
   credits?: number;
@@ -221,35 +222,33 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
     const planId = planIdMap[plan.name] || 'booster-starter';
 
     // 1. Call backend to register and retrieve Razorpay Order ID securely
-    let orderData;
+    let orderData: { id: string; amount: number; currency: string; planId: string; isSimulated?: boolean };
     try {
-      const orderResponse = await fetch('/api/payment/razorpay-order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          planId,
-          currency: currency
-        })
+      orderData = await apiClient.post<{
+        id: string;
+        amount: number;
+        currency: string;
+        planId: string;
+        isSimulated?: boolean;
+      }>('/api/payment/razorpay-order', {
+        planId,
+        currency,
       });
-      if (!orderResponse.ok) {
-        throw new Error(await orderResponse.text());
-      }
-      orderData = await orderResponse.json();
     } catch (err: any) {
-      console.warn("Backend order creation failed, utilizing secure sandbox fallback", err);
-      orderData = {
-        id: 'order_fallback_' + Math.random().toString(36).substring(2, 10),
-        isSimulated: true
-      };
+      console.error("Backend order creation failed:", err);
+      setIsScriptLoading(false);
+      setPaymentStatus({
+        status: 'failed',
+        message: err.message || "Failed to initialize payment gateway order with server. Please try again."
+      });
+      return;
     }
 
     const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
 
     const options: any = {
       key: rzpKeyId,
-      amount: orderData.amount || Math.round(price * 100),
+      amount: orderData.amount,
       currency: orderData.currency || currency,
       name: "Writopedia",
       description: `Writopedia Booster Top-up: ${plan.credits}`,
@@ -259,39 +258,21 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
         setPaymentStatus({ status: 'loading', message: "Authenticating payment transaction securely..." });
         
         try {
-          if (orderData.isSimulated) {
-            setPaymentStatus({
-              status: 'success',
-              paymentId: response.razorpay_payment_id || 'pay_test_' + Math.random().toString(36).substring(7),
-              planName: plan.name,
-              creditsAdded: plan.rawCredits,
-              amountPaid: price
-            });
-
-            if (setCredits) {
-              setCredits(prev => prev + plan.rawCredits);
-            }
-            handleTopUpFulfillment(plan.rawCredits);
-            return;
-          }
-
           // 2. Transmit payment tokens to server for cryptographic handshake signature verification
-          const verifyResponse = await fetch('/api/payment/razorpay-verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              planId
-            })
+          const verifyData = await apiClient.post<{
+            verified: boolean;
+            paymentId: string;
+            creditsGranted: number;
+            newBalance?: number;
+            alreadyFulfilled?: boolean;
+            message?: string;
+          }>('/api/payment/razorpay-verify', {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            planId
           });
 
-          if (!verifyResponse.ok) {
-            throw new Error(await verifyResponse.text());
-          }
-
-          const verifyData = await verifyResponse.json();
           const granted = verifyData.creditsGranted || plan.rawCredits;
 
           setPaymentStatus({
@@ -302,11 +283,23 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
             amountPaid: price
           });
 
-          if (setCredits) {
-            setCredits(prev => prev + granted);
+          // Refresh balance from server truth
+          try {
+            const balRes = await apiClient.get<{ balance: number }>('/api/payment/balance');
+            if (balRes && typeof balRes.balance === 'number' && setCredits) {
+              setCredits(balRes.balance);
+            } else if (setCredits) {
+              setCredits(prev => prev + granted);
+            }
+          } catch {
+            if (setCredits) {
+              setCredits(prev => prev + granted);
+            }
           }
+
           handleTopUpFulfillment(granted, verifyData.newBalance);
         } catch (err: any) {
+          console.error("Payment signature verification failed:", err);
           setPaymentStatus({
             status: 'failed',
             message: err.message || "Payment signature verification rejected."

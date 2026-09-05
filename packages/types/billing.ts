@@ -20,9 +20,12 @@ export interface PlanPricing {
   id: PlanId;
   name: string;
   type: 'topup' | 'subscription';
+  billingInterval?: 'monthly' | 'yearly';
   credits: number;
-  inrSubunits: number; // in paise
-  usdSubunits: number; // in cents
+  inrSubunits: number; // Exact payable amount in paise
+  usdSubunits: number; // Exact payable amount in cents
+  advertisedMonthlyEquivalentInr?: number; // Marketing display copy (e.g. ₹1,755, ₹9,000, ₹22,500)
+  advertisedMonthlyEquivalentUsd?: number; // Marketing display copy (e.g. $19, $96, $239)
 }
 
 export const PLAN_PRICING_CATALOG: Record<PlanId, PlanPricing> = {
@@ -54,54 +57,67 @@ export const PLAN_PRICING_CATALOG: Record<PlanId, PlanPricing> = {
     id: 'plan-pilot-monthly',
     name: 'Pilot Tier (Monthly)',
     type: 'subscription',
-    credits: 50,
-    inrSubunits: 0,
-    usdSubunits: 0
+    billingInterval: 'monthly',
+    credits: 130,
+    inrSubunits: 195000, // ₹1,950
+    usdSubunits: 2200    // $22
   },
   'plan-pilot-yearly': {
     id: 'plan-pilot-yearly',
     name: 'Pilot Tier (Yearly)',
     type: 'subscription',
-    credits: 50,
-    inrSubunits: 0,
-    usdSubunits: 0
+    billingInterval: 'yearly',
+    credits: 1560,       // 130 * 12
+    inrSubunits: 2106000, // ₹21,060 billed annually (12 * ₹1,755)
+    usdSubunits: 23760,   // $237.60 billed annually (12 * $19.80)
+    advertisedMonthlyEquivalentInr: 1755,
+    advertisedMonthlyEquivalentUsd: 19
   },
   'plan-plus-monthly': {
     id: 'plan-plus-monthly',
     name: 'Plus Tier (Monthly)',
     type: 'subscription',
-    credits: 200,
-    inrSubunits: 160000, // ₹1,600
-    usdSubunits: 1900    // $19
+    billingInterval: 'monthly',
+    credits: 800,
+    inrSubunits: 1000000, // ₹10,000
+    usdSubunits: 10600    // $106
   },
   'plan-plus-yearly': {
     id: 'plan-plus-yearly',
     name: 'Plus Tier (Yearly)',
     type: 'subscription',
-    credits: 2400,
-    inrSubunits: 1536000, // ₹15,360
-    usdSubunits: 18000    // $180
+    billingInterval: 'yearly',
+    credits: 9600,        // 800 * 12
+    inrSubunits: 10800000, // ₹108,000 billed annually (12 * ₹9,000)
+    usdSubunits: 114480,   // $1,144.80 billed annually (12 * $95.40)
+    advertisedMonthlyEquivalentInr: 9000,
+    advertisedMonthlyEquivalentUsd: 96
   },
   'plan-pro-monthly': {
     id: 'plan-pro-monthly',
     name: 'Pro Tier (Monthly)',
     type: 'subscription',
-    credits: 500,
-    inrSubunits: 240000, // ₹2,400
-    usdSubunits: 2900    // $29
+    billingInterval: 'monthly',
+    credits: 2500,
+    inrSubunits: 2500000, // ₹25,000
+    usdSubunits: 26500    // $265
   },
   'plan-pro-yearly': {
     id: 'plan-pro-yearly',
     name: 'Pro Tier (Yearly)',
     type: 'subscription',
-    credits: 6000,
-    inrSubunits: 2280000, // ₹22,800
-    usdSubunits: 27600    // $276
+    billingInterval: 'yearly',
+    credits: 30000,       // 2500 * 12
+    inrSubunits: 27000000, // ₹270,000 billed annually (12 * ₹22,500)
+    usdSubunits: 286200,   // $2,862.00 billed annually (12 * $238.50)
+    advertisedMonthlyEquivalentInr: 22500,
+    advertisedMonthlyEquivalentUsd: 239
   },
   'plan-studio-monthly': {
     id: 'plan-studio-monthly',
     name: 'Studio Tier (Monthly)',
     type: 'subscription',
+    billingInterval: 'monthly',
     credits: 1500,
     inrSubunits: 650000, // ₹6,500
     usdSubunits: 7900    // $79
@@ -110,6 +126,7 @@ export const PLAN_PRICING_CATALOG: Record<PlanId, PlanPricing> = {
     id: 'plan-studio-yearly',
     name: 'Studio Tier (Yearly)',
     type: 'subscription',
+    billingInterval: 'yearly',
     credits: 18000,
     inrSubunits: 6240000, // ₹62,400
     usdSubunits: 75600    // $756
