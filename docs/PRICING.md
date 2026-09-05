@@ -157,3 +157,14 @@ When all automated security tests pass and staging verification completes:
    - `RAZORPAY_WEBHOOK_SECRET=...`
    - `ENABLE_PAYMENT_SIMULATION=false`
 4. Deploy production build.
+
+---
+
+## 8. 🤖 Razorpay MCP Server Integration
+
+Writopedia developers and AI agents have direct access to the official **Razorpay MCP Server** (`https://mcp.razorpay.com/mcp`) for automated payment verification, order inspection, and settlement reconciliation.
+
+See the dedicated documentation:
+- 📖 [Razorpay MCP Technical Specification](file:///e:/A_Writopedia/docs/RAZORPAY_MCP.md)
+- 🤖 [Agent MCP Capabilities Reference](file:///e:/A_Writopedia/agent/RAZORPAY_MCP.md)
+
