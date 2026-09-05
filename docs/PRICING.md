@@ -1,11 +1,36 @@
 # Enterprise Plans, Credit Top-Ups & Payment Gateway Architecture
 
-> 📌 **Technical Reference Specification**  
-> This document details the commercial pricing tiers, on-demand credit booster packs, payment gateway integration mechanics (Razorpay / Stripe), and identified integration defects across the **Writopedia Creative Suite**.
+> 📌 **Technical Reference Specification (LOCKED)**  
+> This document details the commercial pricing tiers, on-demand credit booster packs, payment gateway integration mechanics (Razorpay / Stripe), and operational security requirements across the **Writopedia Creative Suite**.
 
 ---
 
-## 1. 🌐 Commercial Model & Currency Standard
+## 1. 🛡️ Razorpay Environment & Operational Safety Invariants
+
+### A. Current Environment: TEST MODE ONLY
+Implementation, integration testing, and local/staging verification **MUST use Razorpay Test Mode only**.
+- Do **NOT** switch the Razorpay Dashboard to Live Mode during development or testing.
+- Test Mode operates against real Razorpay API endpoints with test credentials (`rzp_test_...`) and moves zero real funds.
+- Live Mode is activated only through a human-controlled production release procedure after all automated tests pass.
+
+### B. Strict Account Safety Prohibitions
+The AI coding agent is **strictly prohibited** from performing unauthorized account or merchant operations:
+- No switching Test / Live mode on the Razorpay Dashboard.
+- No regenerating API keys or rotating webhook secrets.
+- No modifying KYC, banking, settlement, or business configuration.
+- No altering auto-capture settings.
+- No creating recurring Razorpay subscription objects (Writopedia uses fixed-term orders).
+- No real-money transactions during testing.
+- No silent fallbacks to fake payment success upon gateway error.
+
+### C. Mode & Credential Consistency
+- `RAZORPAY_MODE` must be explicitly declared as `"test"` or `"live"`.
+- Server startup validates key prefix consistency (`rzp_test_` vs `rzp_live_`).
+- **Production Fatal Crash**: If `NODE_ENV === "production"` and `ENABLE_PAYMENT_SIMULATION === "true"`, the server immediately throws a fatal exception and halts.
+
+---
+
+## 2. 🌐 Commercial Model & Currency Standard
 
 Writopedia operates on a dual-currency financial standard backed by automated geolocation detection and Razorpay checkout:
 - **Baseline Exchange Standard**: **$1.00 USD = ₹93.00 INR**
@@ -17,16 +42,18 @@ Writopedia operates on a dual-currency financial standard backed by automated ge
 
 ---
 
-## 2. 🏢 Enterprise Subscription Plans
+## 3. 🏢 Enterprise Subscription Plans
 
 Subscriptions grant monthly recurring credit allocations, team workspace seats, and cloud asset storage. All paid plans offer an annual billing option with a **10% discount**.
 
-| Tier | Monthly Price | Annual Price (Billed Monthly) | Total Annual Billed | Monthly Credits | Total Annual Credits | Unit Cost / Credit | Team Seats | Storage & Retention | Support Level |
+> **Data Model Distinction**: Transaction amounts (`inrSubunits`, `usdSubunits`) are strictly separated from customer-facing display copy (`advertisedMonthlyEquivalentInr`, `advertisedMonthlyEquivalentUsd`) to avoid rounding drift.
+
+| Tier | Monthly Price | Annual Total Billed | Advertised Monthly Equivalent | Monthly Credits | Total Annual Credits | Unit Cost / Credit | Team Seats | Storage & Retention | Support Level |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Free Starter** | ₹0 / $0 | ₹0 / $0 | ₹0 | 50 *(one-time)* | — | Free | 1 User | 250 MB / 7 Days | Community |
-| **Pilot Tier** | ₹1,950 / $22 | ₹1,755 / $19.80 | ₹21,060 / $237.60 | **130 Credits** | **1,560 Credits** | ₹15.00 / $0.17 | 1 User | 1 GB / 1 Month | Standard Email |
-| **Plus Tier** | ₹10,000 / $106 | ₹9,000 / $95.40 | ₹108,000 / $1,144.80 | **800 Credits** | **9,600 Credits** | ₹12.50 / $0.13 | 3 Users | 5 GB / 3 Months | Priority Queue |
-| **Pro Tier** | ₹25,000 / $265 | ₹22,500 / $238.50 | ₹270,000 / $2,862.00 | **2,500 Credits** | **30,000 Credits** | ₹10.00 / $0.10 | 5 Users | 100 GB / 6 Months | Dedicated Account Mgr |
+| **Free Starter** | ₹0 / $0 | ₹0 / $0 | ₹0 / $0 | 50 *(one-time)* | — | Free | 1 User | 250 MB / 7 Days | Community |
+| **Pilot Tier** | ₹1,950 / $22 | ₹21,060 / $237.60 | **₹1,755 / $19** | **130 Credits** | **1,560 Credits** | ₹15.00 / $0.17 | 1 User | 1 GB / 1 Month | Standard Email |
+| **Plus Tier** | ₹10,000 / $106 | ₹108,000 / $1,144.80 | **₹9,000 / $96** | **800 Credits** | **9,600 Credits** | ₹12.50 / $0.13 | 3 Users | 5 GB / 3 Months | Priority Queue |
+| **Pro Tier** | ₹25,000 / $265 | ₹270,000 / $2,862.00 | **₹22,500 / $239** | **2,500 Credits** | **30,000 Credits** | ₹10.00 / $0.10 | 5 Users | 100 GB / 6 Months | Dedicated Account Mgr |
 | **Enterprise** | Custom Quote | Custom Quote | Custom Quote | **Unlimited / Custom** | Negotiated | Negotiated | Unlimited | Unlimited / Permanent | 24/7 Dedicated + Team SLA |
 
 ### Enterprise Sales Inquiry Pipeline
@@ -38,7 +65,7 @@ For organizations requiring custom model fine-tuning, HIPAA/SOC-2 BAA, or invoic
 
 ---
 
-## 3. 💳 On-Demand Credit Top-Up Booster Packs
+## 4. 💳 On-Demand Credit Top-Up Booster Packs
 
 Users who deplete their monthly allowance or need immediate compute without altering their subscription tier can acquire one-off booster packs via [CreditTopUp.tsx](file:///e:/A_Writopedia/apps/web/src/features/billing/components/CreditTopUp.tsx).
 
@@ -58,7 +85,7 @@ return 'booster-super';                              // 1,100 credits
 
 ---
 
-## 4. ⚡ Generation Credit Consumption Matrix
+## 5. ⚡ Generation Credit Consumption Matrix
 
 | Modality / Gem | Model / Provider | Standard AI Cost | Human-Touch Refinement | Notes |
 | :--- | :--- | :---: | :---: | :--- |
@@ -81,84 +108,52 @@ return 'booster-super';                              // 1,100 credits
 
 ---
 
-## 5. 🛠️ Payment Gateway Architecture & Execution Flow
+## 6. 🛠️ Payment Gateway Architecture & State Machine
 
+### A. Explicit Payment State Machine
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                             CLIENT BROWSER (Vite React)                          │
-│                                                                                  │
-│  1. User selects Plan / Booster                                                  │
-│  2. apiClient.post('/api/payment/razorpay-order', { planId, currency })          │
-│                                                                                  │
-└────────────────────────────────────────┬─────────────────────────────────────────┘
-                                         │  (Bearer Token attached)
-                                         ▼
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                            API SERVER (Express + Node.js)                        │
-│                                                                                  │
-│  3. authMiddleware validates Supabase JWT                                        │
-│  4. billingRoutes resolves planId in server-authoritative PLAN_PRICING_CATALOG   │
-│  5. createRazorpayOrder calls https://api.razorpay.com/v1/orders                 │
-│  6. paymentRepository inserts row into public.payments (status = 'created')     │
-│  7. Returns { id: 'order_xxx', amount: 150000, currency: 'INR' }                 │
-│                                                                                  │
-└────────────────────────────────────────┬─────────────────────────────────────────┘
-                                         │
-                                         ▼
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                             CLIENT BROWSER (Vite React)                          │
-│                                                                                  │
-│  8. Opens window.Razorpay checkout modal (UPI, Netbanking, Cards, Wallets)       │
-│  9. User completes transaction & 3DS authorization                               │
-│ 10. Razorpay handler callback receives:                                          │
-│     { razorpay_order_id, razorpay_payment_id, razorpay_signature }               │
-│ 11. apiClient.post('/api/payment/razorpay-verify', payload)                      │
-│                                                                                  │
-└────────────────────────────────────────┬─────────────────────────────────────────┘
-                                         │  (Bearer Token attached)
-                                         ▼
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                            API SERVER (Express + Node.js)                        │
-│                                                                                  │
-│ 12. verifyRazorpaySignature computes HMAC-SHA256(order_id + '|' + payment_id)   │
-│ 13. paymentRepository updates public.payments (status = 'captured')              │
-│ 14. creditService.grantCredits() atomically credits workspace in PostgreSQL      │
-│ 15. Returns { verified: true, creditsGranted: 100, newBalance: 153 }             │
-│                                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────┘
+           ┌──────────────┐
+           │   created    │
+           └──────┬───────┘
+     ┌────────────┼────────────┐
+     ▼            ▼            ▼
+┌──────────┐ ┌──────────┐ ┌──────────┐
+│authorized│ │  failed  │ │ expired  │
+└────┬─────┘ └──────────┘ └──────────┘
+     ├────────────┐
+     ▼            ▼
+┌──────────┐ ┌──────────┐
+│ captured │ │  failed  │
+└────┬─────┘ └──────────┘
+     ├──────────────────────┐
+     ▼                      ▼
+┌──────────┐      ┌──────────────────┐
+│ refunded │      │partially_refunded│
+└──────────┘      └──────────────────┘
 ```
 
-### PostgreSQL Audit Schema
-- `public.payments`: Full transaction log recording `order_id`, `payment_id`, `signature`, `amount_subunits`, `currency`, `status` (`created` $\rightarrow$ `captured` or `failed`), `is_simulated`, and `idempotency_key`.
-- `public.credit_balances`: Authoritative balance record with row locks: `balance`, `held_balance`, `available_balance`, `lifetime_granted`, and `lifetime_spent`.
-- `public.credit_ledger`: Double-entry append-only journal tracking every credit event (`topup_purchase`, `subscription_grant`, `ai_reservation`, `hold_release`).
+### B. Unified Webhook Fulfillment Pipeline
+Both `payment.captured` and `order.paid` funnel into a shared idempotent fulfillment path:
+```
+payment.captured ──┐
+                   ├──> resolve payment/order ──> idempotency check ──> atomic fulfillment
+order.paid ────────┘
+```
+- Raw byte buffer captured via `express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } })`.
+- Cryptographic verification via `crypto.timingSafeEqual`.
+- Idempotency deduplication using `x-razorpay-event-id`.
 
 ---
 
-## 6. 🚨 Critical Integration Defects & Resolution Roadmap
+## 7. 🚀 Human-Controlled Go-Live Procedure
 
-The following defects were discovered during technical review and must be resolved on branch `fix/payment-method-integration`:
-
-### Defect 1: Unauthenticated API Requests via Raw `window.fetch`
-- **Location**: [CreditTopUp.tsx](file:///e:/A_Writopedia/apps/web/src/features/billing/components/CreditTopUp.tsx#L226), [EnterprisePlan.tsx](file:///e:/A_Writopedia/apps/web/src/features/billing/components/EnterprisePlan.tsx#L316), [PricingPage.tsx](file:///e:/A_Writopedia/apps/web/src/features/billing/components/PricingPage.tsx#L142).
-- **Issue**: Components invoke `fetch('/api/payment/razorpay-order')` without `Authorization: Bearer <token>`.
-- **Impact**: `authMiddleware` rejects requests with `401 Unauthorized`. Frontend `catch` blocks silently fall back to `isSimulated: true` sandbox mode, preventing live gateway transactions.
-- **Resolution**: Replace raw `window.fetch` with `apiClient.post()`.
-
-### Defect 2: Missing `planId` in Subscription Checkout
-- **Location**: [EnterprisePlan.tsx](file:///e:/A_Writopedia/apps/web/src/features/billing/components/EnterprisePlan.tsx#L321-L325).
-- **Issue**: Submits `{ amount, currency }` without `planId`.
-- **Impact**: Server rejects request with `400 Invalid or missing planId: "undefined"`.
-- **Resolution**: Pass canonical plan identifiers (`plan-pilot-monthly`, `plan-plus-yearly`, etc.).
-
-### Defect 3: Truthy Object Evaluation in HMAC Signature Verification
-- **Location**: [billingService.ts](file:///e:/A_Writopedia/apps/api/src/services/billingService.ts#L68-L82).
-- **Issue**: `verifyRazorpaySignature()` returns `{ verified: boolean }`. `billingService` checks `if (!isValidSignature)` which is always truthy.
-- **Impact**: Signature mismatches or tampered requests would fail to be caught by the branch.
-- **Resolution**: Change to `if (!isValidSignature.verified)`.
-
-### Defect 4: Server-Side Catalog Desynchronization
-- **Location**: [packages/types/billing.ts](file:///e:/A_Writopedia/packages/types/billing.ts#L53-L116) (`PLAN_PRICING_CATALOG`).
-- **Issue**: Catalog contains legacy placeholder values (Pilot: ₹0 / 50c, Plus: ₹1,600 / 200c, Pro: ₹2,400 / 500c) that conflict with the production UI matrix (Pilot: ₹1,950 / 130c, Plus: ₹10,000 / 800c, Pro: ₹25,000 / 2,500c).
-- **Impact**: Server charges lower rates and issues fewer credits than users expect.
-- **Resolution**: Align `PLAN_PRICING_CATALOG` exactly with the production pricing schedule.
+When all automated security tests pass and staging verification completes:
+1. Human generates Live API Keys (`rzp_live_...`) in the Razorpay Dashboard.
+2. Human configures Live Webhook URL (`https://yourdomain.com/api/payment/webhook`) with `payment.captured` and `order.paid`.
+3. Human sets production environment variables:
+   - `RAZORPAY_MODE=live`
+   - `RAZORPAY_KEY_ID=rzp_live_...`
+   - `RAZORPAY_KEY_SECRET=...`
+   - `RAZORPAY_WEBHOOK_SECRET=...`
+   - `ENABLE_PAYMENT_SIMULATION=false`
+4. Deploy production build.
