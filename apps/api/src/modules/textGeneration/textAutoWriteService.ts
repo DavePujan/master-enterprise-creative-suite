@@ -179,6 +179,7 @@ ${platformInstructions}
         code: "INSUFFICIENT_CREDITS",
         message: "Insufficient credits to generate Auto-Write caption concept.",
         requiredCredits: creditsToCharge,
+        availableCredits: holdResult.available,
       };
     }
 

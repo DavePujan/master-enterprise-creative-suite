@@ -2,117 +2,112 @@
  * Presentation Content Compiler (Stage 2: Semantic Content + Layout Compilation).
  * Formulates detailed slide copy, speaker notes, and factual metrics with strict provenance enforcement.
  * Invokes packages/presentation-engine layout algorithms to synthesize the canonical PresentationDocument.
+ * Delegates LLM execution strictly to centralized presentationGeminiClient with versioned v1 contracts.
  */
 
-import { getServerAI } from '../../infrastructure/gemini/serverGeminiClient.js';
-import { resolvePresentationConfig } from './presentationModelResolver.js';
+import { Type } from '@google/genai';
 import {
   PresentationDocument,
   PresentationSlide,
   PresentationAsset,
   SemanticSlideInput,
-  PresentationTheme
+  PresentationTheme,
+  validatePresentationDocument
 } from '@presentation-engine/index.js';
 import { computeSlideLayout } from '@presentation-engine/layouts/layoutEngine.js';
 import { resolveBrandTheme } from '@presentation-engine/theme/brandThemeResolver.js';
-import { PresentationStrategyPlan } from './presentationPlanner.js';
 import { sanitizeMetricProvenance } from '@presentation-engine/domain/provenance.js';
+import { presentationGeminiClient } from './presentationGeminiClient.js';
+import { PresentationPolicyName } from './presentationModelResolver.js';
+import { buildStage2Context } from './presentationContextBuilder.js';
+import {
+  PlannerOutput_v1,
+  CompilerOutput_v1,
+  validateCompilerOutput_v1
+} from './presentationContracts.js';
 
 export interface Stage2CompileRequest {
-  plan: PresentationStrategyPlan;
+  plan: PlannerOutput_v1;
   brandGuidelines?: any;
   logoAssetId?: string;
   customTheme?: Partial<PresentationTheme>;
+  generationId?: string;
+  policyName?: PresentationPolicyName;
 }
+
+/**
+ * Stage 2 Gemini Response Schema using Google GenAI Type definitions.
+ */
+const stage2ResponseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    schemaVersion: { type: Type.STRING, description: 'Must be 1.0.0' },
+    slides: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          index: { type: Type.INTEGER },
+          purpose: { type: Type.STRING },
+          title: { type: Type.STRING, description: 'Authoritative slide title under 8 words' },
+          subtitle: { type: Type.STRING, description: 'Strategic subtitle framing under 15 words' },
+          bulletPoints: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: '2 to 4 crisp bullet points'
+          },
+          visualPrompt: { type: Type.STRING, description: 'Description for visual imagery background' },
+          speakerNotes: { type: Type.STRING, description: 'Talking points for the presenter' },
+          metric: {
+            type: Type.OBJECT,
+            properties: {
+              value: { type: Type.STRING, description: 'Metric number or placeholder like [Insert verified %]' },
+              label: { type: Type.STRING, description: 'KPI label' },
+              provenance: {
+                type: Type.STRING,
+                description: 'user_provided | brand_context | verified_source | placeholder'
+              },
+              source: { type: Type.STRING }
+            }
+          }
+        },
+        required: ['index', 'purpose', 'title']
+      }
+    }
+  },
+  required: ['slides']
+};
 
 export async function compilePresentationContent(
   request: Stage2CompileRequest
 ): Promise<PresentationDocument> {
   const { plan, brandGuidelines, logoAssetId, customTheme } = request;
-  const ai = getServerAI();
-  const config = resolvePresentationConfig('content');
+  const generationId = request.generationId || `compile_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   const brandTheme = resolveBrandTheme(brandGuidelines, customTheme);
 
-  const systemInstruction = `You are an elite corporate communications strategist and presentation copywriter.
-You are compiling the detailed semantic content for a ${plan.slides.length}-slide executive presentation.
+  // 1. Build Stage 2 prompt & instructions
+  const { systemInstruction, userPrompt } = buildStage2Context({
+    plan,
+    brandGuidelines,
+    logoAssetId
+  });
 
-STRICT ANTI-FABRICATION RULE:
-You may NEVER invent quantitative business statistics, market percentages, or reliability metrics.
-- If a quantitative figure is supplied explicitly in the brief, use it with provenance: "user_provided".
-- If a figure is not known or verified with certainty, you MUST use an explicit placeholder like:
-  value: "[Insert verified YoY growth %]"
-  provenance: "placeholder"
-  source: "Requires verification against Category actuals"
-Every metric MUST include: value, label, provenance ("user_provided" | "brand_context" | "verified_source" | "placeholder"), and confidence.
+  // 2. Execute via centralized presentationGeminiClient
+  const result = await presentationGeminiClient.executeStructured<CompilerOutput_v1>({
+    generationId,
+    stage: 'content',
+    policyName: request.policyName,
+    userInput: userPrompt,
+    systemInstruction,
+    responseSchema: stage2ResponseSchema,
+    semanticValidator: (data) => validateCompilerOutput_v1(data, plan.slides.length)
+  });
 
-FORMATTING REQUIREMENTS:
-- title: Under 8 words, authoritative, executive-ready.
-- subtitle: Under 15 words, clear framing.
-- bulletPoints: 2 to 4 crisp, high-impact bullet points (each under 18 words).
-- visualPrompt: 1-2 sentence descriptive prompt for generating background visuals.
-- speakerNotes: 2-3 sentences of conversational talking points for the presenter.
-- Return strictly a JSON array of slide objects under the key "slides".`;
-
-  const userInput = `Executive Deck: "${plan.title}"
-Objective: ${plan.objective}
-Target Audience: ${plan.targetAudience}
-Narrative Arc: ${plan.narrativeArc}
-Brand Name: ${plan.brandName}
-
-Slide Outline Plan:
-${JSON.stringify(plan.slides, null, 2)}
-
-Generate the detailed semantic content for all ${plan.slides.length} slides conforming to the JSON schema.`;
-
-  const modelsToTry = [config.model, ...config.fallbacks];
-  let semanticSlides: SemanticSlideInput[] = [];
-  let lastError: any = null;
-
-  for (const modelId of modelsToTry) {
-    try {
-      console.log(`[PresentationCompiler] Executing Stage 2 semantic compilation with model: ${modelId}`);
-
-      let responseText = '';
-
-      if ((ai as any).interactions?.create) {
-        const interaction = await (ai as any).interactions.create({
-          model: modelId,
-          input: userInput,
-          system_instruction: systemInstruction,
-          response_format: 'json',
-          generation_config: {
-            thinking_level: config.thinkingLevel,
-            max_output_tokens: config.maxOutputTokens
-          }
-        });
-        responseText = interaction.output_text || '';
-      } else {
-        const response = await ai.models.generateContent({
-          model: modelId,
-          contents: [{ text: `${systemInstruction}\n\n${userInput}` }],
-          config: {
-            responseMimeType: 'application/json'
-          }
-        });
-        responseText = response.text || '';
-      }
-
-      const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
-      semanticSlides = parsed.slides || parsed;
-
-      if (!Array.isArray(semanticSlides) || semanticSlides.length === 0) {
-        throw new Error('Stage 2 returned invalid slide array.');
-      }
-      break;
-    } catch (err: any) {
-      lastError = err;
-      console.warn(`[PresentationCompiler] Stage 2 attempt on ${modelId} failed:`, err?.message || err);
-    }
-  }
+  const parsedSlides = result.data.slides || (result.data as any);
+  const semanticSlides: SemanticSlideInput[] = Array.isArray(parsedSlides) ? parsedSlides : [];
 
   if (semanticSlides.length === 0) {
-    throw new Error(`Presentation Stage 2 Content Compilation failed: ${lastError?.message || lastError}`);
+    throw new Error('Presentation Stage 2 Content Compilation returned an empty slides array.');
   }
 
   // 3. Compile Semantic Content into Presentation Slides using packages/presentation-engine Layout Engine
@@ -145,7 +140,7 @@ Generate the detailed semantic content for all ${plan.slides.length} slides conf
     semantic.logoAssetId = logoAssetId;
     semantic.brandName = plan.brandName;
 
-    // Sanitize any metrics using strict provenance rules
+    // Strict Anti-Fabrication & Provenance Sanitization
     if (semantic.metric) {
       semantic.metric = sanitizeMetricProvenance(semantic.metric);
     }
@@ -153,7 +148,7 @@ Generate the detailed semantic content for all ${plan.slides.length} slides conf
       semantic.metrics = semantic.metrics.map(m => sanitizeMetricProvenance(m));
     }
 
-    // Pass into packages/presentation-engine Layout Engine
+    // Pass into packages/presentation-engine deterministic Layout Engine
     const { layout, elements } = computeSlideLayout(semantic, brandTheme, idx);
 
     // Register placeholder visual asset if visualPrompt provided
@@ -212,6 +207,12 @@ Generate the detailed semantic content for all ${plan.slides.length} slides conf
       updatedAt: new Date().toISOString()
     }
   };
+
+  // Validate the completed Presentation IR
+  const validation = validatePresentationDocument(document);
+  if (!validation.isValid) {
+    console.warn('[PresentationCompiler] Presentation IR validation warnings:', validation.errors);
+  }
 
   return document;
 }

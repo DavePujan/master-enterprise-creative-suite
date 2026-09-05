@@ -8,6 +8,7 @@ import { imageGenerationService } from "./imageGenerationService.js";
 import { imageModelResolver } from "./imageModelResolver.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import type { NormalizedImageRequest } from "@shared-types/imageGeneration.js";
+import { sendInsufficientCreditsResponse } from "../billing/billingErrorUtils.js";
 
 export const imageRouter = Router();
 
@@ -99,6 +100,20 @@ imageRouter.post("/generate", async (req, res) => {
     return res.json(result);
   } catch (err: any) {
     console.error("[imageRouter /generate] Error:", err.message);
+    if (err.status === 402 || err.code === "INSUFFICIENT_CREDITS" || err.message?.includes("Insufficient credits")) {
+      const model = req.body?.modelKey || "standard";
+      const isPro = model.includes("pro") || model.includes("dev");
+      const isFast = model.includes("schnell") || model.includes("fast");
+      const serviceName = isPro ? "Flux Pro Image" : (isFast ? "Fast Image Generation" : "Standard Image");
+
+      return sendInsufficientCreditsResponse(res, {
+        service: serviceName,
+        action: "image_generation",
+        model: req.body?.modelKey,
+        required: err.required || (isPro ? 4 : (isFast ? 2 : 3)),
+        available: err.available
+      });
+    }
     const status = err.status || 500;
     return res.status(status).json({
       error: err.message || "Failed to generate image.",

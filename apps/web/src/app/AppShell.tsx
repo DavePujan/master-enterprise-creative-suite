@@ -12,6 +12,9 @@ import { CreativeWorkspace } from '../features/creative/components/CreativeWorks
 import { BrandGuidelinesDrawer } from '../features/brand-guidelines/components/BrandGuidelinesDrawer.js';
 import { HumanTouchRequestModal } from '../features/human-touch/components/HumanTouchRequestModal.js';
 import { CurationToasters } from '../features/human-touch/components/CurationToasters.js';
+import { Check, X } from 'lucide-react';
+import { InsufficientCreditsModal } from '@web/features/billing/components/InsufficientCreditsModal.js';
+import { useCreditGate } from '@web/features/billing/context/CreditGateContext.js';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import { type TextWordLayer } from '../features/canvas/hooks/useCanvasEditor.js';
@@ -238,8 +241,20 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
     setHumanTouchSuccessMsg,
     handleSubmitHumanTouch,
     handleSaveBrandGuidelines,
-    handleWipeBrandParameters
+    handleWipeBrandParameters,
+    prompt,
+    setPrompt,
+    aspectRatio,
+    setAspectRatio,
+    selectedLanguage,
+    setSelectedLanguage,
+    audioGenerationType,
+    setAudioGenerationType,
+    musicMood,
+    setMusicMood
   } = props;
+
+  const { returnedFromTopUpNotice, returnToGem, dismissTopUpNotice } = useCreditGate();
 
   return (
     <div className="flex h-screen bg-white dark:bg-slate-950 overflow-hidden">
@@ -350,7 +365,7 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
           />
         ) : (
           <div className="flex-1 overflow-y-auto p-4 md:p-8">
-            <div className="max-w-5xl mx-auto space-y-6">
+            <div className={selectedGem.id === 'campaign-strategist-y' ? "max-w-[1400px] mx-auto space-y-6" : "max-w-5xl mx-auto space-y-6"}>
               {selectedGem.id === 'bundles-campaigns' ? (
                 <CampaignDeckWorkspace 
                   brandGuidelines={brandGuidelines}
@@ -375,6 +390,12 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
                   faceContext={faceContext}
                   setFaceContext={setFaceContext}
                   setHumanTouchItem={setHumanTouchItem}
+                  onSelectGem={setSelectedGem}
+                  setPrompt={setPrompt}
+                  setAspectRatio={setAspectRatio}
+                  setSelectedLanguage={setSelectedLanguage}
+                  setAudioGenerationType={setAudioGenerationType}
+                  setMusicMood={setMusicMood}
                 />
               ) : (
                 <CreativeWorkspace {...props} />
@@ -384,7 +405,7 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
         )}
 
         {/* Global Shell Footer */}
-        <footer className="h-12 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
+        <footer className="h-12 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest shrink-0">
           <div>© 2026 {brandGuidelines.name} Studio AI</div>
           <div className="flex items-center gap-6">
             <button 
@@ -392,25 +413,25 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
                 setEditingGuidelines(JSON.parse(JSON.stringify(brandGuidelines)));
                 setShowGuidelines(true);
               }} 
-              className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               Brand Config
             </button>
             <button 
               onClick={() => navigateTo('/pricing')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               Enterprise Tier
             </button>
             <button 
               onClick={() => navigateTo('/legal/privacy-policy')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               Privacy
             </button>
             <button 
               onClick={() => navigateTo('/legal/terms-of-service')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               Terms
             </button>
@@ -439,6 +460,42 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
         successMsg={humanTouchSuccessMsg}
         onSubmit={handleSubmitHumanTouch}
       />
+
+      {/* Return from Top-Up Success Banner */}
+      {returnedFromTopUpNotice && (
+        <div className="fixed top-4 right-4 z-110 max-w-md p-4 rounded-xl bg-white dark:bg-slate-900 border border-emerald-500/40 shadow-2xl flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0">
+              <Check size={16} />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                Credits Added Successfully!
+              </h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                +{returnedFromTopUpNotice.creditsAdded} credits added (Balance: {credits} credits). Ready to continue {returnedFromTopUpNotice.serviceName || 'generation'}.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={returnToGem}
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold uppercase rounded-md shadow-xs transition-all cursor-pointer"
+            >
+              Return
+            </button>
+            <button
+              onClick={dismissTopUpNotice}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Global Insufficient Credits Modal */}
+      <InsufficientCreditsModal />
     </div>
   );
 };

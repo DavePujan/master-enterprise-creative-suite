@@ -9,10 +9,12 @@ import {
   X, 
   Upload, 
   Send, 
-  Loader2 
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
+import { useCreditGate } from '@web/features/billing/context/CreditGateContext.js';
 import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
 import { generateImageAutoWriteIdea } from '../services/imageAutoWriteService.js';
 import { generateTextAutoWriteIdea } from '../services/textAutoWriteService.js';
@@ -104,6 +106,27 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   const [activeIdeaPreview, setActiveIdeaPreview] = React.useState<ImageAutoWriteIdea | null>(null);
   const [activeTextIdeaPreview, setActiveTextIdeaPreview] = React.useState<TextAutoWriteIdea | null>(null);
   const [activeAudioIdeaPreview, setActiveAudioIdeaPreview] = React.useState<AudioAutoWriteIdea | null>(null);
+
+  const { credits, openCreditGate } = useCreditGate();
+
+  const estimatedCost = React.useMemo(() => {
+    if (selectedGem.type === 'image') {
+      return selectedModel === 'fal-ai/flux-pro/v1.1' ? 4 : (selectedModel === 'fal-ai/fast-sdxl' ? 2 : 3);
+    }
+    if (selectedGem.type === 'video') {
+      return selectedModel === 'veo-3.1-generate-preview' ? 40 : 20;
+    }
+    if (selectedGem.type === 'audio') {
+      return audioGenerationType === 'music' ? (musicMode === 'full-track' ? 10 : 3) : 2;
+    }
+    if (selectedGem.type === 'text') {
+      return 1;
+    }
+    if (selectedGem.id === 'corporate-presentations' || selectedGem.type === 'slideshow') {
+      return 10;
+    }
+    return selectedGem.cost || 5;
+  }, [selectedGem, selectedModel, audioGenerationType, musicMode]);
 
   const generateCustomThemes = (guidelines: any) => {
     const brandColors = guidelines?.colors && guidelines.colors.length > 0 ? guidelines.colors : ['#0f172a', '#334155'];
@@ -896,6 +919,26 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
             title="Dismiss Audio Creative Concept"
           >
             <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {credits < estimatedCost && (
+        <div className="flex items-center justify-between text-xs text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-sm animate-in fade-in">
+          <span className="flex items-center gap-1.5 font-medium">
+            <AlertCircle size={13} className="shrink-0 text-amber-600 dark:text-amber-400" />
+            Estimated cost: {estimatedCost} credits (Available: {credits})
+          </span>
+          <button
+            type="button"
+            onClick={() => openCreditGate({
+              service: selectedGem.name,
+              requiredCredits: estimatedCost,
+              availableCredits: credits
+            })}
+            className="font-bold underline hover:text-amber-800 dark:hover:text-amber-200 cursor-pointer text-[11px]"
+          >
+            Need credits? Get Credits →
           </button>
         </div>
       )}

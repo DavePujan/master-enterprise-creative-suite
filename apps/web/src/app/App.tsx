@@ -29,6 +29,7 @@ import { useCreativeExecution } from '../features/creative/hooks/useCreativeExec
 import { AppRouter } from './AppRouter.js';
 import { AppShell } from './AppShell.js';
 import { type HistoryItem } from '../features/layout/components/AppSidebar.js';
+import { CreditGateProvider } from '../features/billing/context/CreditGateContext.js';
 
 export function App() {
   const { user, loading, logout, login, loginWithEmail, registerWithEmail } = useAuth();
@@ -169,12 +170,50 @@ export function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Sync Preferences to LocalStorage
+  // Safe LocalStorage setter with QuotaExceededError protection and automatic pruning
+  const safeSetLocalStorage = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (err) {
+      console.warn(`[LocalStorage] Quota exceeded or storage error on "${key}":`, err);
+      if (key === 'creative_history') {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            // Prune to 10 latest items and strip large base64 data URLs to reclaim quota
+            const pruned = parsed.slice(0, 10).map((item: any) => {
+              if (item?.result && typeof item.result === 'object') {
+                const resCopy = { ...item.result };
+                if (typeof resCopy.imageUrl === 'string' && resCopy.imageUrl.startsWith('data:')) {
+                  resCopy.imageUrl = '';
+                }
+                if (typeof resCopy.videoUrl === 'string' && resCopy.videoUrl.startsWith('data:')) {
+                  resCopy.videoUrl = '';
+                }
+                if (typeof resCopy.dataUrl === 'string' && resCopy.dataUrl.startsWith('data:')) {
+                  resCopy.dataUrl = '';
+                }
+                return { ...item, result: resCopy };
+              }
+              return item;
+            });
+            localStorage.setItem(key, JSON.stringify(pruned));
+          }
+        } catch {
+          try {
+            localStorage.removeItem('creative_history');
+          } catch {}
+        }
+      }
+    }
+  };
+
+  // Sync Preferences to LocalStorage safely
   useEffect(() => {
-    localStorage.setItem('brandSetupComplete', JSON.stringify(brandSetupComplete));
-    localStorage.setItem('brandGuidelines', JSON.stringify(brandGuidelines));
-    localStorage.setItem('studio_credits', credits.toString());
-    localStorage.setItem('creative_history', JSON.stringify(history));
+    safeSetLocalStorage('brandSetupComplete', JSON.stringify(brandSetupComplete));
+    safeSetLocalStorage('brandGuidelines', JSON.stringify(brandGuidelines));
+    safeSetLocalStorage('studio_credits', credits.toString());
+    safeSetLocalStorage('creative_history', JSON.stringify(history));
   }, [brandSetupComplete, brandGuidelines, credits, history]);
 
   // Real-time Subscriptions to Cloud Repositories when User is Authenticated
@@ -443,14 +482,21 @@ export function App() {
       handleLogout={handleLogout}
       handleBrandSetupComplete={handleBrandSetupComplete}
     >
-      <AppShell 
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-        brandGuidelines={brandGuidelines}
-        setBrandGuidelines={setBrandGuidelines}
-        editingGuidelines={editingGuidelines}
-        setEditingGuidelines={setEditingGuidelines}
-        showGuidelines={showGuidelines}
+      <CreditGateProvider
+        activeGemId={selectedGem?.id}
+        currentView={view}
+        setView={setView}
+        credits={credits}
+        setCredits={setCredits}
+      >
+        <AppShell 
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          brandGuidelines={brandGuidelines}
+          setBrandGuidelines={setBrandGuidelines}
+          editingGuidelines={editingGuidelines}
+          setEditingGuidelines={setEditingGuidelines}
+          showGuidelines={showGuidelines}
         setShowGuidelines={setShowGuidelines}
         showAssetLibrary={showAssetLibrary}
         setShowAssetLibrary={setShowAssetLibrary}
@@ -620,6 +666,7 @@ export function App() {
         handleSaveBrandGuidelines={handleSaveBrandGuidelines}
         handleWipeBrandParameters={handleWipeBrandParameters}
       />
+      </CreditGateProvider>
     </AppRouter>
   );
 }

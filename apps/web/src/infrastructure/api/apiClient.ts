@@ -9,6 +9,22 @@ export interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
 }
 
+export type InsufficientCreditsHandler = (payload: {
+  requiredCredits: number;
+  availableCredits?: number;
+  missingCredits?: number;
+  service: string;
+  action?: string;
+  model?: string;
+  error?: string;
+}) => void;
+
+let onInsufficientCreditsHandler: InsufficientCreditsHandler | null = null;
+
+export function registerInsufficientCreditsHandler(handler: InsufficientCreditsHandler | null) {
+  onInsufficientCreditsHandler = handler;
+}
+
 export class ApiClient {
   private async getAuthToken(): Promise<string | null> {
     try {
@@ -60,6 +76,26 @@ export class ApiClient {
       }
 
       console.error(`[ApiClient Error] ${rest.method || 'GET'} ${url} -> ${res.status}:`, errData);
+
+      if (res.status === 402 || errData?.code === 'INSUFFICIENT_CREDITS' || errData?.error === 'INSUFFICIENT_CREDITS') {
+        const required = errData?.requiredCredits || 1;
+        const available = errData?.availableCredits;
+
+        // If server explicitly returned available and available >= required, suppress the modal
+        if (typeof available === 'number' && available >= required) {
+          console.warn(`[ApiClient] Received 402 but available (${available}) >= required (${required}). Suppressing credit gate.`);
+        } else if (onInsufficientCreditsHandler) {
+          onInsufficientCreditsHandler({
+            requiredCredits: required,
+            availableCredits: available,
+            missingCredits: errData?.missingCredits,
+            service: errData?.service || 'AI Generation',
+            action: errData?.action,
+            model: errData?.model,
+            error: errData?.error || 'Insufficient credits'
+          });
+        }
+      }
 
       const errorMessage = errData?.error || errData?.message || `HTTP ${res.status}: ${res.statusText || 'Request failed'}`;
       const error: any = new Error(errorMessage);

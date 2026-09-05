@@ -115,3 +115,130 @@ export const PLAN_PRICING_CATALOG: Record<PlanId, PlanPricing> = {
     usdSubunits: 75600    // $756
   }
 };
+
+/**
+ * Standardized Canonical Insufficient Credits Error Payload (HTTP 402).
+ */
+export interface InsufficientCreditsErrorPayload {
+  error: string;
+  code: 'INSUFFICIENT_CREDITS';
+  requiredCredits: number;
+  availableCredits: number;
+  missingCredits: number;
+  currency: 'credits';
+  service: string;
+  action?: string;
+  model?: string;
+  retryable: false;
+}
+
+/**
+ * Canonical Service Display and Metadata Registry.
+ * Purely for identity, categories, and human-friendly display copy.
+ * Authoritative required credit amounts come strictly from the Gem/model resolvers.
+ */
+export interface CreditServiceMetadata {
+  id: string;
+  displayName: string;
+  category: 'campaign' | 'video' | 'image' | 'audio' | 'presentation' | 'text';
+  description: string;
+}
+
+export const CREDIT_SERVICE_REGISTRY: Record<string, CreditServiceMetadata> = {
+  campaign_strategy: {
+    id: 'campaign_strategy',
+    displayName: 'Campaign Master Strategy',
+    category: 'campaign',
+    description: '16-dimension master campaign strategy synthesis with customer journey and production architecture'
+  },
+  video_generation: {
+    id: 'video_generation',
+    displayName: 'Video Generation',
+    category: 'video',
+    description: 'High-definition cinematic video render'
+  },
+  image_generation: {
+    id: 'image_generation',
+    displayName: 'Image Generation',
+    category: 'image',
+    description: 'Photorealistic commercial visual render'
+  },
+  image_refine: {
+    id: 'image_refine',
+    displayName: 'Creative AI Refinement',
+    category: 'image',
+    description: 'Production visual prompt and texture refinement'
+  },
+  audio_voiceover: {
+    id: 'audio_voiceover',
+    displayName: 'Voiceover (TTS)',
+    category: 'audio',
+    description: 'Naturalistic multilingual voiceover generation'
+  },
+  audio_music_clip: {
+    id: 'audio_music_clip',
+    displayName: 'Music Clip',
+    category: 'audio',
+    description: '30-second commercial soundtrack clip'
+  },
+  audio_music_pro: {
+    id: 'audio_music_pro',
+    displayName: 'Music Pro (Full Track)',
+    category: 'audio',
+    description: 'Full-length studio track composition'
+  },
+  audio_autowrite: {
+    id: 'audio_autowrite',
+    displayName: 'Audio Auto-Write',
+    category: 'audio',
+    description: 'Creative audio concept & lyrics director'
+  },
+  presentation_generation: {
+    id: 'presentation_generation',
+    displayName: 'Corporate Presentation',
+    category: 'presentation',
+    description: 'Multi-slide strategic corporate slide deck'
+  },
+  campaign_deck: {
+    id: 'campaign_deck',
+    displayName: 'Campaign Deck & Bundles',
+    category: 'campaign',
+    description: 'Multi-asset cohesive commercial campaign deck'
+  },
+  text_generation: {
+    id: 'text_generation',
+    displayName: 'Copywriting & Content',
+    category: 'text',
+    description: 'Brand-governed messaging and captions'
+  }
+};
+
+/**
+ * Recommends the smallest available booster pack that fully covers the credit gap.
+ */
+export function findRecommendedCreditPack(missingCredits: number): {
+  id: PlanId;
+  name: string;
+  credits: number;
+} {
+  if (missingCredits <= 100) {
+    return {
+      id: 'booster-starter',
+      name: 'Starter Booster',
+      credits: 100
+    };
+  }
+  if (missingCredits <= 500) {
+    return {
+      id: 'booster-power',
+      name: 'Power Booster',
+      credits: 500
+    };
+  }
+  return {
+    id: 'booster-super',
+    name: 'Super Booster',
+    credits: 1100
+  };
+}
+

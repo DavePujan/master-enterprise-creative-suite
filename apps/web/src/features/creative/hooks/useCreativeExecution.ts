@@ -8,6 +8,7 @@ import { loadPreferences, savePreferences } from '@web/lib/preferences.js';
 import { downloadFile } from '@web/lib/utils.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
 import { presentationClient } from '@web/features/slideshow/services/presentationClient.js';
+import { triggerGlobalCreditGate } from '@web/features/billing/context/CreditGateContext.js';
 
 export interface GemExecutionState {
   prompt: string;
@@ -414,7 +415,8 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     const currentTargetState = gemStates[targetGemId] || getDefaultGemState(targetGem, brandGuidelines);
     const targetPrompt = currentTargetState.prompt;
 
-    if (!targetPrompt.trim()) return;
+    // In-flight guard: prevent duplicate generation submissions
+    if (!targetPrompt.trim() || currentTargetState.isGenerating) return;
 
     const isSlideshow = targetGem.id === 'corporate-presentations' || targetGem.id === 'slideshow-maker';
     const existingSlideshow = currentTargetState.result?.type === 'slideshow' ? currentTargetState.result : null;
@@ -656,8 +658,69 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
       }
     } catch (error: any) {
       console.error(`Creative generation failed for gem ${targetGemId}:`, error);
-      const quotaMsg = getQuotaErrorMessage(error);
-      const message = quotaMsg || error?.message || "Failed to generate creative. Please try again.";
+
+      // App-wide Insufficient Credits Gating Integration
+      const isInsufficientCredits =
+        error?.status === 402 ||
+        error?.code === 'INSUFFICIENT_CREDITS' ||
+        error?.data?.code === 'INSUFFICIENT_CREDITS' ||
+        error?.message?.includes('Insufficient credits');
+
+      if (isInsufficientCredits) {
+        const payload = error?.data || {};
+        const cost = payload.requiredCredits || error?.required || getActiveCost(targetGem);
+        const avail = typeof payload.availableCredits === 'number' 
+          ? payload.availableCredits 
+          : (typeof error?.available === 'number' ? error.available : credits);
+
+        // Derive user-friendly fine-grained service title
+        let serviceTitle = payload.service || targetGem.name;
+        if (targetGem.type === 'video') {
+          serviceTitle = 'Video Generation';
+        } else if (targetGem.type === 'image') {
+          const modelId = currentTargetState.selectedModel || '';
+          serviceTitle = modelId.includes('pro') || modelId.includes('dev') 
+            ? 'Flux Pro Image' 
+            : (modelId.includes('schnell') ? 'Fast Image Generation' : 'Standard Image');
+        } else if (targetGem.id === 'audio-voiceover-music') {
+          serviceTitle = currentTargetState.audioGenerationType === 'voiceover'
+            ? 'Voiceover (TTS)'
+            : (currentTargetState.musicMode === 'clip' ? 'Music Clip' : 'Music Pro (Full Track)');
+        } else if (targetGem.id === 'corporate-presentations') {
+          serviceTitle = 'Corporate Presentation';
+        }
+
+        triggerGlobalCreditGate({
+          service: serviceTitle,
+          action: payload.action || targetGem.type,
+          model: payload.model || currentTargetState.selectedModel,
+          requiredCredits: cost,
+          availableCredits: avail,
+          error: error.message
+        });
+
+        updateGemState(targetGemId, {
+          isGenerating: false,
+          error: null
+        });
+        return;
+      }
+
+      let message: string;
+      if (targetGemId === 'corporate-presentations') {
+        if (error?.code === 'PRESENTATION_QUOTA_EXHAUSTED' || error?.status === 429) {
+          message = "AI presentation model rate limit reached. Please wait a moment before trying again.";
+        } else if (error?.code === 'PRESENTATION_MODEL_UNAVAILABLE') {
+          message = "The configured presentation model is temporarily unavailable. Please try again shortly.";
+        } else if (error?.message) {
+          message = error.message;
+        } else {
+          message = "Presentation generation failed. Please try again.";
+        }
+      } else {
+        const quotaMsg = getQuotaErrorMessage(error);
+        message = quotaMsg || error?.message || "Failed to generate creative. Please try again.";
+      }
       updateGemState(targetGemId, {
         isGenerating: false,
         error: message,
@@ -927,8 +990,17 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         refinePrompt: '',
         isRefining: false
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to refine asset:", e);
+      if (e?.status === 402 || e?.code === 'INSUFFICIENT_CREDITS' || e?.message?.includes('Insufficient credits')) {
+        triggerGlobalCreditGate({
+          service: 'Creative AI Refinement',
+          action: 'image_refine',
+          model: activeState.selectedModel || 'gemini-2.5-flash-image',
+          requiredCredits: e?.requiredCredits || e?.required || 2,
+          availableCredits: credits
+        });
+      }
       updateActiveState({ isRefining: false });
     }
   };

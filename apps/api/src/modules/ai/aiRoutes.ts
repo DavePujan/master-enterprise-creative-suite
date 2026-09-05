@@ -13,6 +13,7 @@ import { orchestrateGenerateContent, orchestrateTTS, orchestrateVideoGeneration 
 import { creditService } from "../../services/creditService.js";
 import { aiJobRepository } from "../../repositories/aiJobRepository.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
+import { sendInsufficientCreditsResponse } from "../billing/billingErrorUtils.js";
 
 export const aiRouter = Router();
 
@@ -39,7 +40,7 @@ aiRouter.post("/generate-content", async (req, res) => {
 
   // Dynamically determine exact required credits based on model and operation
   const requestedModel = (data?.model || "").toLowerCase();
-  let creditsRequired = 5;
+  let creditsRequired = 1;
   if (requestedModel.includes("flash-image") || requestedModel.includes("schnell")) {
     creditsRequired = 2;
   } else if (requestedModel.includes("gpt-image-2") || requestedModel.includes("fal studio")) {
@@ -54,23 +55,11 @@ aiRouter.post("/generate-content", async (req, res) => {
     creditsRequired = 40;
   } else if (requestedModel.includes("seedance")) {
     creditsRequired = 80;
+  } else if (requestedModel.includes("pro") && !requestedModel.includes("flux")) {
+    creditsRequired = 5;
   } else {
-    // Short fast prompt / rewrite / title / auto-write operations
-    const contentsStr = JSON.stringify(data?.contents || "");
-    const sysStr = JSON.stringify(data?.config?.systemInstruction || "");
-    const combinedStr = contentsStr + " " + sysStr;
-    if (
-      combinedStr.includes("generateFastPrompt") ||
-      combinedStr.includes("rewrite") ||
-      combinedStr.includes("tagline") ||
-      combinedStr.includes("Commercial Art Director") ||
-      combinedStr.includes("USER CREATIVE INTENT") ||
-      combinedStr.includes("autowrite")
-    ) {
-      creditsRequired = 1;
-    } else if (combinedStr.includes("Brand Identity Expert") || combinedStr.includes("brand documents")) {
-      creditsRequired = 2;
-    }
+    // Flash models / prompts / autowrite default to 1 credit
+    creditsRequired = 1;
   }
 
   try {
@@ -85,11 +74,20 @@ aiRouter.post("/generate-content", async (req, res) => {
     });
 
     if (!reservation.success) {
-      return res.status(402).json({
-        error: "Insufficient credits available in workspace.",
-        code: "INSUFFICIENT_CREDITS",
-        available: reservation.available,
+      let serviceName = "AI Content Generation";
+      if (requestedModel.includes("veo") || requestedModel.includes("kling") || requestedModel.includes("seedance")) {
+        serviceName = "Video Generation";
+      } else if (requestedModel.includes("image") || requestedModel.includes("flux") || requestedModel.includes("schnell")) {
+        serviceName = "Image Generation";
+      } else {
+        serviceName = "Copywriting & Content";
+      }
+
+      return sendInsufficientCreditsResponse(res, {
+        service: serviceName,
+        model: data?.model,
         required: creditsRequired,
+        available: reservation.available
       });
     }
 

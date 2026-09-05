@@ -53,7 +53,14 @@ export class PresentationClient {
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || `Presentation generation failed (${res.status})`);
+      const error: any = new Error(errorData.error || `Presentation generation failed (${res.status})`);
+      error.status = res.status;
+      error.code = errorData.code;
+      error.retryable = errorData.retryable;
+      error.available = errorData.available;
+      error.required = errorData.required;
+      error.details = errorData.details;
+      throw error;
     }
 
     return res.json();

@@ -107,7 +107,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     <aside 
       className={cn(
         "bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 flex flex-col z-30 h-full relative",
-        sidebarOpen ? "w-64" : "w-20"
+        sidebarOpen ? "w-72" : "w-20"
       )}
     >
       <button 
@@ -137,8 +137,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             animate={{ opacity: 1, y: 0 }}
             className="mt-2 text-center flex flex-col items-center"
           >
-            <span className="font-medium text-sm text-slate-900 dark:text-slate-100">{brandGuidelines?.name || 'Brand Studio'}</span>
-            <p className="text-[9px] text-slate-500 font-medium tracking-widest uppercase mt-1">Creative Suite</p>
+            <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">{brandGuidelines?.name || 'Brand Studio'}</span>
+            <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase mt-1">Creative Suite</p>
             <div className="mt-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
               <Sparkles size={12} />
               {credits} Credits
@@ -148,7 +148,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       </div>
 
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-        <div className={cn("text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 px-2", !sidebarOpen && "hidden")}>
+        <div className={cn("text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 px-2", !sidebarOpen && "hidden")}>
           Creative Gems
         </div>
         {GENERIC_GEMS.map((gem) => {
@@ -166,8 +166,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     ? "bg-violet-50 dark:bg-violet-950/20 text-violet-600 dark:text-violet-400 border-violet-100 dark:border-violet-900/60 shadow-sm"
                     : "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
                   : isAudio
-                    ? "border-transparent text-slate-600 dark:text-slate-400 hover:bg-violet-50/50 dark:hover:bg-violet-950/10 hover:text-violet-500 dark:hover:text-violet-400"
-                    : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    ? "border-transparent text-slate-700 dark:text-slate-300 hover:bg-violet-50/50 dark:hover:bg-violet-950/10 hover:text-violet-600 dark:hover:text-violet-300"
+                    : "border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white"
               )}
             >
               <div className={cn(
@@ -186,15 +186,24 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 )}
               </div>
               {sidebarOpen && (
-                <div className="text-left overflow-hidden flex-1">
-                  <p className="font-medium text-sm whitespace-nowrap">{gem.name}</p>
+                <div className="text-left overflow-hidden flex-1 min-w-0">
+                  <p className={cn(
+                    "font-medium text-sm truncate",
+                    isSelected
+                      ? isAudio
+                        ? "text-violet-900 dark:text-violet-200"
+                        : "text-rose-900 dark:text-rose-200"
+                      : "text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white"
+                  )} title={gem.name}>
+                    {gem.name}
+                  </p>
                   <p className={cn(
                     "text-[10px] truncate uppercase tracking-wider font-semibold", 
                     isSelected 
                       ? isAudio 
-                        ? "text-violet-400 dark:text-violet-500" 
-                        : "text-rose-400 dark:text-rose-500" 
-                      : "text-slate-400"
+                        ? "text-violet-600 dark:text-violet-400" 
+                        : "text-rose-600 dark:text-rose-400" 
+                      : "text-slate-500 dark:text-slate-400"
                   )}>
                     {gem.id === 'corporate-presentations' ? 'PPT' : gem.type}
                   </p>
@@ -224,7 +233,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         })}
 
         <div className="pt-8">
-          <div className={cn("text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 px-2", !sidebarOpen && "hidden")}>
+          <div className={cn("text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 px-2", !sidebarOpen && "hidden")}>
             Library & Plans
           </div>
           <button
@@ -233,7 +242,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               "w-full flex items-center gap-3 p-3 rounded-sm transition-all group border mb-2 cursor-pointer",
               view === 'assets'
                 ? "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
-                : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                : "border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white"
             )}
           >
             <div className={cn("shrink-0", view === 'assets' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
@@ -242,7 +251,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             {sidebarOpen && (
               <div className="text-left overflow-hidden">
                 <p className="font-medium text-sm whitespace-nowrap">Asset Library</p>
-                <p className={cn("text-[10px] truncate uppercase tracking-wider", view === 'assets' ? "text-rose-400 dark:text-rose-500" : "text-slate-400")}>
+                <p className={cn("text-[10px] truncate uppercase tracking-wider", view === 'assets' ? "text-rose-400 dark:text-rose-500" : "text-slate-500 dark:text-slate-400")}>
                   Manage Assets
                 </p>
               </div>
@@ -258,7 +267,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               "w-full flex items-center gap-3 p-3 rounded-sm transition-all group border mb-2 cursor-pointer",
               view === 'curation'
                 ? "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
-                : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                : "border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white"
             )}
           >
             <div className={cn("shrink-0 relative", view === 'curation' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
@@ -271,7 +280,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               <div className="text-left overflow-hidden flex-1 flex items-center justify-between gap-1">
                 <div>
                   <span className="font-medium text-sm whitespace-nowrap block leading-tight">Curation Inbox</span>
-                  <span className={cn("text-[10px] truncate uppercase tracking-wider block font-mono", view === 'curation' ? "text-rose-400 dark:text-rose-550" : "text-slate-400")}>
+                  <span className={cn("text-[10px] truncate uppercase tracking-wider block font-mono", view === 'curation' ? "text-rose-500 dark:text-rose-400 font-semibold" : "text-slate-500 dark:text-slate-400")}>
                     Curations released
                   </span>
                 </div>
@@ -289,7 +298,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               "w-full flex items-center gap-3 p-3 rounded-sm transition-all group border cursor-pointer",
               view === 'plan'
                 ? "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
-                : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                : "border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white"
             )}
           >
             <div className={cn("shrink-0", view === 'plan' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
@@ -298,7 +307,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             {sidebarOpen && (
               <div className="text-left overflow-hidden">
                 <p className="font-medium text-sm whitespace-nowrap">Enterprise Plan</p>
-                <p className={cn("text-[10px] truncate uppercase tracking-wider", view === 'plan' ? "text-rose-400 dark:text-rose-500" : "text-slate-400")}>
+                <p className={cn("text-[10px] truncate uppercase tracking-wider", view === 'plan' ? "text-rose-400 dark:text-rose-500" : "text-slate-500 dark:text-slate-400")}>
                   View Pricing
                 </p>
               </div>
@@ -311,7 +320,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               "w-full flex items-center gap-3 p-3 rounded-sm transition-all group border cursor-pointer",
               view === 'topup'
                 ? "bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/60 shadow-sm" 
-                : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                : "border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white"
             )}
           >
             <div className={cn("shrink-0", view === 'topup' ? "text-indigo-650 dark:text-indigo-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
@@ -320,7 +329,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             {sidebarOpen && (
               <div className="text-left overflow-hidden">
                 <p className="font-medium text-sm whitespace-nowrap">Credit Top-Up</p>
-                <p className={cn("text-[10px] truncate uppercase tracking-wider", view === 'topup' ? "text-indigo-400 dark:text-indigo-500" : "text-slate-400")}>
+                <p className={cn("text-[10px] truncate uppercase tracking-wider", view === 'topup' ? "text-indigo-400 dark:text-indigo-500" : "text-slate-500 dark:text-slate-400")}>
                   Add Balance
                 </p>
               </div>
@@ -334,7 +343,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 "w-full flex items-center gap-3 p-3 rounded-sm transition-all group border mt-2 cursor-pointer",
                 view === 'admin'
                   ? "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  : "border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white"
               )}
             >
               <div className={cn("shrink-0", view === 'admin' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
@@ -361,7 +370,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
         <div className="pt-8">
           <div className={cn("flex items-center justify-between mb-4 px-2", !sidebarOpen && "hidden")}>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Recent History
             </div>
             {sidebarOpen && history.length > 0 && (
@@ -389,7 +398,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               <button
                 onClick={() => onSelectHistoryItem(item)}
                 className={cn(
-                  "w-full flex items-center gap-3 p-2 rounded-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer",
+                  "w-full flex items-center gap-3 p-2 rounded-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer",
                   !sidebarOpen && "justify-center"
                 )}
               >
@@ -423,7 +432,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               {sidebarOpen && (
                 <div className="flex flex-col">
                   <span>Cloud Synced</span>
-                  <span className="text-[8px] opacity-70 truncate max-w-30 normal-case tracking-normal">{user.email}</span>
+                  <span className="text-[9px] text-emerald-700 dark:text-emerald-300 font-medium truncate max-w-[180px] normal-case tracking-normal">{user.email}</span>
                 </div>
 
               )}

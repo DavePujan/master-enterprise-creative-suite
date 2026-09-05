@@ -10,10 +10,320 @@ import { renderFalImage, createFalVideoJob, pollFalVideoJob, resolveFalKey } fro
 import { generatePollinationsFallback } from "../../infrastructure/fallback/pollinationsFallback.js";
 import { CreditService } from "../../services/creditService.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
+import { campaignStrategyService } from "./campaignStrategyService.js";
+import { campaignRepository } from "./campaignRepository.js";
+import { sendInsufficientCreditsResponse, InsufficientCreditsError } from "../billing/billingErrorUtils.js";
 
 const creditService = new CreditService();
 
 export const campaignRouter = Router();
+
+// ============================================================================
+// Campaign Strategist 2.0 Strategic Intelligence Endpoints
+// ============================================================================
+
+// 1. Dynamic Adaptive Discovery Questions
+campaignRouter.post(["/strategy/discovery-questions", "/strategy/discovery"], async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+
+    const {
+      sessionId = `sess_${Date.now()}`,
+      generationId = `gen_${Date.now()}`,
+      campaignTitle,
+      briefDescription,
+      brandName,
+      industry,
+      objective,
+      targetAudience,
+      priorAnswers,
+      controls
+    } = req.body;
+
+    if (!campaignTitle || !briefDescription) {
+      return res.status(400).json({ error: "Missing required campaignTitle or briefDescription" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const result = await campaignStrategyService.getDiscoveryQuestions({
+      sessionId,
+      generationId,
+      workspaceId,
+      campaignTitle,
+      briefDescription,
+      brandName,
+      industry,
+      objective,
+      targetAudience,
+      priorAnswers,
+      controls
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Error in /strategy/discovery-questions:", err);
+    return res.status(500).json({ error: err?.message || "Failed to evaluate discovery questions" });
+  }
+});
+
+// 2. Strategic Routes (Territories) Generator
+campaignRouter.post("/strategy/territories", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+
+    const {
+      sessionId = `sess_${Date.now()}`,
+      generationId = `gen_${Date.now()}`,
+      campaignTitle,
+      briefDescription,
+      brandName,
+      industry,
+      objective,
+      targetAudience,
+      discoveryAnswers,
+      controls,
+      directionVariant
+    } = req.body;
+
+    if (!campaignTitle || !briefDescription) {
+      return res.status(400).json({ error: "Missing required campaignTitle or briefDescription" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const territories = await campaignStrategyService.getTerritories({
+      sessionId,
+      generationId,
+      workspaceId,
+      campaignTitle,
+      briefDescription,
+      brandName,
+      industry,
+      objective,
+      targetAudience,
+      discoveryAnswers,
+      controls,
+      directionVariant
+    });
+
+    return res.json({ territories });
+  } catch (err: any) {
+    console.error("Error in /strategy/territories:", err);
+    return res.status(500).json({ error: err?.message || "Failed to generate strategic territories" });
+  }
+});
+
+// 3. Master Strategy Synthesis (Transactionally locks & captures 5 credits)
+campaignRouter.post("/strategy/synthesize", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+
+    const {
+      sessionId = `sess_${Date.now()}`,
+      generationId = `gen_${Date.now()}`,
+      campaignTitle,
+      briefDescription,
+      brandName,
+      industry,
+      objective,
+      targetAudience,
+      selectedTerritory,
+      discoveryAnswers,
+      language,
+      controls,
+      parentVersionId,
+      changeReason
+    } = req.body;
+
+    if (!campaignTitle || !selectedTerritory) {
+      return res.status(400).json({ error: "Missing required campaignTitle or selectedTerritory" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const result = await campaignStrategyService.synthesizeStrategy({
+      sessionId,
+      generationId,
+      workspaceId,
+      userId,
+      campaignTitle,
+      briefDescription,
+      brandName,
+      industry,
+      objective,
+      targetAudience,
+      selectedTerritory,
+      discoveryAnswers,
+      language,
+      controls,
+      parentVersionId,
+      changeReason
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Error in /strategy/synthesize:", err);
+    if (err instanceof InsufficientCreditsError || err?.status === 402 || err?.message?.includes("Insufficient credits")) {
+      return sendInsufficientCreditsResponse(res, {
+        service: "Campaign Master Strategy",
+        action: "synthesis",
+        required: err.requiredCredits || err.required || 5,
+        available: err.availableCredits ?? err.available
+      });
+    }
+    return res.status(500).json({
+      error: err?.message || "Failed to synthesize campaign strategy",
+      code: "SYNTHESIS_FAILED"
+    });
+  }
+});
+
+// 4. "Ask the Strategist" Advisory Q&A and Patch Generation
+campaignRouter.post("/strategy/ask", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+
+    const {
+      sessionId = `sess_${Date.now()}`,
+      strategyId,
+      campaignTitle,
+      currentStrategy,
+      query,
+      chatHistory
+    } = req.body;
+
+    if (!query || !currentStrategy) {
+      return res.status(400).json({ error: "Missing required query or currentStrategy payload" });
+    }
+
+    const response = await campaignStrategyService.askStrategist(sessionId, {
+      strategyId,
+      campaignTitle: campaignTitle || currentStrategy.campaignTitle,
+      currentStrategy,
+      query,
+      chatHistory
+    });
+
+    return res.json(response);
+  } catch (err: any) {
+    console.error("Error in /strategy/ask:", err);
+    return res.status(500).json({ error: err?.message || "Failed to query strategist" });
+  }
+});
+
+// 5. Apply Strategy Patch to Create v2 Snapshot
+campaignRouter.post("/strategy/apply-patch", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+
+    const { strategyId, patch, currentStrategy } = req.body;
+    if (!strategyId || !patch || !currentStrategy) {
+      return res.status(400).json({ error: "Missing required strategyId, patch, or currentStrategy" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const result = await campaignStrategyService.applyPatch({
+      strategyId,
+      patch,
+      currentStrategy,
+      userId,
+      workspaceId
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Error in /strategy/apply-patch:", err);
+    return res.status(500).json({ error: err?.message || "Failed to apply strategy patch" });
+  }
+});
+
+// 6. Strategy Stress Test Audit
+campaignRouter.post("/strategy/stress-test", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+
+    const { strategy } = req.body;
+    if (!strategy || !strategy.coreBigIdea) {
+      return res.status(400).json({ error: "Missing required strategy object" });
+    }
+
+    const report = await campaignStrategyService.runStressTest(strategy);
+    return res.json(report);
+  } catch (err: any) {
+    console.error("Error in /strategy/stress-test:", err);
+    return res.status(500).json({ error: err?.message || "Failed to stress-test strategy" });
+  }
+});
+
+// 4. Workspace Strategy Memory / History List
+campaignRouter.get("/strategy/workspace-history", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const history = await campaignRepository.listWorkspaceStrategies(workspaceId);
+    return res.json({ history });
+  } catch (err: any) {
+    console.error("Error in /strategy/workspace-history:", err);
+    return res.status(500).json({ error: err?.message || "Failed to load workspace history" });
+  }
+});
+
+// 5. Get Strategy by ID
+campaignRouter.get("/strategy/:id", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const strategy = await campaignRepository.getStrategyById(req.params.id, workspaceId);
+    if (!strategy) {
+      return res.status(404).json({ error: "Campaign strategy not found" });
+    }
+
+    return res.json({ strategy });
+  } catch (err: any) {
+    console.error("Error in /strategy/:id:", err);
+    return res.status(500).json({ error: err?.message || "Failed to load strategy" });
+  }
+});
 
 // Cohesive campaign prompt generation endpoint using Google GenAI
 campaignRouter.post("/prompts", async (req, res) => {
@@ -223,6 +533,14 @@ campaignRouter.post("/render", async (req, res) => {
     });
   } catch (e: any) {
     console.error("Error rendering creative asset image:", e);
+    if (e.status === 402 || e.code === "INSUFFICIENT_CREDITS" || e.message?.includes("Insufficient credits")) {
+      return sendInsufficientCreditsResponse(res, {
+        service: "Campaign Deck Visual",
+        action: "image_render",
+        required: e.required || 3,
+        available: e.available
+      });
+    }
     const status = e.status || 500;
     return res.status(status).json({
       error: e.message || "Failed to render asset image",

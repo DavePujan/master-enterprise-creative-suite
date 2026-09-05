@@ -11,6 +11,7 @@ import { textAutoWriteService } from "./textAutoWriteService.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import type { NormalizedTextRequest, TextTask } from "@shared-types/textGeneration.js";
 import type { TextAutoWriteRequest, CaptionEmotion } from "@shared-types/textAutoWrite.js";
+import { sendInsufficientCreditsResponse } from "../billing/billingErrorUtils.js";
 
 export const textRouter = Router();
 
@@ -92,6 +93,14 @@ textRouter.post("/generate", async (req, res) => {
     const result = await textGenerationService.generateText(request, workspaceId, userId, idempotencyKey);
     return res.json(result);
   } catch (err: any) {
+    if (err.status === 402 || err.code === "INSUFFICIENT_CREDITS" || err.message?.includes("Insufficient credits")) {
+      return sendInsufficientCreditsResponse(res, {
+        service: "Copywriting & Content",
+        action: request.task,
+        required: err.required || 1,
+        available: err.available
+      });
+    }
     const status = err.status || 500;
     return res.status(status).json({
       error: err.message || "Text generation failed.",
@@ -231,17 +240,28 @@ textRouter.post("/autowrite", async (req, res) => {
       idempotencyKey: req.headers["x-idempotency-key"] as string || body.idempotencyKey,
     };
 
+    const workspaceId =
+      user.workspaceId || (await workspaceRepository.ensurePersonalWorkspace(user.uid, user.email || ""));
+
     const result = await textAutoWriteService.generateAutoWriteIdea(
       autowriteReq,
       {
         userId: user.uid,
-        workspaceId: user.workspaceId,
+        workspaceId,
       }
     );
 
     return res.status(200).json(result);
   } catch (err: any) {
     console.error("[TextRouter /autowrite] Error:", err);
+    if (err.statusCode === 402 || err.code === "INSUFFICIENT_CREDITS" || err.message?.includes("Insufficient credits")) {
+      return sendInsufficientCreditsResponse(res, {
+        service: "Copywriting & Content",
+        action: "autowrite",
+        required: err.requiredCredits || 1,
+        available: err.availableCredits
+      });
+    }
     return res.status(err.statusCode || err.status || 500).json({
       error: err.message || "Failed to generate Auto-Write caption concept.",
       code: err.code || "TEXT_AUTOWRITE_FAILED",

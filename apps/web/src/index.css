@@ -187,3 +187,77 @@ body {
   @apply my-10 border-slate-200 dark:border-slate-800;
 }
 
+/* Hide scrollbar while retaining scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==========================================================================
+   Custom Modern Scrollbars (Tailored to Writopedia / Brand Palette)
+   ========================================================================== */
+
+/* Standard CSS (Firefox / Chromium Modern) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.25) transparent;
+}
+
+.dark * {
+  scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
+}
+
+/* WebKit / Chromium / Edge / Brave / Safari */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Light Theme Scrollbar Thumb */
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.25);
+  border-radius: 9999px;
+  transition: background-color 0.2s ease-in-out;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.45);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--color-rose-600, #dd1a46);
+}
+
+/* Dark Theme Scrollbar Thumb */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(221, 26, 70, 0.45); /* Subtle Crimson/Rose Hover Glow */
+}
+
+.dark ::-webkit-scrollbar-thumb:active {
+  background: var(--color-rose-500, #e52c4d);
+}
+
+/* Corner for dual scrollbars */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+

@@ -10,6 +10,7 @@ import { audioGenerationService } from "./audioGenerationService.js";
 import { audioAutoWriteService } from "./audioAutoWriteService.js";
 import type { AudioGenerationRequest } from "../../../../../packages/types/audioGeneration.js";
 import type { AudioAutoWriteRequest } from "../../../../../packages/types/audioAutoWrite.js";
+import { sendInsufficientCreditsResponse } from "../billing/billingErrorUtils.js";
 
 export const audioRouter = Router();
 
@@ -54,6 +55,19 @@ audioRouter.post("/generate", async (req, res) => {
     return res.status(200).json(result);
   } catch (err: any) {
     console.error("Audio generation route error:", err?.message || err);
+    if (err?.statusCode === 402 || err?.code === "INSUFFICIENT_CREDITS" || err?.message?.includes("Insufficient credits")) {
+      const isVoice = payload.generationType === "voiceover";
+      const isClip = !isVoice && (payload as any).mode === "clip";
+      const serviceTitle = isVoice 
+        ? "Voiceover (TTS)" 
+        : (isClip ? "Music Clip" : "Music Pro (Full Track)");
+      return sendInsufficientCreditsResponse(res, {
+        service: serviceTitle,
+        action: payload.generationType,
+        required: err.requiredCredits || (isVoice ? 2 : (isClip ? 3 : 5)),
+        available: err.availableCredits ?? err.available
+      });
+    }
     const statusCode =
       typeof err?.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 600
         ? err.statusCode
@@ -91,6 +105,14 @@ audioRouter.post("/autowrite", async (req, res) => {
     return res.status(200).json(result);
   } catch (err: any) {
     console.error("Audio autowrite route error:", err?.message || err);
+    if (err?.statusCode === 402 || err?.code === "INSUFFICIENT_CREDITS" || err?.message?.includes("Insufficient credits")) {
+      return sendInsufficientCreditsResponse(res, {
+        service: "Audio Auto-Write",
+        action: "autowrite",
+        required: err.requiredCredits || 1,
+        available: err.availableCredits ?? err.available
+      });
+    }
     const statusCode =
       typeof err?.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 600
         ? err.statusCode

@@ -11,6 +11,8 @@ import {
   Coins
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useCreditGate } from '../context/CreditGateContext.js';
+import { findRecommendedCreditPack } from '@shared-types/billing.js';
 
 interface CreditTopUpProps {
   credits?: number;
@@ -32,9 +34,13 @@ const loadRazorpayScript = () => {
 };
 
 export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredits, user, onLogin }) => {
+  const { returnContext, returnToGem, handleTopUpFulfillment } = useCreditGate();
   const [currency, setCurrency] = useState<'INR' | 'USD'>('USD');
   const [currencySource, setCurrencySource] = useState<string>('default'); // 'timezone', 'ipapi', 'ip-api', 'manual'
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
+
+  const missingGap = returnContext?.requiredCredits ? Math.max(0, returnContext.requiredCredits - credits) : 0;
+  const recommendedPack = missingGap > 0 ? findRecommendedCreditPack(missingGap) : null;
   
   // Auto detect location logic on mount (same logic as EnterprisePlan)
   React.useEffect(() => {
@@ -263,6 +269,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
             if (setCredits) {
               setCredits(prev => prev + plan.rawCredits);
             }
+            handleTopUpFulfillment(plan.rawCredits);
             return;
           }
 
@@ -296,6 +303,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
           if (setCredits) {
             setCredits(prev => prev + granted);
           }
+          handleTopUpFulfillment(granted, verifyData.newBalance);
         } catch (err: any) {
           setPaymentStatus({
             status: 'failed',
@@ -471,15 +479,47 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
 
                   <div className="flex justify-end gap-2 pt-2">
                     <button
-                      onClick={() => setPaymentStatus({ status: 'idle' })}
+                      onClick={() => {
+                        setPaymentStatus({ status: 'idle' });
+                        if (returnContext) {
+                          returnToGem();
+                        }
+                      }}
                       className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 hover:scale-[1.01] active:scale-[0.99] text-white text-xs uppercase font-extrabold tracking-wider rounded transition-all shadow-md cursor-pointer"
                     >
-                      Resume Workspace
+                      {returnContext ? `Return to ${returnContext.serviceName || 'Generator'}` : 'Resume Workspace'}
                     </button>
                   </div>
                 </div>
               )}
             </motion.div>
+          </div>
+        )}
+
+        {/* Page-Aware Context Banner if navigated via Credit Gate */}
+        {returnContext && (
+          <div className="max-w-4xl mx-auto p-4 rounded-xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-left shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0">
+                <Sparkles size={18} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-900 dark:text-white">
+                  Continue your generation: <span className="text-rose-600 dark:text-rose-400">{returnContext.serviceName}</span>
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Required: <strong>{returnContext.requiredCredits} credits</strong> (balance: {credits} credits).
+                  {missingGap > 0 ? ` You need ${missingGap} more credits.` : ' You now have sufficient credits!'}
+                  {recommendedPack ? ` Smallest pack: ${recommendedPack.name} (${recommendedPack.credits} credits).` : ''}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={returnToGem}
+              className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md transition-all shadow-xs shrink-0 cursor-pointer"
+            >
+              ← Return to Gem
+            </button>
           </div>
         )}
 

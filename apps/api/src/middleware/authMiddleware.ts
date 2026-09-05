@@ -15,7 +15,7 @@ declare global {
   }
 }
 
-// Explicitly allowlisted public endpoints (landing, sales inquiry, safe media proxy)
+// Explicitly allowlisted public endpoints (landing, sales inquiry, safe media proxy, health probes)
 const PUBLIC_ROUTE_PREFIXES = [
   "/api/contact-sales",
   "/api/proxy",
@@ -23,6 +23,8 @@ const PUBLIC_ROUTE_PREFIXES = [
   "/contact-sales",
   "/proxy",
   "/proxy-image",
+  "/api/presentation/health",
+  "/presentation/health",
 ];
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {

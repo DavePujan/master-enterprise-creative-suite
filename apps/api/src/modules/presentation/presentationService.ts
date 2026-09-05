@@ -1,14 +1,22 @@
 /**
- * Presentation Service.
- * Orchestrates planning, compilation, version commits, asset lifecycle, and background exports.
+ * Presentation Domain Service.
+ * Business orchestration layer for presentation generation, versioning, persistence,
+ * and server-side export jobs.
+ * Enforces transactional credit holds, atomic capture on success, and automatic release on failure.
  */
 
+import {
+  PresentationDocument,
+  PresentationTheme,
+  validatePresentationDocument
+} from '@presentation-engine/index.js';
 import { creditService } from '../../services/creditService.js';
+import { presentationRepository, ExportJobRecord } from './presentationRepository.js';
 import { planPresentationStrategy } from './presentationPlanner.js';
 import { compilePresentationContent } from './presentationContentCompiler.js';
-import { presentationRepository, ExportJobRecord } from './presentationRepository.js';
 import { processExportJobAsync } from './jobs/exportJobQueue.js';
-import { PresentationDocument, validatePresentationDocument } from '@presentation-engine/index.js';
+import { PresentationPolicyName } from './presentationModelResolver.js';
+import { PresentationError } from './presentationError.js';
 
 export interface GeneratePresentationParams {
   prompt: string;
@@ -18,16 +26,19 @@ export interface GeneratePresentationParams {
   logoAssetId?: string;
   targetSlideCount?: number;
   productContext?: any;
-  customTheme?: any;
+  customTheme?: Partial<PresentationTheme>;
+  generationId?: string;
+  policyName?: PresentationPolicyName;
 }
 
 export class PresentationService {
   /**
-   * Generates a complete executive presentation using 2-stage AI planning and the layout engine.
+   * Generates a complete presentation document via 2-stage planning and layout compilation.
+   * Transactionally reserved with creditService.
    */
   async generatePresentation(
     params: GeneratePresentationParams
-  ): Promise<{ document: PresentationDocument; newBalance?: number }> {
+  ): Promise<{ document: PresentationDocument; newBalance?: number; generationId: string }> {
     const {
       prompt,
       workspaceId,
@@ -36,19 +47,34 @@ export class PresentationService {
       logoAssetId,
       targetSlideCount,
       productContext,
-      customTheme
+      customTheme,
+      policyName
     } = params;
 
-    // 1. Credit reservation (5 credits for Corporate Presentation generation)
-    const clientKey = `pres_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const generationId =
+      params.generationId || `pres_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    // 1. Transactional Credit reservation (5 credits for Corporate Presentation generation)
+    // Keyed by generationId for strict idempotency
     const reservation = await creditService.reserveCredits({
       workspaceId,
       userId,
       amount: 5,
-      referenceId: clientKey,
+      referenceId: generationId,
       description: `Corporate Presentation Generation: ${prompt.slice(0, 40)}`,
-      idempotencyKey: `hold_${clientKey}`
+      idempotencyKey: `hold_${generationId}`
     });
+
+    if (!reservation.success) {
+      throw new PresentationError({
+        message: reservation.error || 'Insufficient credits for presentation generation.',
+        status: 402,
+        code: 'INSUFFICIENT_CREDITS',
+        kind: 'AUTH',
+        retryable: false,
+        details: { available: reservation.available, required: 5 }
+      });
+    }
 
     try {
       // 2. Stage 1 Strategy Planning
@@ -56,7 +82,9 @@ export class PresentationService {
         prompt,
         brandGuidelines,
         targetSlideCount,
-        productContext
+        productContext,
+        generationId,
+        policyName
       });
 
       // 3. Stage 2 Content Compilation & Layout Engine Execution
@@ -64,23 +92,34 @@ export class PresentationService {
         plan: strategyPlan,
         brandGuidelines,
         logoAssetId,
-        customTheme
+        customTheme,
+        generationId,
+        policyName
       });
 
       // 4. Persistence in Supabase DB & Storage
       const savedDoc = await presentationRepository.createPresentation(document, workspaceId, userId);
 
-      // 5. Commit credit deduction
+      // 5. Commit credit deduction (settle hold to credit_ledger)
       let newBalance: number | undefined;
-      if (reservation) {
-        const captureResult = await creditService.captureCredits(reservation.holdId, `cap_${clientKey}`);
+      if (reservation.holdId) {
+        const captureResult = await creditService.captureCredits(
+          reservation.holdId,
+          `cap_${generationId}`
+        );
         newBalance = captureResult?.newBalance;
       }
 
-      return { document: savedDoc, newBalance };
-    } catch (err) {
-      if (reservation) {
-        await creditService.releaseCredits(reservation.holdId, 'Presentation generation failed');
+      return { document: savedDoc, newBalance, generationId };
+    } catch (err: any) {
+      // Release credit hold immediately on failure
+      if (reservation.holdId) {
+        await creditService.releaseCredits(
+          reservation.holdId,
+          err?.message || 'Presentation generation failed'
+        ).catch((relErr) => {
+          console.error('[PresentationService] Failed to release credit hold:', relErr);
+        });
       }
       throw err;
     }

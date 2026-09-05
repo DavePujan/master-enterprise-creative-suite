@@ -1,5 +1,5 @@
-import React from 'react';
-import { Sparkles, Layers, Image as ImageIcon, Video as VideoIcon, FileText, LayoutDashboard, Presentation, Target, BookOpen, Volume2, Music } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Layers, Image as ImageIcon, Video as VideoIcon, FileText, LayoutDashboard, Presentation, Target, BookOpen, Volume2, Music, Check } from 'lucide-react';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import type { CapabilityDetail } from '@shared-types/imageGeneration.js';
@@ -203,6 +203,91 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
     handleGenerate
   } = props;
 
+  // Check for staged campaign strategy briefs
+  const [stagedBrief, setStagedBrief] = useState<any | null>(null);
+  const [stagedCampaignTitle, setStagedCampaignTitle] = useState<string>('');
+  const [isStagedDismissed, setIsStagedDismissed] = useState(false);
+  const [isBriefApplied, setIsBriefApplied] = useState(false);
+
+  useEffect(() => {
+    try {
+      const campaignTitle = localStorage.getItem('staged_campaign_title') || '';
+      setStagedCampaignTitle(campaignTitle);
+      setIsStagedDismissed(false);
+      setIsBriefApplied(false);
+
+      let rawBrief: string | null = null;
+      if (selectedGem?.type === 'text') {
+        rawBrief = localStorage.getItem('staged_text_brief');
+      } else if (selectedGem?.type === 'image') {
+        rawBrief = localStorage.getItem('staged_image_brief');
+      } else if (selectedGem?.type === 'video') {
+        rawBrief = localStorage.getItem('staged_video_brief');
+      } else if (selectedGem?.type === 'audio') {
+        rawBrief = localStorage.getItem('staged_audio_brief');
+      } else if (selectedGem?.id === 'corporate-presentations' || selectedGem?.type === 'slideshow') {
+        rawBrief = localStorage.getItem('staged_deck_brief');
+      }
+
+      if (rawBrief) {
+        const parsed = JSON.parse(rawBrief);
+        setStagedBrief(parsed);
+      } else {
+        setStagedBrief(null);
+      }
+    } catch (e) {
+      console.warn('Error reading staged brief:', e);
+      setStagedBrief(null);
+    }
+  }, [selectedGem?.id, selectedGem?.type]);
+
+  const handleApplyStagedBrief = () => {
+    if (!stagedBrief) return;
+
+    if (selectedGem.type === 'text') {
+      const p = stagedBrief.suggestedPrompt || `${stagedBrief.coreHook}\n\nAngle: ${stagedBrief.angle}\nTone: ${stagedBrief.tone}\nCTA: ${stagedBrief.callToAction}`;
+      props.setPrompt(p);
+    } else if (selectedGem.type === 'image') {
+      if (stagedBrief.prompt || stagedBrief.textlessPrompt) {
+        props.setPrompt(stagedBrief.prompt || stagedBrief.textlessPrompt);
+      }
+      if (stagedBrief.aspectRatio || stagedBrief.aspectRatios?.[0]) {
+        props.setAspectRatio(stagedBrief.aspectRatio || stagedBrief.aspectRatios[0]);
+      }
+    } else if (selectedGem.type === 'video') {
+      if (stagedBrief.prompt || stagedBrief.textlessPrompt) {
+        props.setPrompt(stagedBrief.prompt || stagedBrief.textlessPrompt);
+      }
+      if (stagedBrief.aspectRatio) {
+        props.setAspectRatio(stagedBrief.aspectRatio);
+      }
+    } else if (selectedGem.type === 'audio') {
+      if (stagedBrief.prompt || stagedBrief.spokenScriptText || stagedBrief.scriptIntent) {
+        props.setPrompt(stagedBrief.prompt || stagedBrief.spokenScriptText || stagedBrief.scriptIntent);
+      }
+      if (props.setAudioGenerationType) {
+        props.setAudioGenerationType('voiceover');
+      }
+      if (props.setSelectedLanguage && stagedBrief.language) {
+        props.setSelectedLanguage(stagedBrief.language);
+      }
+      if (props.setMusicMood && (stagedBrief.musicMood || stagedBrief.mood)) {
+        props.setMusicMood(stagedBrief.musicMood || stagedBrief.mood);
+      }
+    } else if (selectedGem.id === 'corporate-presentations' || selectedGem.type === 'slideshow') {
+      const slides = stagedBrief.slides || [];
+      const deckPrompt = `Create a ${slides.length > 0 ? `${slides.length}-slide ` : ''}corporate presentation for: ${stagedBrief.campaignTitle || stagedCampaignTitle}.\n` +
+        (slides.length > 0 ? `Key Slides: ${slides.map((s: any) => `${s.slideNumber || ''}. ${s.slideTitle || ''}`).join(', ')}` : '');
+      props.setPrompt(deckPrompt);
+    }
+
+    setIsBriefApplied(true);
+  };
+
+  const handleDismissStagedBrief = () => {
+    setIsStagedDismissed(true);
+  };
+
   const getIcon = (iconName: string) => {
     switch (iconName) {
       case 'Image': return <ImageIcon size={20} />;
@@ -221,6 +306,62 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
 
   return (
     <>
+      {/* Staged Campaign Brief Banner */}
+      {stagedBrief && !isStagedDismissed && (
+        <div className="bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-500/20 rounded-md p-3.5 mb-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs text-left">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-md shrink-0 mt-0.5">
+              <Sparkles size={16} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-900 dark:text-white">
+                  Staged from Campaign Strategist:
+                </span>
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                  {stagedBrief.campaignTitle || stagedCampaignTitle || 'Active Campaign'}
+                </span>
+                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold rounded">
+                  {selectedGem.type} brief ready
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-1 mt-0.5">
+                {stagedBrief.visualConcept || stagedBrief.coreHook || stagedBrief.sceneDescription || stagedBrief.scriptIntent || stagedBrief.summary || 'Deterministic brief ready for production.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-end">
+            <button
+              type="button"
+              onClick={handleApplyStagedBrief}
+              disabled={isBriefApplied}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded shadow-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+                isBriefApplied
+                  ? 'bg-emerald-600 text-white cursor-default'
+                  : 'bg-rose-600 hover:bg-rose-700 text-white'
+              }`}
+            >
+              {isBriefApplied ? (
+                <>
+                  <Check size={13} /> Applied to Prompt
+                </>
+              ) : (
+                <>
+                  <Sparkles size={13} /> Apply to Prompt
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleDismissStagedBrief}
+              className="px-2.5 py-1.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Gem Header */}
       <div className="space-y-2 pb-1 text-left">
         <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">

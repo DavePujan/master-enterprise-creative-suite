@@ -28,6 +28,7 @@ import type { BrandGuidelines } from '@shared-types/brand.js';
 import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
 import { resizeImageIfNeeded, compressBase64Image } from '@utils/image.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
+import { triggerGlobalCreditGate } from '@web/features/billing/context/CreditGateContext.js';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuth } from '@web/features/auth/hooks/useAuth.js';
@@ -316,6 +317,15 @@ export function CampaignDeckWorkspace({
           setAssetStatuses(prev => ({ ...prev, [role]: 'success' }));
         } catch (err: any) {
           console.error(`Asset rendering error [${role}]:`, err);
+
+          if (err?.status === 402 || err?.code === 'INSUFFICIENT_CREDITS' || err?.message?.includes('Insufficient credits')) {
+            triggerGlobalCreditGate({
+              service: 'Visual Asset Render',
+              action: 'render',
+              requiredCredits: err?.data?.requiredCredits || err?.requiredCredits || 2,
+              availableCredits: err?.data?.availableCredits
+            });
+          }
           
           setCampaign(prev => {
             if (!prev) return prev;
@@ -426,6 +436,14 @@ export function CampaignDeckWorkspace({
       setRefinementRole(null);
     } catch (err: any) {
       console.error(err);
+      if (err?.status === 402 || err?.code === 'INSUFFICIENT_CREDITS' || err?.message?.includes('Insufficient credits')) {
+        triggerGlobalCreditGate({
+          service: 'Visual Asset Render',
+          action: 'render',
+          requiredCredits: err?.data?.requiredCredits || err?.requiredCredits || 2,
+          availableCredits: err?.data?.availableCredits
+        });
+      }
       setCampaign(prev => {
         if (!prev) return prev;
         const updated = { ...prev.assets };
