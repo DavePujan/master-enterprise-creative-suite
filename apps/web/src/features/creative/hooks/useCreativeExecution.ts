@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
-import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, GENERIC_GEMS } from '@web/infrastructure/ai/modelRegistry.js';
+import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, GENERIC_GEMS, getVideoModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
 import { generateCreative, generateImage, generateTTS, pollVideo } from '@web/infrastructure/ai/geminiService.js';
 import { getQuotaErrorMessage } from '@web/infrastructure/ai/geminiClient.js';
 import { loadPreferences, savePreferences } from '@web/lib/preferences.js';
 import { downloadFile } from '@web/lib/utils.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
 import { presentationClient } from '@web/features/slideshow/services/presentationClient.js';
+import { videoClient } from '@web/features/video/services/videoClient.js';
 import { triggerGlobalCreditGate } from '@web/features/billing/context/CreditGateContext.js';
 
 export interface GemExecutionState {
@@ -20,7 +21,12 @@ export interface GemExecutionState {
   selectedModel: string;
   aspectRatio: string;
   videoDuration: string;
+  videoResolution: '720p' | '1080p' | '4k';
+  videoAudioIntent: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape';
+  videoNativeAudio: boolean;
   videoShotType: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
+  videoReferences: Array<{ id: string; type: string; name: string; data: string; role?: string }>;
+  klingElements: Array<{ id: string; tag: string; name: string; data: string }>;
   imageStyle: string;
   voiceEmotion: 'Neutral' | 'Cheerful' | 'Energetic' | 'Professional' | 'Calming' | 'Dramatic';
   selectedVoice: string;
@@ -58,16 +64,18 @@ export interface GemExecutionState {
 export const getDefaultGemState = (gem: Gem, guidelines?: BrandGuidelines): GemExecutionState => {
   let defaultModel = 'gemini-2.5-flash';
   let defaultAspectRatio = '1:1';
-  let defaultDuration = '7s';
+  let defaultDuration = '8s';
+  let defaultResolution: '720p' | '1080p' | '4k' = '1080p';
   let defaultShotType: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling' = 'Single Shot';
 
   if (gem.type === 'image') {
     defaultModel = IMAGE_MODELS[0]?.id || 'gemini-2.5-flash-image';
     defaultAspectRatio = loadPreferences().aspectRatio || '1:1';
   } else if (gem.type === 'video') {
-    defaultModel = VIDEO_MODELS[0]?.id || 'veo-3.1-generate-preview';
+    defaultModel = VIDEO_MODELS[0]?.id || 'google-omni';
     defaultAspectRatio = '16:9';
-    defaultDuration = '7s';
+    defaultDuration = '8s';
+    defaultResolution = '1080p';
     defaultShotType = 'Single Shot';
   } else if (gem.type === 'text' || gem.type === 'campaign' || gem.type === 'slideshow' || gem.type === 'storyline') {
     defaultModel = TEXT_MODELS[0]?.id || 'gemini-2.5-flash';
@@ -105,7 +113,12 @@ export const getDefaultGemState = (gem: Gem, guidelines?: BrandGuidelines): GemE
     selectedModel: defaultModel,
     aspectRatio: defaultAspectRatio,
     videoDuration: defaultDuration,
+    videoResolution: defaultResolution,
+    videoAudioIntent: 'ambient',
+    videoNativeAudio: true,
     videoShotType: defaultShotType,
+    videoReferences: [],
+    klingElements: [],
     imageStyle: 'Photorealistic, 8k resolution',
     voiceEmotion: 'Professional',
     selectedVoice: loadPreferences().audioVoice || 'Kore',
@@ -268,7 +281,18 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
   }, [updateActiveState]);
   const setSelectedModel = useCallback((val: string) => updateActiveState({ selectedModel: val }), [updateActiveState]);
   const setVideoDuration = useCallback((val: string) => updateActiveState({ videoDuration: val }), [updateActiveState]);
+  const setVideoResolution = useCallback((val: '720p' | '1080p' | '4k') => updateActiveState({ videoResolution: val }), [updateActiveState]);
+  const setVideoAudioIntent = useCallback((val: any) => updateActiveState({ videoAudioIntent: val }), [updateActiveState]);
+  const setVideoNativeAudio = useCallback((val: boolean) => updateActiveState({ videoNativeAudio: val }), [updateActiveState]);
   const setVideoShotType = useCallback((val: any) => updateActiveState({ videoShotType: val }), [updateActiveState]);
+  const setVideoReferences = useCallback(
+    (val: any) => updateActiveState(prev => ({ videoReferences: typeof val === 'function' ? val(prev.videoReferences) : val })),
+    [updateActiveState]
+  );
+  const setKlingElements = useCallback(
+    (val: any) => updateActiveState(prev => ({ klingElements: typeof val === 'function' ? val(prev.klingElements) : val })),
+    [updateActiveState]
+  );
   const setImageStyle = useCallback((val: string) => updateActiveState({ imageStyle: val }), [updateActiveState]);
   const setVoiceEmotion = useCallback((val: any) => updateActiveState({ voiceEmotion: val }), [updateActiveState]);
   const setSelectedVoice = useCallback((val: string) => {
@@ -408,6 +432,65 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     pollIntervalsRef.current.set(gemId, interval);
   }, [addToHistory, saveAsset, updateGemState]);
 
+  // Video Job Polling Gateway for Dedicated Video Pipeline
+  const startVideoJobPolling = useCallback((jobId: string, originalGemId?: string, originalPrompt?: string) => {
+    const gemId = originalGemId || selectedGemRef.current.id;
+
+    if (pollIntervalsRef.current.has(gemId)) {
+      clearInterval(pollIntervalsRef.current.get(gemId)!);
+      pollIntervalsRef.current.delete(gemId);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await videoClient.getJobStatus(jobId);
+        if (res?.job?.status === 'completed') {
+          clearInterval(interval);
+          pollIntervalsRef.current.delete(gemId);
+          const videoUrl = res.job.outputUrl || (res.job as any).resultUrl || '';
+          const resultObj = {
+            type: 'video',
+            data: videoUrl,
+            jobId: res.job.jobId || (res.job as any).id,
+            interactionId: res.job.interactionId
+          };
+          addToHistory(resultObj, gemId, originalPrompt);
+          if (saveAsset && videoUrl) {
+            saveAsset(`Video: ${originalPrompt?.slice(0, 20) || 'Creative Render'}`, videoUrl, 'video');
+          }
+          updateGemState(gemId, {
+            result: resultObj,
+            videoStatus: '',
+            isGenerating: false,
+          });
+        } else if (res?.job?.status === 'failed') {
+          clearInterval(interval);
+          pollIntervalsRef.current.delete(gemId);
+          updateGemState(gemId, {
+            videoStatus: '',
+            isGenerating: false,
+            error: res.job.error || 'Video generation failed.'
+          });
+        } else {
+          updateGemState(gemId, {
+            videoStatus: 'Generating video with AI... This may take a few moments.'
+          });
+        }
+      } catch (err) {
+        console.error(`Video job polling error for gem ${gemId}:`, err);
+        clearInterval(interval);
+        pollIntervalsRef.current.delete(gemId);
+        updateGemState(gemId, {
+          videoStatus: '',
+          isGenerating: false,
+          error: 'Failed to poll video generation progress.'
+        });
+      }
+    }, 4000);
+
+    pollIntervalsRef.current.set(gemId, interval);
+  }, [addToHistory, saveAsset, updateGemState]);
+
   // Main Execution Routine: Isolated per Target Gem
   const executeGenerate = async (targetGemOverride?: Gem) => {
     const targetGem = targetGemOverride || selectedGemRef.current;
@@ -482,6 +565,7 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
       // 2. Perform generation
       let res: any;
       const isCorporate = targetGem.id === 'corporate-presentations';
+      const isVideoGem = targetGem.type === 'video' || targetGem.id === 'cinematic-video';
 
       if (isCorporate) {
         const presResult = await presentationClient.generatePresentation({
@@ -498,6 +582,77 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
           document: presResult.document,
           data: presResult.document.slides,
           newBalance: presResult.newBalance
+        };
+      } else if (isVideoGem) {
+        const vCaps = getVideoModelCapabilities(currentTargetState.selectedModel);
+        const durationRaw = currentTargetState.videoDuration || '8s';
+        const videoDurationSec = durationRaw === 'auto' ? 'auto' : (parseInt(durationRaw, 10) || 8);
+
+        let videoAspect = currentTargetState.aspectRatio;
+        if (!vCaps.aspectRatios.includes(videoAspect) && !vCaps.aspectRatios.includes('auto')) {
+          videoAspect = vCaps.aspectRatios[0] || '16:9';
+        }
+
+        // Determine creation mode
+        let creationMode: any = 'text_to_video';
+        if (currentTargetState.videoShotType === 'Multi-Shot Sequence' && vCaps.supportsMultiShot) {
+          creationMode = 'multi_shot';
+        } else if (vCaps.supportsFirstFrame && currentTargetState.firstFrameContext?.data) {
+          creationMode = 'image_to_video';
+        } else if (vCaps.supportsReferences && (currentTargetState.videoReferences?.length || currentTargetState.ingredientsContexts?.length)) {
+          creationMode = 'reference_to_video';
+        }
+
+        // Build references array (combining dedicated videoReferences and ingredientsContexts)
+        const references: any[] = [];
+        if (currentTargetState.videoReferences && currentTargetState.videoReferences.length > 0) {
+          currentTargetState.videoReferences.forEach((r, idx) => {
+            references.push({
+              assetId: r.data || r.id,
+              type: r.type || 'product',
+              label: r.name || `Reference ${idx + 1}`
+            });
+          });
+        }
+        if (currentTargetState.ingredientsContexts && currentTargetState.ingredientsContexts.length > 0) {
+          currentTargetState.ingredientsContexts.forEach((ing, idx) => {
+            references.push({
+              assetId: ing.data || ing.id,
+              type: 'product',
+              label: ing.name || `Ingredient ${idx + 1}`
+            });
+          });
+        }
+
+        const videoResult = await videoClient.generateVideo({
+          mode: creationMode,
+          prompt: fullPrompt,
+          selectedEngine: currentTargetState.selectedModel as any,
+          aspectRatio: videoAspect as any,
+          durationSeconds: videoDurationSec,
+          resolution: currentTargetState.videoResolution || (vCaps.supportedResolutions.includes('1080p') ? '1080p' : '720p'),
+          startFrameAssetId: vCaps.supportsFirstFrame ? currentTargetState.firstFrameContext?.data : undefined,
+          endFrameAssetId: vCaps.supportsLastFrame ? currentTargetState.lastFrameContext?.data : undefined,
+          references: references.length > 0 ? references : undefined,
+          audioIntent: currentTargetState.videoAudioIntent || 'ambient',
+          generateAudio: vCaps.supportsAudio && currentTargetState.videoNativeAudio !== false,
+          previousInteractionId: currentTargetState.result?.interactionId || currentTargetState.result?.jobId,
+          ...({
+            shotType: currentTargetState.videoShotType,
+            guidelines: brandGuidelines,
+            productContext: currentTargetState.productContext,
+            faceContext: currentTargetState.faceContext,
+            firstFrameContext: currentTargetState.firstFrameContext,
+            lastFrameContext: currentTargetState.lastFrameContext,
+            ingredientsContexts: currentTargetState.ingredientsContexts,
+            klingElements: currentTargetState.klingElements
+          } as any)
+        });
+
+        res = {
+          type: 'video_job',
+          job: videoResult.job,
+          newBalance: (videoResult as any).newBalance
         };
       } else {
         res = await generateCreative(targetGem, fullPrompt, {
@@ -532,7 +687,34 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         .catch(() => {});
 
       // 4. Handle output according to result type
-      if (res?.type === 'video_op') {
+      if (res?.type === 'video_job') {
+        const job = res.job;
+        const resolvedJobId = job.jobId || (job as any).id;
+        const finalUrl = job.outputUrl || (job as any).resultUrl;
+        if (job?.status === 'completed' && finalUrl) {
+          const videoRes = {
+            type: 'video',
+            data: finalUrl,
+            jobId: resolvedJobId,
+            interactionId: job.interactionId
+          };
+          addToHistory(videoRes, targetGemId, fullPrompt);
+          if (saveAsset) {
+            saveAsset(`Video: ${fullPrompt.slice(0, 20)}`, finalUrl, 'video');
+          }
+          updateGemState(targetGemId, {
+            result: videoRes,
+            videoStatus: '',
+            isGenerating: false
+          });
+        } else {
+          updateGemState(targetGemId, {
+            result: null,
+            videoStatus: 'Generating video with AI... This may take a few moments.'
+          });
+          startVideoJobPolling(resolvedJobId, targetGemId, fullPrompt);
+        }
+      } else if (res?.type === 'video_op') {
         updateGemState(targetGemId, {
           result: null,
           videoStatus: 'Generating video... This may take a few minutes.'
@@ -675,8 +857,10 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
 
         // Derive user-friendly fine-grained service title
         let serviceTitle = payload.service || targetGem.name;
-        if (targetGem.type === 'video') {
-          serviceTitle = 'Video Generation';
+        if (targetGem.type === 'video' || targetGem.id === 'cinematic-video') {
+          const modelId = currentTargetState.selectedModel || '';
+          const vModel = VIDEO_MODELS.find(m => m.id === modelId);
+          serviceTitle = vModel?.name ? `Video (${vModel.name})` : 'Video Generation';
         } else if (targetGem.type === 'image') {
           const modelId = currentTargetState.selectedModel || '';
           serviceTitle = modelId.includes('pro') || modelId.includes('dev') 
@@ -1023,8 +1207,18 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     setSelectedModel,
     videoDuration: activeState.videoDuration,
     setVideoDuration,
+    videoResolution: activeState.videoResolution || '1080p',
+    setVideoResolution,
+    videoAudioIntent: activeState.videoAudioIntent || 'ambient',
+    setVideoAudioIntent,
+    videoNativeAudio: activeState.videoNativeAudio !== false,
+    setVideoNativeAudio,
     videoShotType: activeState.videoShotType,
     setVideoShotType,
+    videoReferences: activeState.videoReferences || [],
+    setVideoReferences,
+    klingElements: activeState.klingElements || [],
+    setKlingElements,
     imageStyle: activeState.imageStyle,
     setImageStyle,
     voiceEmotion: activeState.voiceEmotion,
@@ -1094,6 +1288,34 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     handleRefineWithAI,
     getBrandStyles,
     handleGenerate,
+    executeVideoEdit: async (editInstruction: string) => {
+      const targetGem = selectedGemRef.current;
+      const targetGemId = targetGem.id;
+      const currentTargetState = gemStates[targetGemId] || getDefaultGemState(targetGem, brandGuidelines);
+      const lastResult = currentTargetState.result;
+      const parentJobId = lastResult?.jobId;
+
+      if (!editInstruction.trim() || !parentJobId) return;
+
+      updateGemState(targetGemId, {
+        isGenerating: true,
+        videoStatus: 'Applying conversational edit with Google Omni...'
+      });
+
+      try {
+        const res = await videoClient.editVideo(parentJobId, editInstruction);
+        const job = res.job;
+        const resolvedJobId = job.jobId || (job as any).id;
+        startVideoJobPolling(resolvedJobId, targetGemId, editInstruction);
+      } catch (err: any) {
+        console.error('Video edit execution error:', err);
+        updateGemState(targetGemId, {
+          isGenerating: false,
+          videoStatus: '',
+          error: err.message || 'Failed to dispatch video edit.'
+        });
+      }
+    },
     ttsError: activeState.ttsError,
     setTtsError: (err: string | null) => updateActiveState({ ttsError: err }),
     handleTTS,

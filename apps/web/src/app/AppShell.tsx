@@ -69,6 +69,18 @@ export interface AppShellProps {
   setSelectedModel: (model: string) => void;
   videoShotType: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
   setVideoShotType: (type: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling') => void;
+  videoDuration: string;
+  setVideoDuration: (duration: string) => void;
+  videoResolution: '720p' | '1080p' | '4k';
+  setVideoResolution: (res: '720p' | '1080p' | '4k') => void;
+  videoAudioIntent: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape';
+  setVideoAudioIntent: (intent: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape') => void;
+  videoNativeAudio: boolean;
+  setVideoNativeAudio: (val: boolean) => void;
+  videoReferences: Array<{ id: string; type: string; name: string; data: string; role?: string }>;
+  setVideoReferences: React.Dispatch<React.SetStateAction<Array<{ id: string; type: string; name: string; data: string; role?: string }>>>;
+  klingElements: Array<{ id: string; tag: string; name: string; data: string }>;
+  setKlingElements: React.Dispatch<React.SetStateAction<Array<{ id: string; tag: string; name: string; data: string }>>>;
   imageStyle: string;
   setImageStyle: (style: string) => void;
   bakeLogoOnGeneration: boolean;

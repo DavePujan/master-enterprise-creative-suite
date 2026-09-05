@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PresentationDocument } from '@presentation-engine/index.js';
 import { presentationClient, ExportJobStatus } from '../services/presentationClient.js';
-import { FileDown, Loader2, CheckCircle2, AlertCircle, X, FileSpreadsheet, FileText } from 'lucide-react';
+import { FileDown, Loader2, CheckCircle2, AlertCircle, X, Presentation, FileText } from 'lucide-react';
 
 interface ExportModalProps {
   document: PresentationDocument;
@@ -87,7 +87,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <FileSpreadsheet className="w-6 h-6 text-orange-400" />
+                <Presentation className="w-6 h-6 text-orange-400" />
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded">
                   Office Native
                 </span>

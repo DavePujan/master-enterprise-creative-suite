@@ -442,7 +442,7 @@ export const SlideshowDisplay: React.FC<SlideshowDisplayProps> = ({
         <div className="flex items-start gap-2 text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed bg-white dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-850">
           <HelpCircle size={12} className="text-rose-400 mt-0.5 shrink-0" />
           <span>
-            <strong>💡 Canvas Interactive Feature:</strong> Reposition the logo anywhere on the slide by simple <strong>clicking and dragging</strong>. Your custom coordinates will be saved precisely.
+            <strong>Canvas Interactive Feature:</strong> Reposition the logo anywhere on the slide by simple <strong>clicking and dragging</strong>. Your custom coordinates will be saved precisely.
           </span>
         </div>
       </div>

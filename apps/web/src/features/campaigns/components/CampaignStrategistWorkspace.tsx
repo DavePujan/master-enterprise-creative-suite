@@ -33,19 +33,23 @@ import {
   Eye,
   Maximize2,
   RefreshCw,
-  ShieldCheck,
+  BadgeCheck,
   CheckCircle2,
   ArrowUpRight,
   FileCode,
   Volume2,
   Presentation,
-  CheckCheck
+  CheckCheck,
+  Coins,
+  Bookmark,
+  Fingerprint
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { generateCampaignStrategistCampaign, generateCampaignStrategistAsset, generateCampaignAssetBriefs, generateImage, generateCreative, pollVideo, type CampaignStrategistResult } from '@web/infrastructure/ai/geminiService.js';
 import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, GENERIC_GEMS } from '@web/infrastructure/ai/modelRegistry.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
+import { videoClient } from '@web/features/video/services/videoClient.js';
 import { triggerGlobalCreditGate } from '@web/features/billing/context/CreditGateContext.js';
 import type {
   AdaptiveQuestion,
@@ -1601,32 +1605,25 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
   };
 
   // Trigger polling for background rendering of videos
-  const triggerVideoPolling = (assetId: string, operation: any) => {
-    let currentOp = operation;
+  const triggerVideoJobPolling = (assetId: string, jobId: string) => {
     const interval = setInterval(async () => {
       try {
-        const updatedOp = await pollVideo(currentOp);
-        currentOp = updatedOp;
-        
-        if (updatedOp.done) {
+        const res = await videoClient.getJobStatus(jobId);
+        if (res?.job?.status === 'completed') {
           clearInterval(interval);
-          const videoUri = updatedOp.response?.generatedVideos?.[0]?.video?.uri;
-          
-          if (!videoUri) {
-            throw new Error("No video URI returned from the rendering network.");
-          }
-          
-          const isFalVideo = !!currentOp?.engine || !!updatedOp?.engine;
-          const fetchUrl = isFalVideo ? `/api/proxy?url=${encodeURIComponent(videoUri)}` : videoUri;
-          
-          setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: 'completed', url: fetchUrl } : a));
+          const videoUrl = res.job.outputUrl || (res.job as any).resultUrl;
+          if (!videoUrl) throw new Error("No video URL returned.");
+          setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: 'completed', url: videoUrl } : a));
+        } else if (res?.job?.status === 'failed') {
+          clearInterval(interval);
+          setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: 'failed', error: res.job.error || 'Video generation failed.' } : a));
         }
       } catch (err: any) {
         clearInterval(interval);
         console.error("Kinetic clip polling exception", err);
         setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: 'failed', error: err?.message || 'Motion synthesize failure' } : a));
       }
-    }, 4500);
+    }, 4000);
   };
 
   // Process batch deliverables rendering (Images, Videos, and Copy systems)
@@ -1715,36 +1712,31 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
           throw new Error("Empty image payload received.");
         }
       } else if (asset.type === 'video') {
-        const dummyVideoGem = {
-          id: 'agency-video-concept',
-          name: 'Agency Kinetic Video',
-          type: 'video',
-          systemInstruction: 'Synthesize highly cinematic visual motion frames with perfect atmospheric depth.'
-        };
         const finalPrompt = `${asset.description}. Cinematic commercial video, beautiful atmospheric lighting, photorealistic details, 4k resolution, ultra slow motion. style: ${answers.selectedAesthetic || 'Cinematic'}.`;
-        const res: any = await generateCreative(dummyVideoGem as any, finalPrompt, {
-          guidelines: brandGuidelines,
-          aspectRatio: "16:9",
-          model: selectedVideoModel
+        const res = await videoClient.generateVideo({
+          mode: 'text_to_video',
+          prompt: finalPrompt,
+          selectedEngine: selectedVideoModel as any,
+          aspectRatio: '16:9'
         });
 
-        if (res?.newBalance !== undefined) {
-          setCredits(res.newBalance);
-        } else {
-          apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
-            .then(bal => {
-              if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
-            })
-            .catch(() => {});
-        }
+        apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+          .then(bal => {
+            if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+          })
+          .catch(() => {});
 
-        if (res?.type === 'video_op' && res.operation) {
-          setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'pending', videoOperation: res.operation } : a));
-          triggerVideoPolling(id, res.operation);
-        } else if (res?.url) {
-          setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'completed', url: res.url } : a));
+        const job = res?.job;
+        const resolvedJobId = job?.jobId || (job as any)?.id;
+        const finalUrl = job?.outputUrl || (job as any)?.resultUrl;
+
+        if (job?.status === 'completed' && finalUrl) {
+          setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'completed', url: finalUrl } : a));
+        } else if (resolvedJobId) {
+          setGeneratedAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'pending' } : a));
+          triggerVideoJobPolling(id, resolvedJobId);
         } else {
-          throw new Error("No operations or URLs generated.");
+          throw new Error("No video job initialized.");
         }
       }
     } catch (err: any) {
@@ -1849,7 +1841,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                       ? 'bg-emerald-500/20 text-emerald-500'
                       : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
                   }`}>
-                    {isCompleted ? '✓' : step.num}
+                    {isCompleted ? <Check size={12} strokeWidth={2.5} /> : step.num}
                   </span>
                   <span>{step.label}</span>
                 </button>
@@ -1900,7 +1892,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                   {/* Preset Fast Draft Buttons */}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider mr-1 flex items-center gap-1">
-                      <Sparkles size={11} className="text-rose-500" /> Presets:
+                      <Bookmark size={11} className="text-slate-400" /> Presets:
                     </span>
                     <button
                       type="button"
@@ -2023,7 +2015,11 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">Brand Grounding</label>
                     <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-300 dark:border-slate-700 rounded text-xs">
-                      <ShieldCheck size={16} className="text-emerald-500" />
+                      {brandGuidelines.logo ? (
+                        <img src={brandGuidelines.logo} alt={brandGuidelines.name || 'Brand'} className="w-4 h-4 object-contain rounded-xs shrink-0" referrerPolicy="no-referrer" />
+                      ) : (
+                        <BadgeCheck size={16} className="text-emerald-500 shrink-0" />
+                      )}
                       <span className="font-semibold text-slate-900 dark:text-white">{brandGuidelines.name || 'Writopedia Brand'}</span>
                       <span className="text-slate-400">•</span>
                       <span className="text-slate-600 dark:text-slate-300 font-medium">{brandGuidelines.industry || 'Multi-Category'}</span>
@@ -2807,7 +2803,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                 <div className="p-3 bg-slate-50/70 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-lg space-y-2.5 shadow-xs">
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
-                      <Sparkles size={13} className="text-rose-500" />
+                      <Compass size={13} className="text-slate-400 dark:text-slate-500 shrink-0" />
                       <span className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[10px]">
                         Directional Route Alternatives (0 Credits • {alternativeCount}/5 Used)
                       </span>
@@ -3110,7 +3106,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                 {/* 5 Executive Tabs Navigation */}
                 <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto no-scrollbar">
                   {[
-                    { id: 'overview', label: 'Overview & Transformation', icon: Sparkles },
+                    { id: 'overview', label: 'Overview & Transformation', icon: Compass },
                     { id: 'playbook', label: 'Playbook & Journey', icon: Workflow },
                     { id: 'distribution', label: 'Channel Matrix', icon: ListFilter },
                     { id: 'evidence', label: 'Evidence & Unknowns', icon: HelpIcon },
@@ -4460,9 +4456,10 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                 </div>
                 <button
                   onClick={() => setPreviewAsset(null)}
-                  className="p-1 px-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-rose-500 hover:text-white rounded text-xs font-bold text-slate-500 dark:text-slate-400 transition-all cursor-pointer"
+                  className="p-1 px-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-rose-500 hover:text-white rounded text-xs font-bold text-slate-500 dark:text-slate-400 transition-all cursor-pointer flex items-center gap-1"
                 >
-                  ✕ Close
+                  <X size={13} />
+                  <span>Close</span>
                 </button>
               </div>
 
@@ -4615,7 +4612,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                                 : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                             }`}
                           >
-                            🤝 Human Touch
+                            <Fingerprint size={12} className="inline" />
+                            <span>Human Touch</span>
                           </button>
                         </div>
 
@@ -4823,7 +4821,10 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                         {/* TAB: HUMAN TOUCH last-mile professional review */}
                         {activeLayoutTab === 'humantouch' && (
                           <div className="space-y-3.5 text-left">
-                            <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest block">🤝 Writopedia Last-Mile Human Touch Refinement</span>
+                            <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-1.5">
+                              <Fingerprint size={12} className="text-rose-500" />
+                              <span>Writopedia Last-Mile Human Touch Refinement</span>
+                            </span>
                             
                             <p className="text-[11px] text-slate-400 leading-relaxed font-sans font-light">
                               Deploy human designers, cultural copywriters, and production specialists to tweak, refine, or polish this AI draft for active commercial activation.
@@ -4858,7 +4859,8 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                               }}
                               className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase py-2.5 rounded-sm flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
                             >
-                              🚀 Assign To Real-World Specialist
+                              <Send size={12} />
+                              <span>Assign To Real-World Specialist</span>
                             </button>
                           </div>
                         )}
@@ -4877,9 +4879,10 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                               document.body.removeChild(link);
                             }
                           }}
-                          className="px-4 py-2 bg-white text-slate-900 border border-slate-350 text-xs font-black uppercase tracking-wider rounded-sm hover:bg-slate-100 flex items-center gap-1 cursor-pointer font-sans"
+                          className="px-4 py-2 bg-white text-slate-900 border border-slate-350 text-xs font-black uppercase tracking-wider rounded-sm hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer font-sans"
                         >
-                          📥 Download High-Resolution Composition
+                          <Download size={13} />
+                          <span>Download High-Resolution Composition</span>
                         </button>
                       </div>
                     </div>
@@ -4998,8 +5001,10 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                   onChange={(e) => setRefiningPromptText(e.target.value)}
                 />
                 <div className="flex items-center justify-between mt-1 text-[9px] uppercase tracking-wide text-rose-500 font-extrabold">
-
-                  <span className="text-rose-600 dark:text-rose-400">✨ 2 credits will be deducted</span>
+                  <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    <Coins size={11} />
+                    <span>2 credits will be deducted</span>
+                  </span>
                   <span className="text-slate-400 dark:text-slate-500">System: Model {selectedImageModel?.split('-')[0] || 'AI'}</span>
                 </div>
               </div>

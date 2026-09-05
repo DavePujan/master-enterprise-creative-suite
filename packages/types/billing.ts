@@ -129,6 +129,11 @@ export interface InsufficientCreditsErrorPayload {
   service: string;
   action?: string;
   model?: string;
+  recommendedPack?: {
+    id: PlanId;
+    name: string;
+    credits: number;
+  };
   retryable: false;
 }
 
@@ -153,15 +158,75 @@ export const CREDIT_SERVICE_REGISTRY: Record<string, CreditServiceMetadata> = {
   },
   video_generation: {
     id: 'video_generation',
-    displayName: 'Video Generation',
+    displayName: 'Video Studio',
     category: 'video',
     description: 'High-definition cinematic video render'
+  },
+  video_omni: {
+    id: 'video_omni',
+    displayName: 'Google Omni 1.1 Flash',
+    category: 'video',
+    description: 'Conversational real-time multimodal video generation & editing'
+  },
+  video_veo_pro: {
+    id: 'video_veo_pro',
+    displayName: 'Google Veo 3.1 Pro',
+    category: 'video',
+    description: 'Cinema-grade video generation with end frames and reference subjects'
+  },
+  video_veo_fast: {
+    id: 'video_veo_fast',
+    displayName: 'Google Veo 3.1 Fast',
+    category: 'video',
+    description: 'Rapid preview video generation'
+  },
+  video_veo_lite: {
+    id: 'video_veo_lite',
+    displayName: 'Google Veo 3.1 Lite',
+    category: 'video',
+    description: 'Low-latency lightweight video generation'
+  },
+  video_kling: {
+    id: 'video_kling',
+    displayName: 'Kling V3 Standard',
+    category: 'video',
+    description: 'Multi-shot sequence video generation with motion continuity'
+  },
+  video_seedance: {
+    id: 'video_seedance',
+    displayName: 'ByteDance Seedance 2.0',
+    category: 'video',
+    description: 'Multimodal reference-to-video with audio synchronization'
+  },
+  video_autowrite: {
+    id: 'video_autowrite',
+    displayName: 'Video Auto-Write Director',
+    category: 'video',
+    description: 'Cinematic storyboard planning and scene breakdown'
   },
   image_generation: {
     id: 'image_generation',
     displayName: 'Image Generation',
     category: 'image',
     description: 'Photorealistic commercial visual render'
+  },
+  image_flux_pro: {
+    id: 'image_flux_pro',
+    displayName: 'Flux Pro Image',
+    category: 'image',
+    description: 'Ultra-high-fidelity Flux Pro visual generation'
+  },
+  image_fast: {
+    id: 'image_fast',
+    displayName: 'Fast Image',
+    category: 'image',
+    description: 'Rapid ideation visual generation'
+  },
+  image_standard: {
+    id: 'image_standard',
+    displayName: 'Standard Image',
+    category: 'image',
+    description: 'Production visual asset generation'
   },
   image_refine: {
     id: 'image_refine',

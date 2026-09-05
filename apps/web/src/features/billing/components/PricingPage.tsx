@@ -7,7 +7,8 @@ import {
   Building,
   Sparkles,
   CreditCard,
-  Coins
+  Coins,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WritopediaLogo } from '@web/features/marketing/components/LandingPage.js';
@@ -610,8 +611,9 @@ export default function PricingPage({
         </div>
 
         {currencySource !== 'default' && (
-          <p className="text-[10px] text-zinc-400 text-center font-mono tracking-wide uppercase">
-            🌍 Auto-detected currency locale: <strong className="text-rose-600">{currency === 'INR' ? 'India (INR / ₹)' : 'International (USD / $)'}</strong> based on {currencySource === 'timezone' ? 'system timezone preference' : 'IP Geo Location'}
+          <p className="text-[10px] text-zinc-400 text-center font-mono tracking-wide uppercase flex items-center justify-center gap-1">
+            <Globe size={12} className="text-slate-400 shrink-0" />
+            <span>Auto-detected currency locale: <strong className="text-rose-600">{currency === 'INR' ? 'India (INR / ₹)' : 'International (USD / $)'}</strong> based on {currencySource === 'timezone' ? 'system timezone preference' : 'IP Geo Location'}</span>
           </p>
         )}
 
@@ -853,15 +855,21 @@ export default function PricingPage({
                     <td className="px-6 py-4 font-semibold text-slate-900 bg-slate-50/20">Dedicated Account Manager</td>
                     <td className="px-6 py-4 text-center">―</td>
                     <td className="px-6 py-4 text-center">―</td>
-                    <td className="px-6 py-4 text-center bg-rose-50/10 text-emerald-500 font-bold">✔ Yes</td>
-                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">✔ Yes</td>
+                    <td className="px-6 py-4 text-center bg-rose-50/10 text-emerald-500 font-bold">
+                      <span className="inline-flex items-center gap-1"><Check size={14} /> Yes</span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">
+                      <span className="inline-flex items-center gap-1"><Check size={14} /> Yes</span>
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 font-semibold text-slate-900 bg-slate-50/20">Extended Team Training & Live Support</td>
                     <td className="px-6 py-4 text-center">―</td>
                     <td className="px-6 py-4 text-center">―</td>
                     <td className="px-6 py-4 text-center bg-rose-50/10">―</td>
-                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">✔ Unlimited VIP Support</td>
+                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">
+                      <span className="inline-flex items-center gap-1"><Check size={14} /> Unlimited VIP Support</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>

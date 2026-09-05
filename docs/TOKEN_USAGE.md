@@ -76,15 +76,37 @@ Generates high-resolution, commercial-grade product photography, lifestyle scene
 ---
 
 ### 5. 🎬 Cinematic & Social Video (`cinematic-video` / Video Gem)
-Generates high-definition video advertising, social video clips (Reels, TikToks, Shorts), and cinematic narrative sequences.
+Generates high-definition video advertising, social video clips (Reels, TikToks, Shorts), and cinematic narrative sequences across Google GenAI, Fal AI (Kling), and ByteDance (Seedance) video pipelines.
 
-| Quality Tier | Provider Engine / Model | Resolution / Length | Provider Cost ($) | Provider Cost (₹) | User Credits Charged | Effective User Value (₹) | Gross Margin |
+| Model / Quality Tier | Provider Engine / Model ID | Resolution / Length Supported | Provider Est. Cost ($) | Provider Est. Cost (₹) | User Credits Charged | Effective User Value (₹) | Gross Profit Margin |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Veo Lite (Fast)** | `google/veo-lite` | 720p, 4s clip | $0.100 | ₹9.30 | **10 Credits** | ₹100.00 – ₹150.00 | **~91%** |
-| **Veo Standard** | `veo-3.1-generate-preview` | 1080p, 5s clip | $0.220 | ₹20.46 | **20 Credits** | ₹200.00 – ₹300.00 | **~90%** |
-| **Cinematic High** | `google/veo-pro` | 1080p, High bit-rate | $0.450 | ₹41.85 | **40 Credits** | ₹400.00 – ₹600.00 | **~90%** |
-| **Plus Video (Kling 3.0)** | `fal-ai/kling-video/v1.5` | 1080p, high motion | $0.420 | ₹39.06 | **40 Credits** | ₹400.00 – ₹600.00 | **~90%** |
-| **Cinematic Sequence** | `fal-ai/seedance-2.0` | Multi-shot story | $0.800 | ₹74.40 | **80 Credits** | ₹800.00 – ₹1,200.00 | **~91%** |
+| **Google Omni 1.1 Flash** | `gemini-omni-1.1-flash`<br>*(Canonical: `google-omni`)* | 720p, 1080p<br>(4s, 6s, 8s, 10s) | $0.065 | ₹6.05 | **20 Credits** | ₹200.00 – ₹300.00 | **~67.5%** |
+| **Google Veo 3.1 Pro** | `veo-3.1-generate-preview`<br>*(Canonical: `veo-pro`)* | 720p, 1080p, 4K<br>(4s, 6s, 8s; 1080p/4K = 8s) | $0.220 | ₹20.46 | **40 Credits** | ₹400.00 – ₹600.00 | **~45.0%** |
+| **Google Veo 3.1 Fast** | `veo-3.1-fast-generate-preview`<br>*(Canonical: `veo-fast`)* | 720p, 1080p<br>(5s, 7s rapid) | $0.075 | ₹6.98 | **20 Credits** | ₹200.00 – ₹300.00 | **62.5%** |
+| **Google Veo 3.1 Lite** | `veo-3.1-lite-generate-preview`<br>*(Canonical: `veo-lite`)* | 720p locked<br>(5s draft mode) | $0.035 | ₹3.26 | **10 Credits** | ₹100.00 – ₹150.00 | **65.0%** |
+| **Kling 3.0 Standard** | `fal-ai/kling-video/v3/standard`<br>*(Canonical: `kling-v3`)* | 720p, 1080p<br>(3s, 5s, 10s, 15s) | $0.084 | ₹7.81 | **40 Credits** | ₹400.00 – ₹600.00 | **79.0%** |
+| **Seedance 2.0 Cinematic** | `bytedance/seedance-2.0`<br>*(Canonical: `seedance-2`)* | 720p, 1080p<br>(4s–15s, auto) | $0.150 | ₹13.95 | **80 Credits** | ₹800.00 – ₹1,200.00 | **81.0%** |
+
+#### Video Model Billing Rules & Conditioning Constraints:
+1. **Google Omni 1.1 Flash (20 Credits)**:
+   - Supports multimodal conditioning (up to 3 inline reference images) and conversational video modification (`previous_interaction_id`).
+   - Storage & delivery policy: `store: true, delivery: 'uri'` for session continuity. Does not support explicit start/end keyframe interpolation.
+2. **Google Veo 3.1 Pro (40 Credits)**:
+   - Full motion interpolation between Start Keyframe and End Keyframe.
+   - Up to 3 subject consistency reference images.
+   - 1080p and 4K outputs enforce 8-second sequence duration.
+3. **Google Veo 3.1 Fast (20 Credits)**:
+   - Single Start Frame animation or direct text-to-video.
+   - End-frame interpolation and subject reference conditioning are bypassed to achieve low latency.
+4. **Google Veo 3.1 Lite (10 Credits)**:
+   - Lowest-cost draft model designed for instant storyboard prototyping in 720p. Text-to-video only; image references disabled.
+5. **Kling 3.0 Standard (40 Credits)**:
+   - Start & End frame control, native 1:1 social square format, and element injection (`@Element1` .. `@Element4`).
+   - Native audio generation (lip-sync and environmental sound) included in base credit cost.
+6. **Seedance 2.0 Cinematic (80 Credits)**:
+   - Rich multimodal choreography board: up to 9 image references with semantic roles, up to 3 video guides, and up to 3 audio timing tracks.
+   - Native synchronized audio synthesis included with zero auxiliary fee.
+
 
 ---
 

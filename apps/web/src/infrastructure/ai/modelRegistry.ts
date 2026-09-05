@@ -43,12 +43,212 @@ export const TEXT_MODELS = [
 ];
 
 export const VIDEO_MODELS = [
-  { id: 'veo-3.1-lite-generate-preview', name: 'Fast', modelName: 'Veo Lite', description: 'Cost-efficient rapid draft generation for testing layouts', credits: 10, humanTouch: 100 },
-  { id: 'veo-3.1-fast-generate-preview', name: 'Standard', modelName: 'Veo Fast', description: 'Balanced fidelity and operational speed', credits: 20, humanTouch: 200 },
-  { id: 'veo-3.1-generate-preview', name: 'Pro', modelName: 'Veo Standard', description: 'High-detail visual storytelling video with rich texture and lighting', credits: 40, humanTouch: 400 },
-  { id: 'kling-video', name: 'Plus', modelName: 'Kling 3.0', description: 'Strategic simulation engine with high spatial and physics precision', credits: 40, humanTouch: 400 },
-  { id: 'bytedance/seedance-2.0', name: 'Cinematic', modelName: 'Seedance 2.0', description: 'Alternative rendering for natural human and camera movements', credits: 80, humanTouch: 800 }
+  { id: 'google-omni', name: 'Omni Flash', modelName: 'Google Omni 1.1 Flash', tier: 'pro', description: 'Conversational real-time multimodal video generation & editing', credits: 20, humanTouch: 200 },
+  { id: 'veo-3.1-generate-preview', name: 'Veo Pro', modelName: 'Google Veo 3.1 Pro', tier: 'pro', description: 'Cinema-grade video generation with end frames and reference subjects', credits: 40, humanTouch: 400 },
+  { id: 'veo-3.1-fast-generate-preview', name: 'Veo Fast', modelName: 'Google Veo 3.1 Fast', tier: 'standard', description: 'Balanced fidelity and operational speed', credits: 20, humanTouch: 200 },
+  { id: 'veo-3.1-lite-generate-preview', name: 'Veo Lite', modelName: 'Google Veo 3.1 Lite', tier: 'fast', description: 'Cost-efficient rapid draft generation for testing layouts', credits: 10, humanTouch: 100 },
+  { id: 'kling-video', name: 'Kling 3.0', modelName: 'Kling V3 Standard', tier: 'plus', description: 'Multi-shot sequence video generation with motion continuity', credits: 40, humanTouch: 400 },
+  { id: 'bytedance/seedance-2.0', name: 'Seedance 2.0', modelName: 'ByteDance Seedance 2.0', tier: 'cinematic', description: 'Multimodal reference-to-video with audio synchronization', credits: 80, humanTouch: 800 }
 ];
+
+export interface VideoModelCapabilities {
+  supportsFirstFrame: boolean;
+  supportsLastFrame: boolean;
+  supportsImageConditioning: boolean;
+  supportsReferences: boolean;
+  maxReferenceImages: number;
+  supportsReferenceVideos?: boolean;
+  maxReferenceVideos?: number;
+  supportsReferenceAudios?: boolean;
+  maxReferenceAudios?: number;
+  supportsElements?: boolean;
+  supportsAudio: boolean;
+  supportsConversationalEditing: boolean;
+  supportsMultiShot: boolean;
+  supportsExtension?: boolean;
+  supportedDurations: string[];
+  supportedResolutions: ('720p' | '1080p' | '4k')[];
+  supportedModes: string[];
+  aspectRatios: string[];
+  creditCost: number;
+}
+
+export function getVideoModelCapabilities(modelId: string): VideoModelCapabilities {
+  const norm = modelId.toLowerCase();
+  
+  // Google Omni 1.1 Flash
+  if (norm === 'google-omni' || norm.includes('omni')) {
+    return {
+      supportsFirstFrame: false, // Explicit start/end frame interpolation: NO
+      supportsLastFrame: false,
+      supportsImageConditioning: true, // Image conditioning: YES (via inline/reference parts)
+      supportsReferences: true,
+      maxReferenceImages: 3,
+      supportsReferenceVideos: false,
+      maxReferenceVideos: 0,
+      supportsReferenceAudios: false,
+      maxReferenceAudios: 0,
+      supportsElements: false,
+      supportsAudio: true,
+      supportsConversationalEditing: true, // Conversational editing (previous_interaction_id): YES
+      supportsMultiShot: false,
+      supportsExtension: true,
+      supportedDurations: ['4s', '6s', '8s', '10s'],
+      supportedResolutions: ['720p', '1080p'],
+      supportedModes: ['text_to_video', 'image_to_video', 'edit_video', 'extend_video'],
+      aspectRatios: ['16:9', '9:16'],
+      creditCost: 20
+    };
+  }
+
+  // Google Veo 3.1 Pro
+  if (norm === 'veo-pro' || norm === 'veo-3.1-generate-preview' || (norm.includes('veo') && norm.includes('pro'))) {
+    return {
+      supportsFirstFrame: true, // Start frame: YES
+      supportsLastFrame: true,  // End frame: YES
+      supportsImageConditioning: false,
+      supportsReferences: true, // Up to 3 reference images
+      maxReferenceImages: 3,
+      supportsReferenceVideos: false,
+      maxReferenceVideos: 0,
+      supportsReferenceAudios: false,
+      maxReferenceAudios: 0,
+      supportsElements: false,
+      supportsAudio: true,
+      supportsConversationalEditing: false,
+      supportsMultiShot: false,
+      supportsExtension: true,
+      supportedDurations: ['4s', '6s', '8s'], // 1080p/4k requires 8s
+      supportedResolutions: ['720p', '1080p', '4k'],
+      supportedModes: ['text_to_video', 'image_to_video', 'extend_video'],
+      aspectRatios: ['16:9', '9:16'],
+      creditCost: 40
+    };
+  }
+
+  // Google Veo 3.1 Fast
+  if (norm === 'veo-fast' || norm === 'veo-3.1-fast-generate-preview' || (norm.includes('veo') && norm.includes('fast'))) {
+    return {
+      supportsFirstFrame: true, // Start frame: YES
+      supportsLastFrame: false, // End frame: NO
+      supportsImageConditioning: false,
+      supportsReferences: false,
+      maxReferenceImages: 0,
+      supportsReferenceVideos: false,
+      maxReferenceVideos: 0,
+      supportsReferenceAudios: false,
+      maxReferenceAudios: 0,
+      supportsElements: false,
+      supportsAudio: true,
+      supportsConversationalEditing: false,
+      supportsMultiShot: false,
+      supportsExtension: false,
+      supportedDurations: ['5s', '7s'],
+      supportedResolutions: ['720p', '1080p'],
+      supportedModes: ['text_to_video', 'image_to_video'],
+      aspectRatios: ['16:9', '9:16'],
+      creditCost: 20
+    };
+  }
+
+  // Google Veo 3.1 Lite
+  if (norm === 'veo-lite' || norm === 'veo-3.1-lite-generate-preview' || (norm.includes('veo') && norm.includes('lite'))) {
+    return {
+      supportsFirstFrame: false,
+      supportsLastFrame: false,
+      supportsImageConditioning: false,
+      supportsReferences: false,
+      maxReferenceImages: 0,
+      supportsReferenceVideos: false,
+      maxReferenceVideos: 0,
+      supportsReferenceAudios: false,
+      maxReferenceAudios: 0,
+      supportsElements: false,
+      supportsAudio: false,
+      supportsConversationalEditing: false,
+      supportsMultiShot: false,
+      supportsExtension: false,
+      supportedDurations: ['5s'],
+      supportedResolutions: ['720p'], // Resolution: 720p locked
+      supportedModes: ['text_to_video'],
+      aspectRatios: ['16:9', '9:16'],
+      creditCost: 10
+    };
+  }
+
+  // Kling V3 Standard / Pro
+  if (norm === 'kling-v3' || norm === 'kling-video' || norm.includes('kling')) {
+    return {
+      supportsFirstFrame: true, // Start image: YES
+      supportsLastFrame: true,  // End image: YES
+      supportsImageConditioning: false,
+      supportsReferences: true,
+      maxReferenceImages: 4,
+      supportsReferenceVideos: false,
+      maxReferenceVideos: 0,
+      supportsReferenceAudios: false,
+      maxReferenceAudios: 0,
+      supportsElements: true,   // Elements (@Element1): YES
+      supportsAudio: true,      // Native audio: YES
+      supportsConversationalEditing: false,
+      supportsMultiShot: true,  // Modes: text_to_video, image_to_video, multi_shot
+      supportsExtension: false,
+      supportedDurations: ['3s', '5s', '10s', '15s'],
+      supportedResolutions: ['720p', '1080p'],
+      supportedModes: ['text_to_video', 'image_to_video', 'multi_shot'],
+      aspectRatios: ['16:9', '9:16', '1:1'],
+      creditCost: 40
+    };
+  }
+
+  // ByteDance Seedance 2.0
+  if (norm === 'seedance-2' || norm === 'bytedance/seedance-2.0' || norm.includes('seedance')) {
+    return {
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsImageConditioning: false,
+      supportsReferences: true,
+      maxReferenceImages: 9,      // Image refs: up to 9
+      supportsReferenceVideos: true, // Video refs: up to 3
+      maxReferenceVideos: 3,
+      supportsReferenceAudios: true, // Audio refs: up to 3
+      maxReferenceAudios: 3,
+      supportsElements: false,
+      supportsAudio: true,        // Native audio: YES
+      supportsConversationalEditing: false,
+      supportsMultiShot: true,
+      supportsExtension: false,
+      supportedDurations: ['4s', '6s', '8s', '10s', '12s', '15s', 'auto'],
+      supportedResolutions: ['720p', '1080p'],
+      supportedModes: ['text_to_video', 'image_to_video', 'reference_to_video', 'multi_shot'],
+      aspectRatios: ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      creditCost: 80
+    };
+  }
+
+  // Fallback defaults
+  return {
+    supportsFirstFrame: false,
+    supportsLastFrame: false,
+    supportsImageConditioning: true,
+    supportsReferences: true,
+    maxReferenceImages: 3,
+    supportsReferenceVideos: true,
+    maxReferenceVideos: 1,
+    supportsReferenceAudios: false,
+    maxReferenceAudios: 0,
+    supportsElements: false,
+    supportsAudio: true,
+    supportsConversationalEditing: true,
+    supportsMultiShot: false,
+    supportsExtension: true,
+    supportedDurations: ['4s', '6s', '8s', '10s'],
+    supportedResolutions: ['720p', '1080p'],
+    supportedModes: ['text_to_video', 'image_to_video', 'edit_video', 'extend_video'],
+    aspectRatios: ['16:9', '9:16'],
+    creditCost: 20
+  };
+}
 
 export let promptEngineSettings: PromptEngineSettings = {
   enableAiRewrite: true,
@@ -87,7 +287,8 @@ export const GENERIC_GEMS: Gem[] = [
     name: 'Campaign Strategy',
     description: 'Deep conversational discovery workshop and high-octane multi-platform strategic campaign system.',
     type: 'campaign',
-    icon: 'Target',
+    icon: 'Compass',
+    iconKey: 'campaign-strategy',
     cost: 5,
     systemInstruction: 'You are an elite Creative Director + Brand Strategist + Performance Marketer + Launch Consultant from a world-class creative agency. Keep your tone direct, strategically sharp, emotionally intelligent, and completely free of generic marketing clichés.'
   },
@@ -96,7 +297,8 @@ export const GENERIC_GEMS: Gem[] = [
     name: 'Ecommerce Bundle',
     description: 'Cohesive 5-asset visual marketing and campaign bundle package rendered with premium GPT technology.',
     type: 'campaign-deck',
-    icon: 'Layers',
+    icon: 'ShoppingBag',
+    iconKey: 'ecommerce-bundle',
     cost: 25,
     systemInstruction: 'Cohesive 5-Asset Campaign Builder designed for Multi-Asset Visual Marketing.'
   },
@@ -105,7 +307,8 @@ export const GENERIC_GEMS: Gem[] = [
     name: 'Captions',
     description: 'Create high-converting, platform-ready captions for all social networks based on your brand identity.',
     type: 'text',
-    icon: 'FileText',
+    icon: 'MessageSquareQuote',
+    iconKey: 'captions-copy',
     cost: 1,
     systemInstruction: `You are an elite integrated Social Media Director and Chief Copywriter. Your goal is to deliver beautiful, high-converting, platform-optimized social media captions with relevant hashtags and punchy hooks.
 
@@ -124,7 +327,8 @@ FORMATTING & STRUCTURE:
     name: 'Standard Brand Image',
     description: 'Generates high-quality social media imagery tailored to your brand identity.',
     type: 'image',
-    icon: 'Image',
+    icon: 'Aperture',
+    iconKey: 'brand-image',
     cost: 3,
     systemInstruction: `You are a Lead Visual Designer. Your goal is to create vibrant, high-impact imagery that strictly adheres to the provided brand guidelines.
     Use Google Search to find real-world context if needed, but prioritize the brand's unique aesthetic.
@@ -136,19 +340,21 @@ FORMATTING & STRUCTURE:
   },
   {
     id: 'cinematic-video',
-    name: 'Cinematic & Social Video (5-8s)',
+    name: 'Cinematic & Social Video',
     description: 'High-end custom and social video generation for premium brand moments.',
     type: 'video',
-    icon: 'Video',
+    icon: 'Clapperboard',
+    iconKey: 'cinematic-video',
     cost: 20,
-    systemInstruction: `You are a Cinematic Video Director and Producer. Create breathtaking, high-end promotional video clips (approx. 8 seconds) with dramatic lighting, smooth camera movements, and social-media optimized pacing.`
+    systemInstruction: `You are a Cinematic Video Director and Producer. Create breathtaking, high-end promotional video clips with dramatic lighting, smooth camera movements, and social-media optimized pacing.`
   },
   {
     id: 'audio-studio',
     name: 'Voiceover & Audio Studio',
     description: 'Integrated workspace for professional AI voiceovers or custom-composed brand soundtracks & audio paths.',
     type: 'audio',
-    icon: 'Volume2',
+    icon: 'AudioWaveform',
+    iconKey: 'audio-studio',
     cost: 2,
     systemInstruction: `You are an Integrated Audio Director and Soundtrack Composer. 
     1. If the user requests a voiceover or spoken audio script, write a compelling, speakable 1-minute script.
@@ -161,6 +367,7 @@ FORMATTING & STRUCTURE:
     description: 'Generates professional high-end slide decks under a structured corporate canvas framework powered by Gemini Pro.',
     type: 'slideshow',
     icon: 'Presentation',
+    iconKey: 'presentations',
     cost: 5,
     systemInstruction: `You are an elite Management Consultant and Corporate Presentation Designer. Your goal is to build executive, data-driven, highly persuasive corporate slide decks based on the strategic brief and brand guidelines.`
   },
@@ -169,7 +376,8 @@ FORMATTING & STRUCTURE:
     name: 'Storyline Generator (6-8 Image Series)',
     description: 'A progressive multi-chapter narrative brand story generating visual prompt scenes and storytelling copy.',
     type: 'storyline',
-    icon: 'BookOpen',
+    icon: 'Filmstrip',
+    iconKey: 'storyline',
     cost: 15,
     systemInstruction: `You are an Award-Winning Creative Director and Brand Narrative Architect. Your goal is to build a rich, cinematic 6 to 8-scene brand journey that unfolds sequentially.`
   }

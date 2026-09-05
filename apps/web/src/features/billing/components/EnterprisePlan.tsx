@@ -16,7 +16,10 @@ import {
   X,
   MessageSquare,
   Mail,
-  User
+  User,
+  ShieldCheck,
+  Globe,
+  Coins
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { submitSalesInquiry } from '@web/infrastructure/repositories/salesRepository.js';
@@ -499,7 +502,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
         {/* Header Section */}
         <div className="text-center space-y-4 max-w-4xl mx-auto">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 text-xs font-semibold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
-            <Sparkles size={12} className="text-amber-500" />
+            <ShieldCheck size={13} className="text-emerald-500" />
             <span>SECURE PAYMENT VIA RAZORPAY INTEGRATED</span>
           </div>
           <h1 className="text-4xl md:text-5xl font-light text-slate-900 dark:text-white tracking-tight leading-none">
@@ -576,8 +579,9 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
           </div>
 
           {currencySource !== 'default' && (
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono tracking-wide uppercase">
-              🌍 Auto-detected locale: <strong className="text-rose-500 dark:text-rose-400">{currency === 'INR' ? 'India (INR / ₹)' : 'International (USD / $)'}</strong> based on {currencySource === 'timezone' ? 'system timezone preference' : 'IP Geo Location'}
+            <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono tracking-wide uppercase flex items-center justify-center gap-1">
+              <Globe size={12} className="text-slate-400 shrink-0" />
+              <span>Auto-detected locale: <strong className="text-rose-500 dark:text-rose-400">{currency === 'INR' ? 'India (INR / ₹)' : 'International (USD / $)'}</strong> based on {currencySource === 'timezone' ? 'system timezone preference' : 'IP Geo Location'}</span>
             </p>
           )}
         </div>
@@ -656,7 +660,10 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
 
                 <div className="flex justify-between items-center bg-rose-500/10 p-3 rounded border border-rose-500/20 text-xs">
                   <span className="text-rose-600 dark:text-rose-400 font-medium">Your current total balance has been updated live!</span>
-                  <strong className="font-mono text-rose-650 dark:text-rose-450 text-sm">🎒 {credits} Credits</strong>
+                  <strong className="font-mono text-rose-650 dark:text-rose-450 text-sm flex items-center gap-1">
+                    <Coins size={14} className="text-rose-500" />
+                    <span>{credits} Credits</span>
+                  </strong>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
@@ -713,7 +720,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
                       <span className={`text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded ${getBadgeClass(plan.bgType)}`}>
                         {plan.badge}
                       </span>
-                      {plan.popular && <Star size={14} className="text-rose-500 fill-rose-500 animate-pulse" />}
+                      {plan.popular && <Star size={13} className="text-rose-500" />}
                     </div>
                     <h3 className="text-2xl font-light text-slate-900 dark:text-white tracking-tight">{plan.name}</h3>
                   </div>
@@ -874,15 +881,21 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
                     <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white bg-slate-50/20 dark:bg-slate-950/20">Dedicated Account Manager</td>
                     <td className="px-6 py-4 text-center">―</td>
                     <td className="px-6 py-4 text-center">―</td>
-                    <td className="px-6 py-4 text-center bg-rose-50/10 dark:bg-rose-950/5 text-emerald-500 font-bold">✔ Yes</td>
-                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">✔ Yes</td>
+                    <td className="px-6 py-4 text-center bg-rose-50/10 dark:bg-rose-950/5 text-emerald-500 font-bold">
+                      <span className="inline-flex items-center gap-1"><Check size={14} /> Yes</span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">
+                      <span className="inline-flex items-center gap-1"><Check size={14} /> Yes</span>
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white bg-slate-50/20 dark:bg-slate-950/20">Extended Team Training & Live Support</td>
                     <td className="px-6 py-4 text-center">―</td>
                     <td className="px-6 py-4 text-center">―</td>
                     <td className="px-6 py-4 text-center bg-rose-50/10 dark:bg-rose-950/5">―</td>
-                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">✔ Unlimited VIP Support</td>
+                    <td className="px-6 py-4 text-center text-emerald-500 font-bold">
+                      <span className="inline-flex items-center gap-1"><Check size={14} /> Unlimited VIP Support</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>

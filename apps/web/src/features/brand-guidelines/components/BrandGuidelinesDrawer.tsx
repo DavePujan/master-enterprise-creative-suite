@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Trash2, RefreshCw, Loader2, Sparkles } from 'lucide-react';
+import { AppIcon } from '@web/shared/components/icons/AppIconRegistry.js';
 import { BrandLogo } from '@web/features/brand/components/BrandLogo.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import { generateBrandLogoAI } from '@web/infrastructure/ai/promptBuilders.js';
@@ -106,7 +107,10 @@ export const BrandGuidelinesDrawer: React.FC<BrandGuidelinesDrawerProps> = ({
 
             {/* Brand Tone */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Tone & Voice</label>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <AppIcon name="brand-typography" size={13} strokeWidth={2} />
+                Tone & Voice
+              </label>
               <input 
                 type="text"
                 value={editingGuidelines.tone}
@@ -117,7 +121,10 @@ export const BrandGuidelinesDrawer: React.FC<BrandGuidelinesDrawerProps> = ({
 
             {/* Color Palette */}
             <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">Palette Colors</label>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <AppIcon name="brand-palette" size={13} strokeWidth={2} />
+                Palette Colors
+              </label>
               <div className="flex gap-3">
                 {editingGuidelines.colors?.map((col, idx) => (
                   <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-sm">
@@ -139,7 +146,10 @@ export const BrandGuidelinesDrawer: React.FC<BrandGuidelinesDrawerProps> = ({
 
             {/* Logo Settings */}
             <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">Brand Logo</label>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <AppIcon name="brand-logo" size={13} strokeWidth={2} />
+                Brand Logo
+              </label>
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden p-2 shrink-0">
                   {editingGuidelines.logo ? (

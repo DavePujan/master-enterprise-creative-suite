@@ -126,7 +126,7 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
         }
       }
     } catch (err: any) {
-      console.error("[BrandInit Debug] ❌ Error in handleGenerate:", err);
+      console.error("[BrandInit Debug] Error in handleGenerate:", err);
       setError(err.message || "Failed to generate brand identity. Please try again.");
     } finally {
       setIsGenerating(false);
@@ -251,7 +251,7 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
                             {manualLogo ? (
                               <img src={manualLogo} alt="Logo" className="object-contain w-full h-full p-2.5" />
                             ) : (
-                              <ImageIcon className="w-8 h-8 text-rose-400 animate-pulse" />
+                              <ImageIcon className="w-8 h-8 text-slate-400 dark:text-slate-600" />
                             )}
                           </div>
                         </div>
@@ -650,7 +650,7 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
                         <div className="grid grid-cols-1 gap-x-6 gap-y-4">
                           <div className="space-y-2">
                             <label className="text-[10px] font-bold text-slate-900 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
-                              <ImageIcon size={12} className="text-rose-600 dark:text-rose-400" /> Logo
+                              <ImageIcon size={12} className="text-slate-400 dark:text-slate-500" /> Logo
                             </label>
                             <input 
                               type="file" 

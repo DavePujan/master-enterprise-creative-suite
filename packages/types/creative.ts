@@ -13,6 +13,8 @@ export type GemType =
   | 'audio'
   | 'campaign-deck';
 
+import type { AppIconKey } from './icons.js';
+
 export interface Gem {
   id: string;
   name: string;
@@ -20,6 +22,7 @@ export interface Gem {
   type: GemType;
   systemInstruction: string;
   icon: string;
+  iconKey?: AppIconKey;
   cost: number;
 }
 

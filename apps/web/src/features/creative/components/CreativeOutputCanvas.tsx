@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -22,6 +22,7 @@ import {
   X,
   Fingerprint 
 } from 'lucide-react';
+import { AppIcon, ProviderBadge } from '@web/shared/components/icons/AppIconRegistry.js';
 import { GroundingSources } from '@web/features/slideshow/components/GroundingSources.js';
 import { SlideshowDisplay } from '@web/features/slideshow/components/SlideshowDisplay.js';
 import { GenerationLoader } from '@web/shared/components/GenerationLoader.js';
@@ -47,6 +48,7 @@ export interface CreativeOutputCanvasProps {
   setResult: React.Dispatch<React.SetStateAction<any>>;
   isGenerating: boolean;
   videoStatus: string;
+  executeVideoEdit?: (instruction: string) => Promise<void>;
   selectedGem: Gem;
   brandGuidelines: BrandGuidelines;
   prompt: string;
@@ -189,8 +191,26 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
   setIsRefineModalOpen,
   setRefinePrompt,
   getBrandStyles,
-  handleGenerate
+  handleGenerate,
+  executeVideoEdit
 }) => {
+  const [videoEditInstruction, setVideoEditInstruction] = useState('');
+  const [videoHistory, setVideoHistory] = useState<Array<{ version: number; url: string; label: string }>>([]);
+  const [activeVideoVersion, setActiveVideoVersion] = useState<number>(1);
+
+  useEffect(() => {
+    if (result?.type === 'video' && result?.data) {
+      setVideoHistory(prev => {
+        const exists = prev.some(h => h.url === result.data);
+        if (exists) return prev;
+        const newVersion = prev.length + 1;
+        const label = newVersion === 1 ? 'v1 (Initial)' : `v${newVersion} (Edited)`;
+        setActiveVideoVersion(newVersion);
+        return [...prev, { version: newVersion, url: result.data, label }];
+      });
+    }
+  }, [result?.type, result?.data]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -772,6 +792,104 @@ export const CreativeOutputCanvas: React.FC<CreativeOutputCanvasProps> = ({
                       loop 
                       className="w-full max-h-125 rounded-sm shadow-xl border border-slate-200 dark:border-slate-800 bg-black"
                     />
+
+                    {/* Video Iteration History Tabs */}
+                    {videoHistory.length > 1 && (
+                      <div className="flex items-center gap-2 mt-3 px-2 w-full">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Iterations:</span>
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                          {videoHistory.map(h => (
+                            <button
+                              key={h.version}
+                              type="button"
+                              onClick={() => {
+                                setActiveVideoVersion(h.version);
+                                setResult((prev: any) => ({ ...prev, data: h.url }));
+                              }}
+                              className={cn(
+                                "px-2.5 py-1 rounded-sm text-xs font-bold transition-all border cursor-pointer shrink-0",
+                                activeVideoVersion === h.version
+                                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 shadow-xs"
+                                  : "border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                              )}
+                            >
+                              v{h.version}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Conversational Video Director Bar (Google Omni) */}
+                    <div className="w-full mt-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-sm shadow-sm text-left space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <AppIcon name="model-omni" size={14} strokeWidth={2} className="text-purple-500" />
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                            Conversational Video Director
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <ProviderBadge provider="google" />
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 uppercase tracking-wider">
+                            Omni 1.1 Flash
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Iterate conversationally on lighting, camera trajectory, atmosphere, or style while preserving motion continuity.
+                      </p>
+
+                      {/* Quick Suggestion Chips */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          'Change lighting to dramatic sunset',
+                          'Change camera to slow push-in tracking shot',
+                          'Change background to modern minimalist studio',
+                          'Add subtle cinematic rain reflections'
+                        ].map(suggestion => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => setVideoEditInstruction(suggestion)}
+                            className="text-[10px] font-medium px-2 py-1 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xs transition-colors cursor-pointer"
+                          >
+                            + {suggestion}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Edit Input Form */}
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!videoEditInstruction.trim() || isGenerating) return;
+                          if (executeVideoEdit) {
+                            await executeVideoEdit(videoEditInstruction);
+                            setVideoEditInstruction('');
+                          }
+                        }}
+                        className="flex items-center gap-2 pt-1"
+                      >
+                        <input
+                          type="text"
+                          value={videoEditInstruction}
+                          onChange={(e) => setVideoEditInstruction(e.target.value)}
+                          placeholder="Describe your video edit (e.g. Change lighting to warm golden hour, keep everything else the same)..."
+                          disabled={isGenerating}
+                          className="flex-1 px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-rose-500"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!videoEditInstruction.trim() || isGenerating}
+                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold rounded-sm flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                        >
+                          {isGenerating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                          Apply Edit
+                        </button>
+                      </form>
+                    </div>
 
                   </div>
                 </div>

@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { serverConfig } from "./apps/api/src/config/env.js";
 import { createExpressApp } from "./apps/api/src/http/app.js";
+import { videoJobWorker } from "./apps/api/src/modules/videoGeneration/videoJobWorker.js";
 
 async function startServer() {
   const app = createExpressApp();
@@ -25,6 +26,11 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    // Start background video generation worker & reconcile stale jobs
+    videoJobWorker.start();
+    videoJobWorker.reconcileStaleJobs().catch(err => {
+      console.warn("Error reconciling stale video jobs:", err);
+    });
   });
 }
 

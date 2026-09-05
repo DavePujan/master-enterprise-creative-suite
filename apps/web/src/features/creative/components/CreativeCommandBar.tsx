@@ -10,8 +10,20 @@ import {
   Upload, 
   Send, 
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Film,
+  Check,
+  Plus,
+  Tag,
+  Mic,
+  RefreshCw,
+  Info,
+  Zap,
+  Layers,
+  Package,
+  User
 } from 'lucide-react';
+import { AppIcon } from '@web/shared/components/icons/AppIconRegistry.js';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import { useCreditGate } from '@web/features/billing/context/CreditGateContext.js';
@@ -19,7 +31,8 @@ import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
 import { generateImageAutoWriteIdea } from '../services/imageAutoWriteService.js';
 import { generateTextAutoWriteIdea } from '../services/textAutoWriteService.js';
 import { generateAudioAutoWriteIdea } from '../services/audioStudioService.js';
-import { getImageModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
+import { VIDEO_MODELS, getImageModelCapabilities, getVideoModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
+import { videoClient } from '@web/features/video/services/videoClient.js';
 import type { ImageAutoWriteIdea } from '@shared-types/imageAutoWrite.js';
 import type { TextAutoWriteIdea, CaptionEmotion } from '@shared-types/textAutoWrite.js';
 import type { AudioAutoWriteIdea } from '@shared-types/audioAutoWrite.js';
@@ -55,6 +68,20 @@ export interface CreativeCommandBarProps {
   setLastFrameContext: (val: { id: string; name: string; data: string } | null) => void;
   ingredientsContexts: { id: string; name: string; data: string }[];
   setIngredientsContexts: React.Dispatch<React.SetStateAction<{ id: string; name: string; data: string }[]>>;
+  videoDuration?: string;
+  setVideoDuration?: (duration: string) => void;
+  videoResolution?: '720p' | '1080p' | '4k';
+  setVideoResolution?: (res: '720p' | '1080p' | '4k') => void;
+  videoAudioIntent?: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape';
+  setVideoAudioIntent?: (intent: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape') => void;
+  videoNativeAudio?: boolean;
+  setVideoNativeAudio?: (val: boolean) => void;
+  videoShotType?: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
+  setVideoShotType?: (type: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling') => void;
+  videoReferences?: Array<{ id: string; type: string; name: string; data: string; role?: string }>;
+  setVideoReferences?: React.Dispatch<React.SetStateAction<Array<{ id: string; type: string; name: string; data: string; role?: string }>>>;
+  klingElements?: Array<{ id: string; tag: string; name: string; data: string }>;
+  setKlingElements?: React.Dispatch<React.SetStateAction<Array<{ id: string; tag: string; name: string; data: string }>>>;
   selectedModel: string;
   selectedPresentationTheme: any;
   setSelectedPresentationTheme: (theme: any) => void;
@@ -87,6 +114,20 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   setLastFrameContext,
   ingredientsContexts,
   setIngredientsContexts,
+  videoDuration,
+  setVideoDuration,
+  videoResolution,
+  setVideoResolution,
+  videoAudioIntent: propVideoAudioIntent,
+  setVideoAudioIntent: propSetVideoAudioIntent,
+  videoNativeAudio: propVideoNativeAudio,
+  setVideoNativeAudio: propSetVideoNativeAudio,
+  videoShotType,
+  setVideoShotType,
+  videoReferences: propVideoReferences,
+  setVideoReferences: propSetVideoReferences,
+  klingElements: propKlingElements,
+  setKlingElements: propSetKlingElements,
   selectedModel,
   selectedPresentationTheme,
   setSelectedPresentationTheme,
@@ -106,15 +147,74 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
   const [activeIdeaPreview, setActiveIdeaPreview] = React.useState<ImageAutoWriteIdea | null>(null);
   const [activeTextIdeaPreview, setActiveTextIdeaPreview] = React.useState<TextAutoWriteIdea | null>(null);
   const [activeAudioIdeaPreview, setActiveAudioIdeaPreview] = React.useState<AudioAutoWriteIdea | null>(null);
+  const [videoCreationMode, setVideoCreationMode] = React.useState<'text_to_video' | 'image_to_video' | 'multi_shot' | 'reference_to_video'>('text_to_video');
+
+  const [localVideoAudioIntent, setLocalVideoAudioIntent] = React.useState<'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape'>('ambient');
+  const activeVideoAudioIntent = propVideoAudioIntent || localVideoAudioIntent;
+  const setActiveVideoAudioIntent = (val: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape') => {
+    if (propSetVideoAudioIntent) propSetVideoAudioIntent(val);
+    setLocalVideoAudioIntent(val);
+  };
+
+  const [localVideoNativeAudio, setLocalVideoNativeAudio] = React.useState<boolean>(true);
+  const activeVideoNativeAudio = propVideoNativeAudio !== undefined ? propVideoNativeAudio : localVideoNativeAudio;
+  const setActiveVideoNativeAudio = (val: boolean) => {
+    if (propSetVideoNativeAudio) propSetVideoNativeAudio(val);
+    setLocalVideoNativeAudio(val);
+  };
+
+  const [localVideoReferences, setLocalVideoReferences] = React.useState<Array<{ id: string; type: string; name: string; data: string; role?: string }>>([]);
+  const activeVideoReferences = propVideoReferences || localVideoReferences;
+  const setActiveVideoReferences = propSetVideoReferences || setLocalVideoReferences;
+
+  const [localKlingElements, setLocalKlingElements] = React.useState<Array<{ id: string; tag: string; name: string; data: string }>>([]);
+  const activeKlingElements = propKlingElements || localKlingElements;
+  const setActiveKlingElements = propSetKlingElements || setLocalKlingElements;
+
+  // Auto-reconcile video creation mode when model changes
+  React.useEffect(() => {
+    if (selectedGem.type === 'video') {
+      const vCaps = getVideoModelCapabilities(selectedModel);
+      if (!vCaps.supportedModes.includes(videoCreationMode)) {
+        setVideoCreationMode((vCaps.supportedModes[0] as any) || 'text_to_video');
+      }
+    }
+  }, [selectedModel, selectedGem.type]);
 
   const { credits, openCreditGate } = useCreditGate();
+
+  const videoRecommendation = React.useMemo(() => {
+    if (firstFrameContext && lastFrameContext) {
+      return {
+        name: 'Google Veo 3.1 Pro',
+        reason: 'Required for start-to-end frame interpolation.'
+      };
+    }
+    if (activeVideoReferences.length > 2 || ingredientsContexts.length > 2 || videoCreationMode === 'reference_to_video') {
+      return {
+        name: 'Seedance 2.0 Cinematic',
+        reason: 'Optimal for rich multimodal reference board & choreography.'
+      };
+    }
+    if (aspectRatio === '1:1') {
+      return {
+        name: 'Kling 3.0 Standard',
+        reason: 'Native support for 1:1 square social format.'
+      };
+    }
+    return {
+      name: 'Google Omni 1.1 Flash',
+      reason: 'Best for multimodal generation, synchronized audio & conversational editing.'
+    };
+  }, [firstFrameContext, lastFrameContext, activeVideoReferences.length, ingredientsContexts.length, videoCreationMode, aspectRatio]);
 
   const estimatedCost = React.useMemo(() => {
     if (selectedGem.type === 'image') {
       return selectedModel === 'fal-ai/flux-pro/v1.1' ? 4 : (selectedModel === 'fal-ai/fast-sdxl' ? 2 : 3);
     }
     if (selectedGem.type === 'video') {
-      return selectedModel === 'veo-3.1-generate-preview' ? 40 : 20;
+      const vCaps = getVideoModelCapabilities(selectedModel);
+      return vCaps.creditCost;
     }
     if (selectedGem.type === 'audio') {
       return audioGenerationType === 'music' ? (musicMode === 'full-track' ? 10 : 3) : 2;
@@ -336,6 +436,17 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                     setPrompt(res.idea.voiceoverScript);
                   }
                   setActiveAudioIdeaPreview(res.idea);
+                } else if (selectedGem.type === 'video') {
+                  const res = await videoClient.generatePlan({
+                    topic: prompt || brandGuidelines.mission || `${brandGuidelines.name} Showcase`,
+                    creativeTone: brandGuidelines.tone,
+                    productName: productContext?.name,
+                    targetAudience: (brandGuidelines as any).targetAudience || brandGuidelines.mission
+                  });
+                  const planPrompt = res?.plan?.cinematicPrompt || (res?.plan as any)?.prompt;
+                  if (planPrompt) {
+                    setPrompt(planPrompt);
+                  }
                 } else {
                   const prm = await generateFastPrompt(
                     'creative', 
@@ -432,163 +543,939 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
         </div>
       )}
 
-      {selectedGem.type === 'video' && (
-        <div className="space-y-4 pb-2 pt-1">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* First Frame Image Upload Box */}
-            <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <ImageIcon size={12} className="text-blue-500" />
-                First Frame Image (Start Point)
-              </span>
-              {firstFrameContext ? (
-                <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
-                  <img 
-                    src={firstFrameContext.data} 
-                    alt="First Frame Context" 
-                    className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{firstFrameContext.name}</p>
-                    {selectedModel === 'veo-3.1-lite-generate-preview' ? (
-                      <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider">
-                        Reference Ignored by Active Model
-                      </span>
-                    ) : (
-                      <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
-                        Video Start Reference (Active)
-                      </span>
-                    )}
+      {selectedGem.type === 'video' && (() => {
+        const vCaps = getVideoModelCapabilities(selectedModel);
+        const norm = selectedModel.toLowerCase();
+        const isOmni = norm === 'google-omni' || norm.includes('omni');
+        const isVeoPro = norm === 'veo-pro' || norm === 'veo-3.1-generate-preview' || (norm.includes('veo') && norm.includes('pro'));
+        const isVeoFast = norm === 'veo-fast' || norm === 'veo-3.1-fast-generate-preview' || (norm.includes('veo') && norm.includes('fast'));
+        const isVeoLite = norm === 'veo-lite' || norm === 'veo-3.1-lite-generate-preview' || (norm.includes('veo') && norm.includes('lite'));
+        const isKling = norm.includes('kling');
+        const isSeedance = norm.includes('seedance');
+
+        const modeLabels: Record<string, string> = {
+          text_to_video: 'Text to Video',
+          image_to_video: 'Animate Image',
+          edit_video: 'Conversational Edit',
+          extend_video: 'Extend Video',
+          multi_shot: 'Multi-Shot Sequence',
+          reference_to_video: 'Reference Board'
+        };
+
+        const imageRefs = activeVideoReferences.filter(r => r.type === 'image');
+        const videoRefs = activeVideoReferences.filter(r => r.type === 'video');
+        const audioRefs = activeVideoReferences.filter(r => r.type === 'audio');
+
+        return (
+          <div className="space-y-4 pb-2 pt-1 animate-in fade-in duration-200">
+            {/* Creation Mode, Credit Badge & Audio Intent Header */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-sm space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Creation Mode:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {vCaps.supportedModes.map(modeId => (
+                      <button
+                        key={modeId}
+                        type="button"
+                        onClick={() => setVideoCreationMode(modeId as any)}
+                        className={cn(
+                          "px-2.5 py-1 text-[10px] font-bold rounded-xs transition-colors cursor-pointer border",
+                          videoCreationMode === modeId
+                            ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 shadow-xs"
+                            : "border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        )}
+                      >
+                        {modeLabels[modeId] || modeId}
+                      </button>
+                    ))}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setFirstFrameContext(null)}
-                    className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
-                    title="Remove First Frame"
-                  >
-                    <X size={14} />
-                  </button>
                 </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
-                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
-                    <Upload size={14} className="text-slate-400 dark:text-slate-500" />
-                    <span>Attach First Frame photo</span>
+
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-xs bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    {vCaps.creditCost} Credits
+                  </span>
+                  <span className="px-2 py-0.5 rounded-xs bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider font-mono">
+                    {(() => {
+                      const m = VIDEO_MODELS.find(x => x.id === selectedModel);
+                      return m ? (m.modelName || m.name) : selectedModel;
+                    })()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Audio Intent & Native Audio Toggle */}
+              {vCaps.supportsAudio && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                      <Volume2 size={12} className="text-purple-500" />
+                      Audio Intent:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {[
+                        { id: 'none', label: 'Mute / Silent', iconKey: 'audio-mute' as const },
+                        { id: 'ambient', label: 'Ambient', iconKey: 'audio-ambient' as const },
+                        { id: 'music', label: 'Score', iconKey: 'audio-score' as const },
+                        { id: 'sfx', label: 'Action SFX', iconKey: 'audio-sfx' as const },
+                        { id: 'cinematic_soundscape', label: 'Full Soundscape', iconKey: 'audio-soundscape' as const }
+                      ].map(intent => (
+                        <button
+                          key={intent.id}
+                          type="button"
+                          onClick={() => setActiveVideoAudioIntent(intent.id as any)}
+                          className={cn(
+                            "px-2 py-0.5 text-[9px] font-bold rounded-xs transition-colors cursor-pointer border flex items-center gap-1",
+                            activeVideoAudioIntent === intent.id
+                              ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30"
+                              : "border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          )}
+                        >
+                          <AppIcon name={intent.iconKey} size={11} strokeWidth={2} />
+                          <span>{intent.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file && file.type.startsWith('image/')) {
-                        const reader = new FileReader();
-                        reader.onloadend = async () => {
-                          const resized = await resizeImageIfNeeded(reader.result as string);
-                          setFirstFrameContext({
-                            id: 'first-frame-context-' + Date.now(),
-                            name: file.name,
-                            data: resized
-                          });
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                </label>
+
+                  {(isKling || isSeedance) && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveVideoNativeAudio(!activeVideoNativeAudio)}
+                      className={cn(
+                        "px-2 py-0.5 text-[9px] font-bold rounded-xs transition-colors cursor-pointer border flex items-center gap-1",
+                        activeVideoNativeAudio
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                          : "border-transparent text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      <Mic size={10} />
+                      <span>{activeVideoNativeAudio ? 'Native Audio: Active' : 'Native Audio: Off'}</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* Last Frame Image Upload Box */}
-            <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <ImageIcon size={12} className="text-violet-500" />
-                Last Frame Image (End Point)
-              </span>
-              {lastFrameContext ? (
-                <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
-                  <img 
-                    src={lastFrameContext.data} 
-                    alt="Last Frame Context" 
-                    className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{lastFrameContext.name}</p>
-                    {selectedModel !== 'veo-3.1-generate-preview' ? (
-                      <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider">
-                        Reference Ignored by Active Model
-                      </span>
-                    ) : (
-                      <span className="text-[9px] text-violet-600 dark:text-violet-400 font-bold uppercase tracking-wider">
-                        Video End Reference (Active)
-                      </span>
+            {/* 1. GOOGLE OMNI MODEL PANEL */}
+            {isOmni && (
+              <div className="space-y-3">
+                <div className="p-3 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-transparent border border-blue-500/20 rounded-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400">
+                        <AppIcon name="model-omni" size={13} strokeWidth={2} className="text-blue-500" />
+                        <span>Gemini Omni 1.1 Flash Engine</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Chat directly with AI to modify and extend your video. You can easily adjust camera angles, tweak scenes, extend video up to 10 seconds, or add reference photos for visual guidance.
+                      </p>
+                    </div>
+                    <span className="shrink-0 px-2 py-0.5 rounded-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[9px] font-bold uppercase tracking-wider">
+                      Conversational
+                    </span>
+                  </div>
+                </div>
+
+                {/* Multimodal Conditioning Reference Images (up to 3) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Layers size={12} className="text-slate-400 dark:text-slate-500 shrink-0" />
+                      Multimodal Conditioning References ({imageRefs.length}/3)
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-mono">
+                      Inline Reference Parts
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {imageRefs.map((ref, idx) => (
+                      <div key={ref.id} className="flex items-center gap-2.5 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={ref.data} 
+                          alt={`Reference ${idx + 1}`} 
+                          className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{ref.name}</p>
+                          <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
+                            Ref Part {idx + 1}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveVideoReferences(prev => prev.filter(r => r.id !== ref.id))}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove Reference"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {imageRefs.length < 3 && (
+                      <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
+                          <Upload size={14} className="text-slate-400 dark:text-slate-500" />
+                          <span>Attach Reference Image</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                setActiveVideoReferences(prev => [
+                                  ...prev,
+                                  {
+                                    id: `omni-ref-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                                    type: 'image',
+                                    name: file.name,
+                                    data: resized,
+                                    role: 'reference_part'
+                                  }
+                                ]);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setLastFrameContext(null)}
-                    className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
-                    title="Remove Last Frame"
-                  >
-                    <X size={14} />
-                  </button>
                 </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
-                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-205 transition-colors">
-                    <Upload size={14} className="text-slate-400 dark:text-slate-500" />
-                    <span>Attach Last Frame photo</span>
+              </div>
+            )}
+
+            {/* 2. GOOGLE VEO PRO MODEL PANEL */}
+            {isVeoPro && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* First Frame Box */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AppIcon name="frame-start" size={12} strokeWidth={2} className="text-blue-500" />
+                      First Frame Image (Start Keyframe)
+                    </span>
+                    {firstFrameContext ? (
+                      <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={firstFrameContext.data} 
+                          alt="First Frame Context" 
+                          className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{firstFrameContext.name}</p>
+                          <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
+                            Start Keyframe (Active)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFirstFrameContext(null)}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove First Frame"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
+                          <Upload size={14} className="text-slate-400 dark:text-slate-500" />
+                          <span>Attach First Frame photo</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                setFirstFrameContext({
+                                  id: 'first-frame-context-' + Date.now(),
+                                  name: file.name,
+                                  data: resized
+                                });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
                   </div>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file && file.type.startsWith('image/')) {
-                        const reader = new FileReader();
-                        reader.onloadend = async () => {
-                          const resized = await resizeImageIfNeeded(reader.result as string);
-                          setLastFrameContext({
-                            id: 'last-frame-context-' + Date.now(),
-                            name: file.name,
-                            data: resized
-                          });
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                </label>
-              )}
-            </div>
+
+                  {/* Last Frame Box */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AppIcon name="frame-end" size={12} strokeWidth={2} className="text-violet-500" />
+                      Last Frame Image (End Keyframe)
+                    </span>
+                    {lastFrameContext ? (
+                      <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={lastFrameContext.data} 
+                          alt="Last Frame Context" 
+                          className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{lastFrameContext.name}</p>
+                          <span className="text-[9px] text-violet-600 dark:text-violet-400 font-bold uppercase tracking-wider">
+                            End Keyframe (Active)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setLastFrameContext(null)}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove Last Frame"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-205 transition-colors">
+                          <Upload size={14} className="text-slate-400 dark:text-slate-500" />
+                          <span>Attach Last Frame photo</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                setLastFrameContext({
+                                  id: 'last-frame-context-' + Date.now(),
+                                  name: file.name,
+                                  data: resized
+                                });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {firstFrameContext && lastFrameContext && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xs text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
+                    <Check size={13} className="text-emerald-500 shrink-0" />
+                    <span>↔ Smooth Motion Interpolation Active: Veo Pro generates seamless transition physics between start and end keyframes.</span>
+                  </div>
+                )}
+
+                {/* Veo Pro Reference Images (up to 3) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Layers size={12} className="text-slate-400 dark:text-slate-500 shrink-0" />
+                      Subject Consistency References ({imageRefs.length}/3)
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-mono">
+                      Veo 3.1 Pro Multi-Reference
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {imageRefs.map((ref, idx) => (
+                      <div key={ref.id} className="flex items-center gap-2.5 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={ref.data} 
+                          alt={`Subject ${idx + 1}`} 
+                          className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{ref.name}</p>
+                          <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider">
+                            Subject Ref {idx + 1}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveVideoReferences(prev => prev.filter(r => r.id !== ref.id))}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove Reference"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {imageRefs.length < 3 && (
+                      <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
+                          <Upload size={14} className="text-slate-400 dark:text-slate-500" />
+                          <span>Attach Subject Reference</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                setActiveVideoReferences(prev => [
+                                  ...prev,
+                                  {
+                                    id: `veo-ref-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                                    type: 'image',
+                                    name: file.name,
+                                    data: resized,
+                                    role: 'subject'
+                                  }
+                                ]);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {(videoResolution === '1080p' || videoResolution === '4k') && (
+                  <div className="text-[10px] text-slate-400 italic flex items-center gap-1.5">
+                    <Info size={12} className="shrink-0" />
+                    <span>Note: 1080p and 4K output generation requires 8-second cinematic sequence duration.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. GOOGLE VEO FAST MODEL PANEL */}
+            {isVeoFast && (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <AppIcon name="frame-start" size={12} strokeWidth={2} className="text-blue-500" />
+                    Start Frame Photo (Animate Image)
+                  </span>
+                  {firstFrameContext ? (
+                    <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                      <img 
+                        src={firstFrameContext.data} 
+                        alt="First Frame Context" 
+                        className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{firstFrameContext.name}</p>
+                        <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
+                          Animation Source (Active)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFirstFrameContext(null)}
+                        className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                        title="Remove First Frame"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
+                        <Upload size={14} className="text-slate-400 dark:text-slate-500" />
+                        <span>Attach photo to animate with Veo Fast</span>
+                      </div>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file && file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              const resized = await resizeImageIfNeeded(reader.result as string);
+                              setFirstFrameContext({
+                                id: 'first-frame-context-' + Date.now(),
+                                name: file.name,
+                                data: resized
+                              });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 px-3 py-2 bg-slate-100/60 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-xs text-[11px] text-slate-600 dark:text-slate-300">
+                  <Zap size={12} className="text-amber-500 shrink-0" />
+                  <span>Rapid Generation Engine (5s / 7s) • End frame interpolation and subject references are disabled for ultra-low latency rendering.</span>
+                </div>
+              </div>
+            )}
+
+            {/* 4. GOOGLE VEO LITE MODEL PANEL */}
+            {isVeoLite && (
+              <div className="p-3 bg-slate-100/60 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-sm space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                    <AppIcon name="model-veo-lite" size={13} strokeWidth={2} className="text-emerald-500" />
+                    Veo Lite Preview Engine (Draft Mode)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-xs bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
+                    10 Credits • 720p • 5s
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Direct text-to-video generation optimized for rapid creative storyboarding and drafts. Media inputs and frame interpolation are disabled for maximum speed and cost efficiency.
+                </p>
+              </div>
+            )}
+
+            {/* 5. KLING 3.0 MODEL PANEL */}
+            {isKling && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* First Frame Box */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AppIcon name="frame-start" size={12} strokeWidth={2} className="text-blue-500" />
+                      Start Keyframe Image
+                    </span>
+                    {firstFrameContext ? (
+                      <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={firstFrameContext.data} 
+                          alt="Start Frame" 
+                          className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{firstFrameContext.name}</p>
+                          <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
+                            Start Keyframe
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFirstFrameContext(null)}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove Keyframe"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
+                          <Upload size={14} className="text-slate-400 dark:text-slate-500" />
+                          <span>Attach Start Keyframe</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                setFirstFrameContext({
+                                  id: 'first-frame-context-' + Date.now(),
+                                  name: file.name,
+                                  data: resized
+                                });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Last Frame Box */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AppIcon name="frame-end" size={12} strokeWidth={2} className="text-violet-500" />
+                      End Keyframe Image
+                    </span>
+                    {lastFrameContext ? (
+                      <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={lastFrameContext.data} 
+                          alt="End Frame" 
+                          className="w-10 h-10 object-cover rounded-sm border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{lastFrameContext.name}</p>
+                          <span className="text-[9px] text-violet-600 dark:text-violet-400 font-bold uppercase tracking-wider">
+                            End Keyframe
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setLastFrameContext(null)}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove Keyframe"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-205 transition-colors">
+                          <Upload size={14} className="text-slate-400 dark:text-slate-500" />
+                          <span>Attach End Keyframe</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                setLastFrameContext({
+                                  id: 'last-frame-context-' + Date.now(),
+                                  name: file.name,
+                                  data: resized
+                                });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Kling Elements Injection Section */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AppIcon name="element-tag" size={12} strokeWidth={2} className="text-rose-500" />
+                      Kling Elements Injection ({activeKlingElements.length}/4)
+                    </span>
+                    <span className="text-[9px] text-slate-400">
+                      Click a tag to insert into prompt
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                    {activeKlingElements.map((el) => (
+                      <div key={el.id} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={el.data} 
+                          alt={el.tag} 
+                          className="w-8 h-8 object-cover rounded-xs border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!prompt.includes(el.tag)) {
+                                setPrompt(prompt.trim() ? `${prompt.trim()} with ${el.tag}` : el.tag);
+                              }
+                            }}
+                            className="text-[10px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer flex items-center gap-1"
+                            title="Insert into prompt"
+                          >
+                            <span>{el.tag}</span>
+                            <Plus size={10} />
+                          </button>
+                          <p className="text-[9px] text-slate-400 truncate">{el.name}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveKlingElements(prev => prev.filter(item => item.id !== el.id))}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove Element"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {activeKlingElements.length < 4 && (
+                      <label className="flex flex-col items-center justify-center h-12 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
+                          <Plus size={12} />
+                          <span>Add @Element{activeKlingElements.length + 1}</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                const tag = `@Element${activeKlingElements.length + 1}`;
+                                setActiveKlingElements(prev => [
+                                  ...prev,
+                                  {
+                                    id: `kling-el-${Date.now()}`,
+                                    tag,
+                                    name: file.name,
+                                    data: resized
+                                  }
+                                ]);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 6. SEEDANCE 2.0 MODEL PANEL */}
+            {isSeedance && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AppIcon name="model-seedance" size={12} strokeWidth={2} className="text-purple-500" />
+                      Seedance Reference Board (Images: {imageRefs.length}/9, Videos: {videoRefs.length}/3, Audios: {audioRefs.length}/3)
+                    </span>
+                    <span className="text-[9px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
+                      Universal Conditioning
+                    </span>
+                  </div>
+
+                  {/* Image References Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {imageRefs.map((ref) => (
+                      <div key={ref.id} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
+                        <img 
+                          src={ref.data} 
+                          alt={ref.name} 
+                          className="w-10 h-10 object-cover rounded-xs border border-slate-200 dark:border-slate-600 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{ref.name}</p>
+                          <select
+                            value={ref.role || 'subject'}
+                            onChange={(e) => {
+                              const newRole = e.target.value;
+                              setActiveVideoReferences(prev => prev.map(item => item.id === ref.id ? { ...item, role: newRole } : item));
+                            }}
+                            className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[9px] font-bold uppercase tracking-wider rounded-xs px-1.5 py-0.5 border border-slate-200 dark:border-slate-600 focus:outline-none cursor-pointer"
+                          >
+                            <option value="subject">Subject</option>
+                            <option value="style">Style</option>
+                            <option value="layout">Layout</option>
+                            <option value="background">Background</option>
+                            <option value="character">Character</option>
+                            <option value="motion">Motion</option>
+                          </select>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveVideoReferences(prev => prev.filter(item => item.id !== ref.id))}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-sm transition-colors cursor-pointer"
+                          title="Remove Reference"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {imageRefs.length < 9 && (
+                      <label className="flex flex-col items-center justify-center h-14 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
+                          <Plus size={14} />
+                          <span>Add Image Ref ({imageRefs.length}/9)</span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const resized = await resizeImageIfNeeded(reader.result as string);
+                                setActiveVideoReferences(prev => [
+                                  ...prev,
+                                  {
+                                    id: `seedance-img-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                                    type: 'image',
+                                    name: file.name,
+                                    data: resized,
+                                    role: 'subject'
+                                  }
+                                ]);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Video & Audio Guide Uploaders for Seedance */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                  {/* Video Guides */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                      <AppIcon name="video-guide" size={11} strokeWidth={2} className="text-blue-500" />
+                      Motion/Video Guides ({videoRefs.length}/3)
+                    </span>
+                    <div className="space-y-1">
+                      {videoRefs.map(v => (
+                        <div key={v.id} className="flex items-center justify-between text-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xs">
+                          <span className="truncate max-w-[180px] font-medium">{v.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveVideoReferences(prev => prev.filter(item => item.id !== v.id))}
+                            className="text-slate-400 hover:text-red-500 p-0.5 cursor-pointer"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      {videoRefs.length < 3 && (
+                        <label className="flex items-center justify-center gap-1.5 h-8 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-xs cursor-pointer text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+                          <Plus size={11} />
+                          <span>Attach Video Guide</span>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setActiveVideoReferences(prev => [
+                                    ...prev,
+                                    {
+                                      id: `seedance-vid-${Date.now()}`,
+                                      type: 'video',
+                                      name: file.name,
+                                      data: reader.result as string,
+                                      role: 'motion'
+                                    }
+                                  ]);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Audio Guides */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                      <AppIcon name="audio-guide" size={11} strokeWidth={2} className="text-purple-500" />
+                      Audio Timing Tracks ({audioRefs.length}/3)
+                    </span>
+                    <div className="space-y-1">
+                      {audioRefs.map(a => (
+                        <div key={a.id} className="flex items-center justify-between text-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xs">
+                          <span className="truncate max-w-[180px] font-medium">{a.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveVideoReferences(prev => prev.filter(item => item.id !== a.id))}
+                            className="text-slate-400 hover:text-red-500 p-0.5 cursor-pointer"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      {audioRefs.length < 3 && (
+                        <label className="flex items-center justify-center gap-1.5 h-8 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-xs cursor-pointer text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+                          <Plus size={11} />
+                          <span>Attach Audio Track</span>
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setActiveVideoReferences(prev => [
+                                    ...prev,
+                                    {
+                                      id: `seedance-aud-${Date.now()}`,
+                                      type: 'audio',
+                                      name: file.name,
+                                      data: reader.result as string,
+                                      role: 'audio_guide'
+                                    }
+                                  ]);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {(selectedGem.type === 'image' || selectedGem.type === 'video') && (
+      {selectedGem.type === 'image' && (
         <div className="space-y-4 pb-2 pt-1">
           <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={12} className="text-amber-500 animate-pulse" />
+                <Layers size={12} className="text-slate-400" />
                 Ingredients Reference Images ({ingredientsContexts.length}/3)
               </span>
-              {selectedGem.type === 'image' ? (
-                <span className="text-[9px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
-                  Prompt Guided Elements
-                </span>
-              ) : selectedModel === 'veo-3.1-generate-preview' ? (
-                <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider bg-emerald-500/10 px-1.5 py-0.5 rounded-xs">
-                  Active (Cinematic High)
-                </span>
-              ) : (
-                <span className="text-[9px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider bg-amber-500/10 px-1.5 py-0.5 rounded-xs">
-                  Switch to "Cinematic High" to Activate References
-                </span>
-              )}
+              <span className="text-[9px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
+                Prompt Guided Elements
+              </span>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -658,7 +1545,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
           {/* Product Context Image Box */}
           <div className="space-y-1.5">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <ImageIcon size={12} className="text-emerald-500" />
+              <Package size={12} className="text-slate-400" />
               Product Context Image
             </span>
             {productContext ? (
@@ -727,7 +1614,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
           {/* Face / Model Context Image Box */}
           <div className="space-y-1.5">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <ImageIcon size={12} className="text-amber-500" />
+              <User size={12} className="text-slate-400" />
               Face / Model Context Image
             </span>
             {faceContext ? (

@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Upload, Trash2, CheckCircle2, Image as ImageIcon, Download, Loader2, Sparkles, FileText, Eye, X, Send, Volume2, Play, Maximize2 } from 'lucide-react';
+import { AppIcon } from '@web/shared/components/icons/AppIconRegistry.js';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { analyzeAsset, generateImage } from '@web/infrastructure/ai/geminiService.js';
@@ -265,7 +266,7 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
 
         {assets.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 dark:text-slate-500">
-            <ImageIcon size={48} className="mb-4 opacity-50" />
+            <AppIcon name="filter-all" size={48} strokeWidth={1.5} className="mb-4 opacity-50" />
             <p className="text-lg font-medium">No assets uploaded yet</p>
             <p className="text-sm mt-1">Upload images to use them as context for your generations.</p>
           </div>
@@ -307,7 +308,7 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
                     </div>
                   ) : asset.type === 'audio' ? (
                     <div className="w-full h-full bg-slate-50 dark:bg-slate-800 flex flex-col items-center justify-center p-6 text-center">
-                      <Volume2 size={48} className="text-slate-300 dark:text-slate-600 mb-3" />
+                      <AppIcon name="filter-audio" size={48} strokeWidth={1.5} className="text-slate-300 dark:text-slate-600 mb-3" />
                       <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest line-clamp-2">{asset.name}</p>
                       <div className="absolute top-2 right-2">
                         <div className="bg-slate-950/80 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest border border-white/20">Audio</div>
@@ -315,7 +316,7 @@ export const AssetLibrary = ({ assets, setAssets, onClose, brandGuidelines, isSy
                     </div>
                   ) : (
                     <div className="w-full h-full bg-slate-50 dark:bg-slate-800 flex flex-col items-center justify-center p-6 text-center">
-                      <FileText size={48} className="text-slate-300 dark:text-slate-600 mb-3" />
+                      <AppIcon name="filter-copy" size={48} strokeWidth={1.5} className="text-slate-300 dark:text-slate-600 mb-3" />
                       <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest line-clamp-2">{asset.name}</p>
                     </div>
                   )}

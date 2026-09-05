@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Layers, Image as ImageIcon, Video as VideoIcon, FileText, LayoutDashboard, Presentation, Target, BookOpen, Volume2, Music, Check } from 'lucide-react';
+import { AppIcon, ProviderBadge } from '@web/shared/components/icons/AppIconRegistry.js';
 import type { Gem } from '@shared-types/creative.js';
 import type { BrandGuidelines } from '@shared-types/brand.js';
 import type { CapabilityDetail } from '@shared-types/imageGeneration.js';
-import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, getImageModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
+import { IMAGE_MODELS, VIDEO_MODELS, TEXT_MODELS, getImageModelCapabilities, getVideoModelCapabilities } from '@web/infrastructure/ai/modelRegistry.js';
 import { cn } from '@web/lib/utils.js';
 import { CreativeOutputCanvas } from './CreativeOutputCanvas.js';
 import { CreativeCommandBar } from './CreativeCommandBar.js';
@@ -20,6 +21,18 @@ export interface CreativeWorkspaceProps {
   setSelectedModel: (model: string) => void;
   videoShotType: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling';
   setVideoShotType: (type: 'Single Shot' | 'Multi-Shot Sequence' | 'Cinematic Storytelling') => void;
+  videoDuration?: string;
+  setVideoDuration?: (duration: string) => void;
+  videoResolution?: '720p' | '1080p' | '4k';
+  setVideoResolution?: (res: '720p' | '1080p' | '4k') => void;
+  videoAudioIntent?: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape';
+  setVideoAudioIntent?: (intent: 'none' | 'ambient' | 'music' | 'sfx' | 'cinematic_soundscape') => void;
+  videoNativeAudio?: boolean;
+  setVideoNativeAudio?: (val: boolean) => void;
+  videoReferences?: Array<{ id: string; type: string; name: string; data: string; role?: string }>;
+  setVideoReferences?: React.Dispatch<React.SetStateAction<Array<{ id: string; type: string; name: string; data: string; role?: string }>>>;
+  klingElements?: Array<{ id: string; tag: string; name: string; data: string }>;
+  setKlingElements?: React.Dispatch<React.SetStateAction<Array<{ id: string; tag: string; name: string; data: string }>>>;
   imageStyle: string;
   setImageStyle: (style: string) => void;
   bakeLogoOnGeneration: boolean;
@@ -31,6 +44,7 @@ export interface CreativeWorkspaceProps {
   setResult: React.Dispatch<React.SetStateAction<any>>;
   isGenerating: boolean;
   videoStatus: string;
+  executeVideoEdit?: (instruction: string) => Promise<void>;
   prompt: string;
   setPrompt: (val: string) => void;
   selectedLanguage: string;
@@ -133,8 +147,24 @@ export interface CreativeWorkspaceProps {
   handleGenerate: () => Promise<void>;
 }
 
-const renderCapabilityPill = (label: string, detail?: CapabilityDetail) => {
-  if (!detail) return null;
+const renderCapabilityPill = (label: string, detail?: CapabilityDetail | boolean) => {
+  if (detail === undefined || detail === null) return null;
+  if (typeof detail === 'boolean') {
+    const colorClass = detail
+      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+      : "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20";
+    return (
+      <span
+        className="flex items-center gap-1 text-slate-650 dark:text-slate-350 cursor-help transition-opacity hover:opacity-90"
+        title={`${label}: ${detail ? 'Supported' : 'Unsupported'}`}
+      >
+        {label}:
+        <span className={cn("font-bold text-[10px] px-1.5 py-0.5 rounded-xs tracking-tight shadow-xs", colorClass)}>
+          {detail ? 'Native' : 'Unavailable'}
+        </span>
+      </span>
+    );
+  }
   const status = detail.status;
   let colorClass = "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20";
   if (status === "native") {
@@ -174,6 +204,18 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
     setSelectedModel,
     videoShotType,
     setVideoShotType,
+    videoDuration,
+    setVideoDuration,
+    videoResolution,
+    setVideoResolution,
+    videoAudioIntent,
+    setVideoAudioIntent,
+    videoNativeAudio,
+    setVideoNativeAudio,
+    videoReferences,
+    setVideoReferences,
+    klingElements,
+    setKlingElements,
     imageStyle,
     setImageStyle,
     bakeLogoOnGeneration,
@@ -202,6 +244,25 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
     handleRefineWithAI,
     handleGenerate
   } = props;
+
+  // Auto-reconcile video parameters whenever selectedModel or selectedGem changes
+  useEffect(() => {
+    if (selectedGem.type === 'video') {
+      const vCaps = getVideoModelCapabilities(selectedModel);
+      if (!vCaps.aspectRatios.includes(aspectRatio) && !vCaps.aspectRatios.includes('auto')) {
+        setAspectRatio(vCaps.aspectRatios[0] || '16:9');
+      }
+      if (videoDuration && !vCaps.supportedDurations.includes(videoDuration)) {
+        setVideoDuration?.(vCaps.supportedDurations[0] || '8s');
+      }
+      if (!vCaps.supportsMultiShot && videoShotType === 'Multi-Shot Sequence') {
+        setVideoShotType('Single Shot');
+      }
+      if (videoResolution && !vCaps.supportedResolutions.includes(videoResolution as any)) {
+        setVideoResolution?.(vCaps.supportedResolutions[0]);
+      }
+    }
+  }, [selectedModel, selectedGem.type]);
 
   // Check for staged campaign strategy briefs
   const [stagedBrief, setStagedBrief] = useState<any | null>(null);
@@ -381,20 +442,32 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         {selectedGem.type !== 'text' && selectedGem.type !== 'audio' && selectedGem.id !== 'corporate-presentations' && (
           <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
             <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Aspect Ratio</span>
-            {(selectedGem.type === 'video' ? ['16:9', '9:16'] : (selectedGem.type === 'storyline' ? ['1:1', '16:9', '9:16'] : ['1:1', '16:9', '9:16', '4:3'])).map(ratio => (
-               <button
-                key={ratio}
-                onClick={() => setAspectRatio(ratio)}
-                className={cn(
-                  "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer",
-                  aspectRatio === ratio 
-                    ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
-                    : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-                )}
-              >
-                {ratio}
-              </button>
-            ))}
+            {(() => {
+              let ratios: string[] = ['1:1', '16:9', '9:16', '4:3'];
+              if (selectedGem.type === 'video') {
+                const vCaps = getVideoModelCapabilities(selectedModel);
+                ratios = vCaps.aspectRatios || ['16:9', '9:16'];
+              } else if (selectedGem.type === 'storyline') {
+                ratios = ['1:1', '16:9', '9:16'];
+              }
+              return ratios.map(ratio => (
+                <button
+                  key={ratio}
+                  onClick={() => setAspectRatio(ratio)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5",
+                    aspectRatio === ratio 
+                      ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
+                      : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  )}
+                >
+                  {ratio === '16:9' && <AppIcon name="aspect-16-9" size={12} strokeWidth={2} />}
+                  {ratio === '9:16' && <AppIcon name="aspect-9-16" size={12} strokeWidth={2} />}
+                  {ratio === '1:1' && <AppIcon name="aspect-1-1" size={12} strokeWidth={2} />}
+                  <span>{ratio}</span>
+                </button>
+              ));
+            })()}
           </div>
         )}
 
@@ -406,19 +479,16 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
                 key={model.id}
                 onClick={() => setSelectedModel(model.id)}
                 className={cn(
-                  "px-3 py-1.5 rounded-sm text-xs font-bold transition-all flex items-center gap-2 border cursor-pointer",
+                  "px-3 py-1.5 rounded-sm text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer",
                   selectedModel === model.id 
                     ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
                     : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
                 title={`${'modelName' in model ? (model as any).modelName : ''} — ${model.description} (${('credits' in model ? (model as any).credits : selectedGem.cost)} credits)`}
               >
-                {(model.id.includes('3.1') || model.id === 'veo-3.1-generate-preview') && <Sparkles size={12} />}
-                <span className="flex items-center gap-1">
-                  <span>{model.name}</span>
-                  <span className="text-[10px] opacity-75 font-normal">
-                    ({'credits' in model ? (model as any).credits : selectedGem.cost}c)
-                  </span>
+                <span>{model.name}</span>
+                <span className="text-[10px] opacity-70 font-mono font-normal">
+                  ({'credits' in model ? (model as any).credits : selectedGem.cost}c)
                 </span>
               </button>
             ))}
@@ -426,23 +496,72 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         )}
 
         {selectedGem.type === 'video' && (
-          <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
-            <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Shot Type</span>
-            {(['Single Shot', 'Multi-Shot Sequence', 'Cinematic Storytelling'] as const).map(type => (
-              <button
-                key={type}
-                onClick={() => setVideoShotType(type)}
-                className={cn(
-                  "px-3 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer",
-                  videoShotType === type 
-                    ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm" 
-                    : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-                )}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
+          <>
+            {/* Dynamic Model-Supported Duration Selector */}
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Duration</span>
+              {(() => {
+                const vCaps = getVideoModelCapabilities(selectedModel);
+                return vCaps.supportedDurations.map(dur => (
+                  <button
+                    key={dur}
+                    type="button"
+                    onClick={() => {
+                      setVideoDuration?.(dur);
+                      // Veo Pro 1080p/4K requires 8s duration
+                      if (dur !== '8s' && (selectedModel === 'veo-pro' || selectedModel === 'veo-3.1-generate-preview') && videoResolution === '4k') {
+                        setVideoResolution?.('720p');
+                      }
+                    }}
+                    className={cn(
+                      "px-2.5 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer",
+                      (videoDuration || '8s') === dur
+                        ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm"
+                        : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                    title={`Generation duration: ${dur}`}
+                  >
+                    {dur}
+                  </button>
+                ));
+              })()}
+            </div>
+
+            {/* Dynamic Model-Supported Resolution Selector */}
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-sm border border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 px-2 uppercase tracking-wider">Resolution</span>
+              {(() => {
+                const vCaps = getVideoModelCapabilities(selectedModel);
+                return vCaps.supportedResolutions.map(res => (
+                  <button
+                    key={res}
+                    type="button"
+                    onClick={() => {
+                      setVideoResolution?.(res);
+                      // 1080p/4K on Veo Pro requires 8s duration
+                      if ((res === '1080p' || res === '4k') && (selectedModel === 'veo-pro' || selectedModel === 'veo-3.1-generate-preview')) {
+                        setVideoDuration?.('8s');
+                      }
+                    }}
+                    className={cn(
+                      "px-2.5 py-1.5 rounded-sm text-xs font-bold transition-all border cursor-pointer uppercase",
+                      (videoResolution || (vCaps.supportedResolutions.includes('1080p') ? '1080p' : '720p')) === res
+                        ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60 shadow-sm"
+                        : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    )}
+                    title={
+                      res === '4k'
+                        ? '4K Ultra-High Definition (Veo Pro requires 8s)'
+                        : (res === '1080p' ? '1080p Full HD' : '720p Standard Definition')
+                    }
+                  >
+                    {res}
+                  </button>
+                ));
+              })()}
+            </div>
+
+          </>
         )}
 
         {selectedGem.type === 'image' && (
@@ -646,19 +765,40 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
           </span>
           <span className="hidden sm:inline h-3.5 w-px bg-slate-200 dark:bg-slate-800" />
           <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-            Active Model: <span className="text-slate-900 dark:text-slate-100 font-bold">
-              {selectedGem.type === 'image' ? (
-                (() => {
-                  const m = IMAGE_MODELS.find(x => x.id === selectedModel);
-                  return m ? m.name : selectedModel;
-                })()
-              ) : (
-                (() => {
-                  const m = VIDEO_MODELS.find(x => x.id === selectedModel);
-                  return m ? m.name : selectedModel;
-                })()
-              )}
-            </span>
+            Active Model:
+            {(() => {
+              const norm = selectedModel.toLowerCase();
+              const isGoogle = norm.includes('omni') || norm.includes('veo') || norm.includes('imagen') || norm.includes('gemini');
+              const isFal = norm.includes('kling') || norm.includes('seedance') || norm.includes('flux');
+              let capKey: any = null;
+              if (norm.includes('omni')) capKey = 'model-omni';
+              else if (norm === 'veo-pro' || norm === 'veo-3.1-generate-preview' || (norm.includes('veo') && !norm.includes('fast') && !norm.includes('lite'))) capKey = 'model-veo-pro';
+              else if (norm.includes('veo') && norm.includes('fast')) capKey = 'model-veo-fast';
+              else if (norm.includes('veo') && norm.includes('lite')) capKey = 'model-veo-lite';
+              else if (norm.includes('kling')) capKey = 'model-kling';
+              else if (norm.includes('seedance')) capKey = 'model-seedance';
+
+              return (
+                <span className="inline-flex items-center gap-1.5 font-bold text-slate-900 dark:text-slate-100">
+                  {isGoogle && <ProviderBadge provider="google" />}
+                  {isFal && <ProviderBadge provider="fal" />}
+                  {capKey && <AppIcon name={capKey} size={14} strokeWidth={2} className="text-purple-500" />}
+                  <span>
+                    {selectedGem.type === 'image' ? (
+                      (() => {
+                        const m = IMAGE_MODELS.find(x => x.id === selectedModel);
+                        return m ? m.name : selectedModel;
+                      })()
+                    ) : (
+                      (() => {
+                        const m = VIDEO_MODELS.find(x => x.id === selectedModel);
+                        return m ? m.name : selectedModel;
+                      })()
+                    )}
+                  </span>
+                </span>
+              );
+            })()}
           </span>
           
           {selectedGem.type === 'image' ? (
@@ -680,22 +820,79 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
               );
             })()
           ) : (
-            <>
-              <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350 cursor-help" title="Native parameter supported for first frame image conditioning">
-                First Frame Input: 
-                <span className={cn("font-bold text-[10px] px-1.5 py-0.5 rounded-xs tracking-tight shadow-xs", selectedModel !== 'veo-3.1-lite-generate-preview' ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" : "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20")}>
-                  {selectedModel !== 'veo-3.1-lite-generate-preview' ? 'Provider Native' : 'Unavailable'}
-                </span>
-              </span>
-              <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
-              <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350 cursor-help" title="Native parameter supported for end frame interpolation">
-                Last Frame Input: 
-                <span className={cn("font-bold text-[10px] px-1.5 py-0.5 rounded-xs tracking-tight shadow-xs", selectedModel === 'veo-3.1-generate-preview' ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" : "bg-slate-500/10 text-slate-450 dark:text-slate-500 border border-slate-500/20")}>
-                  {selectedModel === 'veo-3.1-generate-preview' ? 'Provider Native' : 'Unavailable'}
-                </span>
-              </span>
-            </>
+            (() => {
+              const vCaps = getVideoModelCapabilities(selectedModel);
+              const norm = selectedModel.toLowerCase();
+              const isOmni = norm === 'google-omni' || norm.includes('omni');
+              const isVeoPro = norm === 'veo-pro' || norm === 'veo-3.1-generate-preview' || (norm.includes('veo') && norm.includes('pro'));
+              const isVeoFast = norm === 'veo-fast' || norm === 'veo-3.1-fast-generate-preview' || (norm.includes('veo') && norm.includes('fast'));
+              const isVeoLite = norm === 'veo-lite' || norm === 'veo-3.1-lite-generate-preview' || (norm.includes('veo') && norm.includes('lite'));
+              const isKling = norm.includes('kling');
+              const isSeedance = norm.includes('seedance');
+
+              // Generate tailored positive feature badges per model
+              const badges: Array<{ label: string; value: string; color?: string }> = [];
+
+              if (isOmni) {
+                badges.push({ label: 'Continuity', value: 'Multi-Turn Video Editing', color: 'blue' });
+                badges.push({ label: 'Image Conditioning', value: 'Inline Reference Parts (3 max)', color: 'emerald' });
+                badges.push({ label: 'Audio Direction', value: '5 Acoustic Styles', color: 'purple' });
+                badges.push({ label: 'Durations', value: '4s – 10s', color: 'sky' });
+              } else if (isVeoPro) {
+                badges.push({ label: 'Keyframes', value: 'Start + End Motion Interpolation', color: 'emerald' });
+                badges.push({ label: 'Subject Consistency', value: '3 Reference Images', color: 'purple' });
+                badges.push({ label: 'Cinematic Fidelity', value: 'Up to 4K Ultra-HD (8s)', color: 'rose' });
+                badges.push({ label: 'Audio Direction', value: 'Supported', color: 'sky' });
+              } else if (isVeoFast) {
+                badges.push({ label: 'Image Animation', value: 'Start Frame Keyframe', color: 'emerald' });
+                badges.push({ label: 'Operational Speed', value: 'Low Latency Rapid Generation', color: 'amber' });
+                badges.push({ label: 'Durations', value: '5s, 7s', color: 'sky' });
+              } else if (isVeoLite) {
+                badges.push({ label: 'Draft Mode', value: '720p Fast Storyboarding', color: 'rose' });
+                badges.push({ label: 'Cost Efficiency', value: '10 Credits (Lowest Cost)', color: 'emerald' });
+                badges.push({ label: 'Input Mode', value: 'Direct Text-to-Video', color: 'sky' });
+              } else if (isKling) {
+                badges.push({ label: 'Keyframes', value: 'Start + End Keyframe Control', color: 'emerald' });
+                badges.push({ label: 'Element Tokens', value: '@Element1..@Element4 Tags', color: 'rose' });
+                badges.push({ label: 'Native Audio', value: 'Synchronized Lip-Sync & Sound', color: 'purple' });
+                badges.push({ label: 'Aspect Ratios', value: '1:1 Square, 16:9, 9:16', color: 'sky' });
+              } else if (isSeedance) {
+                badges.push({ label: 'Reference Board', value: 'Up to 9 Semantic Images', color: 'purple' });
+                badges.push({ label: 'Motion Guides', value: '3 Video Guides', color: 'blue' });
+                badges.push({ label: 'Timing Tracks', value: '3 Audio Tracks', color: 'amber' });
+                badges.push({ label: 'Native Audio', value: 'Synchronized Lip-Sync & Foley', color: 'emerald' });
+                badges.push({ label: 'Multi-Shot', value: 'Supported', color: 'sky' });
+              } else {
+                if (vCaps.supportsFirstFrame) badges.push({ label: 'Start Keyframe', value: 'Native', color: 'emerald' });
+                if (vCaps.supportsLastFrame) badges.push({ label: 'End Keyframe', value: 'Native', color: 'emerald' });
+                if (vCaps.supportsReferences) badges.push({ label: 'References', value: `${vCaps.maxReferenceImages} max`, color: 'emerald' });
+                if (vCaps.supportsAudio) badges.push({ label: 'Audio', value: 'Supported', color: 'purple' });
+              }
+
+              return (
+                <>
+                  {badges.map((b) => (
+                    <React.Fragment key={b.label}>
+                      <span className="text-slate-300 dark:text-slate-700 select-none">·</span>
+                      <span className="flex items-center gap-1 text-slate-650 dark:text-slate-350">
+                        {b.label}:
+                        <span className={cn(
+                          "font-bold text-[10px] px-1.5 py-0.5 rounded-xs tracking-tight shadow-xs border",
+                          b.color === 'emerald' && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                          b.color === 'rose' && "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+                          b.color === 'purple' && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+                          b.color === 'blue' && "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+                          b.color === 'amber' && "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+                          (!b.color || b.color === 'sky') && "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20"
+                        )}>
+                          {b.value}
+                        </span>
+                      </span>
+                    </React.Fragment>
+                  ))}
+                </>
+              );
+            })()
           )}
         </div>
       )}
@@ -733,6 +930,20 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         setLastFrameContext={props.setLastFrameContext}
         ingredientsContexts={props.ingredientsContexts}
         setIngredientsContexts={props.setIngredientsContexts}
+        videoDuration={props.videoDuration}
+        setVideoDuration={props.setVideoDuration}
+        videoResolution={props.videoResolution}
+        setVideoResolution={props.setVideoResolution}
+        videoAudioIntent={props.videoAudioIntent}
+        setVideoAudioIntent={props.setVideoAudioIntent}
+        videoNativeAudio={props.videoNativeAudio}
+        setVideoNativeAudio={props.setVideoNativeAudio}
+        videoShotType={props.videoShotType}
+        setVideoShotType={props.setVideoShotType}
+        videoReferences={props.videoReferences}
+        setVideoReferences={props.setVideoReferences}
+        klingElements={props.klingElements}
+        setKlingElements={props.setKlingElements}
         selectedModel={props.selectedModel}
         selectedPresentationTheme={props.selectedPresentationTheme}
         setSelectedPresentationTheme={props.setSelectedPresentationTheme}

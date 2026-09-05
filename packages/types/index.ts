@@ -11,3 +11,5 @@ export * from './audioGeneration.js';
 export * from './audioAutoWrite.js';
 export * from './presentation.js';
 export * from './campaignStrategy.js';
+export * from './videoGeneration.js';
+export * from './icons.js';

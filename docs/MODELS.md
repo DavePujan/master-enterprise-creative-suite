@@ -71,9 +71,56 @@ Used for strategy generation, social media captions, brand manifestos, and agent
 
 ## 🎬 Video Generation Models (Promos & Cinematic)
 
-Used for promotional loops, brand videos, and social media reels.
+Video models are routed through the normalized video generation pipeline (`/api/video/generate` and `/api/video/jobs/:jobId`), featuring asynchronous job polling, atomic two-phase credit reservations, model-adaptive conditioning parameter compilers, and automatic asset archival.
 
-| Model ID | Tier | Description / Use Case | Credits |
-| :--- | :--- | :--- | :---: |
-| **`veo-3.1-fast-generate-preview`** | Fast | Quick draft generation for short social clips (720p). | 20c |
-| **`veo-3.1-generate-preview`** | Standard | High-end cinematic video generation (1080p). | 30c |
+Credit deduction rates range between **10 and 80 credits** per video generation, calibrated to yield 45% – 81% gross margin against provider API costs.
+
+| Product Key / Label | Provider | Provider Endpoint ID | Canonical Key | Credits | Supported Modes | Durations | Aspect Ratios | Max Resolution | Keyframe Control | Reference Inputs | Audio Capabilities |
+| :--- | :--- | :--- | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- | :--- |
+| **Google Omni Flash** | Google GenAI | `gemini-omni-1.1-flash` | `google-omni` | **20c** | text_to_video, image_to_video, edit_video, extend_video | 4s, 6s, 8s, 10s | 16:9, 9:16 | 1080p | No (explicit interpolation unsupported) | Up to 3 reference images (inline conditioning parts) | Ambient / Score / SFX / Full Soundscape |
+| **Google Veo Pro** | Google GenAI | `veo-3.1-generate-preview` | `veo-pro` | **40c** | text_to_video, image_to_video, extend_video | 4s, 6s, 8s *(1080p/4K requires 8s)* | 16:9, 9:16 | 4K | Yes (Start Frame + End Frame motion interpolation) | Up to 3 subject consistency images | Audio Intent Selector |
+| **Google Veo Fast** | Google GenAI | `veo-3.1-fast-generate-preview` | `veo-fast` | **20c** | text_to_video, image_to_video | 5s, 7s | 16:9, 9:16 | 1080p | Start Frame only (Animate Image) | None (bypassed for speed) | Audio Intent Selector |
+| **Google Veo Lite** | Google GenAI | `veo-3.1-lite-generate-preview` | `veo-lite` | **10c** | text_to_video | 5s | 16:9, 9:16 | 720p (locked) | None | None | Draft preview |
+| **Kling 3.0 Standard** | Fal AI | `fal-ai/kling-video/v3/standard` | `kling-v3` | **40c** | text_to_video, image_to_video, multi_shot | 3s, 5s, 10s, 15s | 16:9, 9:16, 1:1 | 1080p | Yes (Start Keyframe + End Keyframe) | `@Element1`..`@Element4` tag injection | Native Lip-Sync & Sound Effects |
+| **Seedance 2.0 Cinematic** | ByteDance | `bytedance/seedance-2.0` | `seedance-2` | **80c** | text_to_video, image_to_video, reference_to_video, multi_shot | 4s, 6s, 8s, 10s, 12s, 15s, auto | auto, 21:9, 16:9, 4:3, 1:1, 3:4, 9:16 | 1080p | Yes (Start Keyframe) | Up to 9 image refs, 3 video guides, 3 audio tracks | Native Lip-Sync & Foley Synthesis |
+
+### Verified Video Model Capability Details
+
+1. **Google Omni 1.1 Flash (`gemini-omni-1.1-flash`) — 20 Credits**:
+   - **Core Use Case**: Conversational video editing, multi-turn narrative modifications, and multimodal image conditioning.
+   - **Stateful Continuity**: Utilizes Google GenAI `store: true` with `delivery: 'uri'`. Enables conversational iterative modifications using `previous_interaction_id`.
+   - **Conditioning Parts**: Accepts up to 3 inline reference images without explicit interpolation constraints.
+   - **Audio Direction**: Synthesizes audio intent via semantic audio prompting (Mute, Ambient, Score, Action SFX, Full Soundscape).
+   - **Keyframe Policy**: Explicit start/end keyframe interpolation is intentionally unsupported by the Gemini Omni architecture.
+
+2. **Google Veo 3.1 Pro (`veo-3.1-generate-preview`) — 40 Credits**:
+   - **Core Use Case**: High-end cinematic commercials and motion interpolation sequences.
+   - **Keyframe Interpolation**: Accepts explicit `startFrameAssetId` and `endFrameAssetId` to compute seamless physics-based motion transitions.
+   - **Subject Consistency**: Accepts up to 3 subject reference images (`image_to_video` conditioning).
+   - **Duration / Resolution Rules**: Generating in 1080p or 4K strictly enforces 8-second sequence length per Google GenAI API specifications.
+
+3. **Google Veo 3.1 Fast (`veo-3.1-fast-generate-preview`) — 20 Credits**:
+   - **Core Use Case**: Sub-second fast image animation and rapid concept iteration.
+   - **Keyframe Support**: Accepts `startFrameAssetId` for single-image animation. End-frame interpolation and subject references are disabled to maintain ultra-low latency.
+   - **Durations**: Fixed to 5-second or 7-second clips.
+
+4. **Google Veo 3.1 Lite (`veo-3.1-lite-generate-preview`) — 10 Credits**:
+   - **Core Use Case**: Most economical draft engine for direct text-to-video storyboarding.
+   - **Resolution**: Locked to 720p draft rendering.
+   - **Media Inputs**: All image uploads and keyframe parameters are disabled; operates strictly on text prompts.
+
+5. **Kling 3.0 Standard (`fal-ai/kling-video/v3/standard`) — 40 Credits**:
+   - **Core Use Case**: Social media square format (1:1), dual keyframe animation, and character element preservation.
+   - **Element Injection**: Accepts up to 4 distinct visual element tokens (`@Element1` through `@Element4`) for consistent props, mascots, or characters.
+   - **Audio Generation**: Native audio engine generates synchronized lip-sync and environmental Foley.
+   - **Aspect Ratios**: Native support for 16:9, 9:16, and 1:1.
+
+6. **Seedance 2.0 Cinematic (`bytedance/seedance-2.0`) — 80 Credits**:
+   - **Core Use Case**: Universal multimodal choreography, multi-shot sequences, and complex reference conditioning.
+   - **Multimodal Reference Board**:
+     - Up to 9 image references categorized by semantic role (`subject`, `style`, `layout`, `background`, `character`, `motion`).
+     - Up to 3 video reference guides for motion transfer or timing.
+     - Up to 3 audio reference tracks for rhythm-matching and vocal choreography.
+   - **Native Audio Engine**: Fully synchronized lip-sync and Foley sound effects synthesis.
+   - **Aspect Ratios**: Full spectrum support (`auto`, `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`).
+

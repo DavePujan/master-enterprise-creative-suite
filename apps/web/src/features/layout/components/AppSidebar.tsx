@@ -25,6 +25,7 @@ import {
   ChevronRight,
   Loader2
 } from 'lucide-react';
+import { AppIcon } from '@web/shared/components/icons/AppIconRegistry.js';
 import { BrandLogo } from '@web/features/brand/components/BrandLogo.js';
 import { GENERIC_GEMS } from '@web/infrastructure/ai/modelRegistry.js';
 import type { Gem } from '@shared-types/creative.js';
@@ -87,19 +88,27 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onLogin,
   generatingGemIds = []
 }) => {
-  const getIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'Image': return <ImageIcon size={20} />;
-      case 'Video': return <VideoIcon size={20} />;
-      case 'FileText': return <FileText size={20} />;
-      case 'LayoutDashboard': return <LayoutDashboard size={20} />;
-      case 'Presentation': return <Presentation size={20} />;
-      case 'Target': return <Target size={20} />;
-      case 'BookOpen': return <BookOpen size={20} />;
-      case 'Layers': return <Layers size={20} />;
-      case 'Volume2': return <Volume2 size={20} />;
-      case 'Music': return <Music size={20} />;
-      default: return <Sparkles size={20} />;
+  const renderGemIcon = (gem: Gem) => {
+    if (gem.iconKey) {
+      return <AppIcon name={gem.iconKey} size={20} strokeWidth={1.75} />;
+    }
+    switch (gem.icon) {
+      case 'Compass':
+      case 'Target': return <AppIcon name="campaign-strategy" size={20} strokeWidth={1.75} />;
+      case 'ShoppingBag':
+      case 'Layers': return <AppIcon name="ecommerce-bundle" size={20} strokeWidth={1.75} />;
+      case 'MessageSquareQuote':
+      case 'FileText': return <AppIcon name="captions-copy" size={20} strokeWidth={1.75} />;
+      case 'Aperture':
+      case 'Image': return <AppIcon name="brand-image" size={20} strokeWidth={1.75} />;
+      case 'Clapperboard':
+      case 'Video': return <AppIcon name="cinematic-video" size={20} strokeWidth={1.75} />;
+      case 'AudioWaveform':
+      case 'Volume2': return <AppIcon name="audio-studio" size={20} strokeWidth={1.75} />;
+      case 'Presentation': return <AppIcon name="presentations" size={20} strokeWidth={1.75} />;
+      case 'Filmstrip':
+      case 'BookOpen': return <AppIcon name="storyline" size={20} strokeWidth={1.75} />;
+      default: return <Sparkles size={20} strokeWidth={1.75} />;
     }
   };
 
@@ -140,7 +149,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">{brandGuidelines?.name || 'Brand Studio'}</span>
             <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase mt-1">Creative Suite</p>
             <div className="mt-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
-              <Sparkles size={12} />
+              <Coins size={12} className="shrink-0" />
               {credits} Credits
             </div>
           </motion.div>
@@ -180,7 +189,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     ? "text-slate-400 group-hover:text-violet-500 dark:group-hover:text-violet-400"
                     : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300"
               )}>
-                {getIcon(gem.icon)}
+                {renderGemIcon(gem)}
                 {isGeneratingThisGem && (
                   <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
                 )}
@@ -246,7 +255,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             )}
           >
             <div className={cn("shrink-0", view === 'assets' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
-              <ImageIcon size={20} />
+              <AppIcon name="filter-all" size={20} strokeWidth={1.75} />
             </div>
             {sidebarOpen && (
               <div className="text-left overflow-hidden">
@@ -271,7 +280,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             )}
           >
             <div className={cn("shrink-0 relative", view === 'curation' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
-              <Sparkles size={20} className={cn(view !== 'curation' && userNotifications.filter(n => !n.read).length > 0 ? "animate-bounce text-rose-500" : "")} />
+              <AppIcon name="human-touch" size={20} strokeWidth={1.75} className={cn(view !== 'curation' && userNotifications.filter(n => !n.read).length > 0 ? "animate-bounce text-rose-500" : "")} />
               {view !== 'curation' && userNotifications.filter(n => !n.read).length > 0 && (
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 border border-white dark:border-slate-900 rounded-full animate-ping" />
               )}
@@ -302,7 +311,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             )}
           >
             <div className={cn("shrink-0", view === 'plan' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
-              <CreditCard size={20} />
+              <AppIcon name="tier-enterprise" size={20} strokeWidth={1.75} />
             </div>
             {sidebarOpen && (
               <div className="text-left overflow-hidden">
@@ -324,7 +333,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             )}
           >
             <div className={cn("shrink-0", view === 'topup' ? "text-indigo-650 dark:text-indigo-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
-              <Coins size={20} />
+              <AppIcon name="credit-token" size={20} strokeWidth={1.75} />
             </div>
             {sidebarOpen && (
               <div className="text-left overflow-hidden">
@@ -347,7 +356,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               )}
             >
               <div className={cn("shrink-0", view === 'admin' ? "text-rose-600 dark:text-rose-400" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")}>
-                <Fingerprint size={20} className={cn(view !== 'admin' && adminNotifications.filter(n => !n.read).length > 0 ? "animate-bounce text-amber-500" : "")} />
+                <AppIcon name="trust-security" size={20} strokeWidth={1.75} className={cn(view !== 'admin' && adminNotifications.filter(n => !n.read).length > 0 ? "animate-bounce text-amber-500" : "")} />
               </div>
               {sidebarOpen && (
                 <div className="text-left overflow-hidden flex-1">

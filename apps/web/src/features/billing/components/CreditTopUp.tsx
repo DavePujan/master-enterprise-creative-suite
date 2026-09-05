@@ -8,8 +8,10 @@ import {
   HelpCircle,
   Info,
   Zap,
-  Coins
+  Coins,
+  Globe
 } from 'lucide-react';
+import { AppIcon } from '@web/shared/components/icons/AppIconRegistry.js';
 import { motion } from 'motion/react';
 import { useCreditGate } from '../context/CreditGateContext.js';
 import { findRecommendedCreditPack } from '@shared-types/billing.js';
@@ -400,8 +402,9 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
             </div>
 
             {currencySource !== 'default' && (
-              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono tracking-wide uppercase mt-1">
-                🌍 Auto-detected locale: <strong className="text-indigo-500 dark:text-indigo-400">{currency === 'INR' ? 'India (INR / ₹)' : 'International (USD / $)'}</strong> based on {currencySource === 'timezone' ? 'system timezone preference' : 'IP Geo Location'}
+              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono tracking-wide uppercase mt-1 flex items-center justify-center gap-1">
+                <Globe size={12} className="text-slate-400 shrink-0" />
+                <span>Auto-detected locale: <strong className="text-indigo-500 dark:text-indigo-400">{currency === 'INR' ? 'India (INR / ₹)' : 'International (USD / $)'}</strong> based on {currencySource === 'timezone' ? 'system timezone preference' : 'IP Geo Location'}</span>
               </p>
             )}
           </div>
@@ -474,7 +477,10 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
 
                   <div className="flex justify-between items-center bg-indigo-500/10 p-3 rounded border border-indigo-500/20 text-xs text-indigo-700 dark:text-indigo-400">
                     <span className="font-medium">Direct workspace balance is updated instantly!</span>
-                    <strong className="font-mono text-indigo-805 text-sm">🎒 {credits} Credits</strong>
+                    <strong className="font-mono text-indigo-805 text-sm flex items-center gap-1">
+                      <Coins size={14} className="text-indigo-500" />
+                      <span>{credits} Credits</span>
+                    </strong>
                   </div>
 
                   <div className="flex justify-end gap-2 pt-2">
@@ -552,7 +558,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
                       </span>
                       {plan.popular && (
                         <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest font-mono">
-                          <Zap size={10} className="fill-current animate-bounce" />
+                          <Zap size={10} />
                           <span>SUPERCHARGER</span>
                         </div>
                       )}
@@ -612,7 +618,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
         {/* Secure Badges & Frequently Asked Questions Section */}
         <div className="max-w-4xl mx-auto border-t border-slate-200/80 dark:border-slate-800/80 pt-10 grid grid-cols-1 md:grid-cols-3 gap-6 text-center md:text-left">
           <div className="space-y-1">
-            <span className="flex justify-center md:justify-start text-emerald-500"><Shield size={20} /></span>
+            <span className="flex justify-center md:justify-start text-emerald-500"><AppIcon name="trust-security" size={20} strokeWidth={1.75} /></span>
             <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mt-1">PCI-DSS Compliant</h4>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal font-light">All pricing transactions are authorized securely via multi-layered tokenised systems, bypassing any raw credit storage.</p>
           </div>
@@ -622,7 +628,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal font-light">Credits are dynamically added on checkouts. No delayed batch runs or manual accounting cycles.</p>
           </div>
           <div className="space-y-1">
-            <span className="flex justify-center md:justify-start text-indigo-500"><Coins size={20} /></span>
+            <span className="flex justify-center md:justify-start text-indigo-500"><AppIcon name="credit-token" size={20} strokeWidth={1.75} /></span>
             <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mt-1">Non-Expiring Boosters</h4>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal font-light">Top-up credit balances carry over indefinitely across monthly renewals. Use them only when creativity demands.</p>
           </div>

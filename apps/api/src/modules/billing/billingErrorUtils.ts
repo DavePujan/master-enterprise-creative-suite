@@ -5,11 +5,17 @@
  */
 
 import type { Response } from "express";
-import type { InsufficientCreditsErrorPayload } from "../../../../../packages/types/billing.js";
+import { 
+  findRecommendedCreditPack,
+  type InsufficientCreditsErrorPayload,
+  type PlanId
+} from "../../../../../packages/types/billing.js";
 
 export interface BuildInsufficientCreditsParams {
   available?: number;
-  required: number;
+  availableCredits?: number;
+  required?: number;
+  requiredCredits?: number;
   service: string;
   action?: string;
   model?: string;
@@ -27,15 +33,19 @@ export class InsufficientCreditsError extends Error {
   readonly model?: string;
 
   constructor(params: BuildInsufficientCreditsParams) {
-    const available = typeof params.available === 'number' ? Math.max(0, params.available) : 0;
-    const missing = Math.max(0, params.required - available);
+    const rawAvailable = params.availableCredits ?? params.available;
+    const available = typeof rawAvailable === 'number' ? Math.max(0, rawAvailable) : 0;
+    const required = typeof (params.requiredCredits ?? params.required) === 'number' 
+      ? Math.max(1, (params.requiredCredits ?? params.required)!) 
+      : 1;
+    const missing = Math.max(0, required - available);
     const message = params.customMessage || 
-      `Insufficient credits for ${params.service}. Required: ${params.required}, available: ${available}.`;
+      `Insufficient credits for ${params.service}. Required: ${required}, available: ${available}.`;
 
     super(message);
     this.name = "InsufficientCreditsError";
     this.availableCredits = available;
-    this.requiredCredits = params.required;
+    this.requiredCredits = required;
     this.missingCredits = missing;
     this.service = params.service;
     this.action = params.action;
@@ -53,6 +63,7 @@ export class InsufficientCreditsError extends Error {
       service: this.service,
       action: this.action,
       model: this.model,
+      recommendedPack: this.missingCredits > 0 ? findRecommendedCreditPack(this.missingCredits) : undefined,
       retryable: false
     };
   }
