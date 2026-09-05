@@ -11,6 +11,7 @@ import {
   verifyRazorpaySignature,
   fetchRazorpayOrderPayments,
 } from "../infrastructure/payment/razorpayClient.js";
+import { serverConfig } from "../config/env.js";
 import { PLAN_PRICING_CATALOG, type PlanId } from "../../../../packages/types/billing.js";
 
 export class BillingService {
@@ -52,6 +53,7 @@ export class BillingService {
       amount: serverAmountSubunits,
       currency: targetCurrency,
       planId: plan.id,
+      keyId: serverConfig.razorpayKeyId,
       isSimulated: orderResult.isSimulated,
     };
   }

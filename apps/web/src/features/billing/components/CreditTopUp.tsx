@@ -222,13 +222,14 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
     const planId = planIdMap[plan.name] || 'booster-starter';
 
     // 1. Call backend to register and retrieve Razorpay Order ID securely
-    let orderData: { id: string; amount: number; currency: string; planId: string; isSimulated?: boolean };
+    let orderData: { id: string; amount: number; currency: string; planId: string; keyId?: string; isSimulated?: boolean };
     try {
       orderData = await apiClient.post<{
         id: string;
         amount: number;
         currency: string;
         planId: string;
+        keyId?: string;
         isSimulated?: boolean;
       }>('/api/payment/razorpay-order', {
         planId,
@@ -244,7 +245,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
       return;
     }
 
-    const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
+    const rzpKeyId = orderData.keyId || ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
 
     const options: any = {
       key: rzpKeyId,

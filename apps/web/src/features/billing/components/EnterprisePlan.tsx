@@ -314,13 +314,14 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
     const creditsToApply = billingPeriod === 'monthly' ? baseCredits : baseCredits * 12;
 
     // 1. Ask backend to register order ID securely using canonical plan catalog
-    let orderData: { id: string; amount: number; currency: string; planId: string; isSimulated?: boolean };
+    let orderData: { id: string; amount: number; currency: string; planId: string; keyId?: string; isSimulated?: boolean };
     try {
       orderData = await apiClient.post<{
         id: string;
         amount: number;
         currency: string;
         planId: string;
+        keyId?: string;
         isSimulated?: boolean;
       }>('/api/payment/razorpay-order', {
         planId,
@@ -336,7 +337,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
       return;
     }
 
-    const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
+    const rzpKeyId = orderData.keyId || ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
 
     const options: any = {
       key: rzpKeyId,

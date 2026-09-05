@@ -139,13 +139,14 @@ export default function PricingPage({
         ? isYearly ? 'plan-plus-yearly' : 'plan-plus-monthly'
         : isYearly ? 'plan-pilot-yearly' : 'plan-pilot-monthly';
 
-    let orderData: { id: string; amount: number; currency: string; planId: string; isSimulated?: boolean };
+    let orderData: { id: string; amount: number; currency: string; planId: string; keyId?: string; isSimulated?: boolean };
     try {
       orderData = await apiClient.post<{
         id: string;
         amount: number;
         currency: string;
         planId: string;
+        keyId?: string;
         isSimulated?: boolean;
       }>('/api/payment/razorpay-order', {
         planId: planId as PlanId,
@@ -162,7 +163,7 @@ export default function PricingPage({
       return;
     }
 
-    const rzpKeyId = ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
+    const rzpKeyId = orderData.keyId || ((import.meta as any).env.VITE_RAZORPAY_KEY_ID as string) || '';
 
     const options: any = {
       key: rzpKeyId,
