@@ -62,25 +62,16 @@ export const PaymentStatusModal: React.FC<PaymentStatusModalProps> = ({
         >
           {/* Loading State */}
           {status.status === 'loading' && (
-            <div className="py-8 text-center space-y-5">
-              <div className="relative mx-auto w-14 h-14 flex items-center justify-center">
-                <div className="w-14 h-14 rounded-full border-2 border-slate-200 dark:border-slate-800 border-t-rose-500 animate-spin" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-                </div>
+            <div className="py-8 text-center space-y-4">
+              <div className="flex justify-center">
+                <div className="w-12 h-12 rounded-full border-2 border-indigo-200 dark:border-indigo-950 border-t-indigo-500 animate-spin" />
               </div>
-              <div className="space-y-1.5">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                  Processing Checkout Securely
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
-                  {status.message || 'Connecting to Razorpay Secure Gateway...'}
-                </p>
-              </div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 text-[11px] font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>256-Bit SSL Encrypted Handshake</span>
-              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+                Processing Checkout Securely
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                {status.message || 'Connecting to Razorpay Secure Gateway...'}
+              </p>
             </div>
           )}
 
