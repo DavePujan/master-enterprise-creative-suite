@@ -159,3 +159,32 @@ export function verifyWebhookSignature(
     return false;
   }
 }
+
+/**
+ * Queries Razorpay API for payments associated with an order ID.
+ * Used for fallback reconciliation when webhooks are delayed or missing.
+ */
+export async function fetchRazorpayOrderPayments(orderId: string): Promise<any[]> {
+  const keyId = serverConfig.razorpayKeyId;
+  const keySecret = serverConfig.razorpayKeySecret;
+
+  if (!keyId || !keySecret) {
+    throw new Error("Razorpay credentials missing. Cannot fetch order payments.");
+  }
+
+  const authHeader = "Basic " + Buffer.from(`${keyId.trim()}:${keySecret.trim()}`).toString("base64");
+  const response = await fetch(`https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}/payments`, {
+    method: "GET",
+    headers: {
+      Authorization: authHeader,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Razorpay fetch order payments failed (${response.status}): ${errorText}`);
+  }
+
+  const data = (await response.json()) as { items?: any[] };
+  return data.items || [];
+}

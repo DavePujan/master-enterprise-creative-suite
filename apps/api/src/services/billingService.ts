@@ -6,7 +6,11 @@
 
 import { paymentRepository } from "../repositories/paymentRepository.js";
 import { creditService } from "./creditService.js";
-import { createRazorpayOrder, verifyRazorpaySignature } from "../infrastructure/payment/razorpayClient.js";
+import {
+  createRazorpayOrder,
+  verifyRazorpaySignature,
+  fetchRazorpayOrderPayments,
+} from "../infrastructure/payment/razorpayClient.js";
 import { PLAN_PRICING_CATALOG, type PlanId } from "../../../../packages/types/billing.js";
 
 export class BillingService {
@@ -255,6 +259,89 @@ export class BillingService {
     }
 
     return { handled: true, message: `Event ${eventName} ignored (no action required).` };
+  }
+
+  /**
+   * Server-side Payment Status Reconciliation (Fallback when webhook is delayed/missing).
+   * Queries Razorpay API to inspect if a payment has been captured, and idempotently fulfills it.
+   */
+  async reconcilePaymentStatus(orderId: string): Promise<{
+    success: boolean;
+    alreadyFulfilled?: boolean;
+    reconciled?: boolean;
+    creditsGranted?: number;
+    newBalance?: number;
+    error?: string;
+  }> {
+    const storedPayment = await paymentRepository.getByOrderId(orderId);
+    if (!storedPayment) {
+      return { success: false, error: `Order "${orderId}" not found in database.` };
+    }
+
+    const plan = PLAN_PRICING_CATALOG[storedPayment.planId as PlanId];
+    const creditsToGrant = plan?.credits || 100;
+
+    if (storedPayment.status === "captured") {
+      return {
+        success: true,
+        alreadyFulfilled: true,
+        creditsGranted: creditsToGrant,
+      };
+    }
+
+    try {
+      const payments = await fetchRazorpayOrderPayments(orderId);
+      const capturedPayment = payments.find((p: any) => p.status === "captured");
+
+      if (!capturedPayment) {
+        return {
+          success: false,
+          error: `No captured payment found on Razorpay for order "${orderId}". Current status: ${storedPayment.status}`,
+        };
+      }
+
+      // Reconcile amount and currency
+      const paymentAmount = Number(capturedPayment.amount);
+      if (paymentAmount !== storedPayment.amountSubunits || capturedPayment.currency !== storedPayment.currency) {
+        console.error("Reconciliation amount/currency mismatch:", {
+          expected: { amount: storedPayment.amountSubunits, currency: storedPayment.currency },
+          actual: { amount: paymentAmount, currency: capturedPayment.currency },
+        });
+        return {
+          success: false,
+          error: "Reconciliation failed: Amount or currency does not match stored order.",
+        };
+      }
+
+      // Transition to captured
+      await paymentRepository.updateStatus({
+        orderId,
+        paymentId: capturedPayment.id,
+        status: "captured",
+        providerEventId: `recon_${capturedPayment.id}`,
+      });
+
+      // Grant credits idempotently
+      const grantResult = await creditService.grantCredits({
+        workspaceId: storedPayment.workspaceId,
+        actorUserId: storedPayment.userId,
+        amount: creditsToGrant,
+        type: "purchase",
+        referenceId: orderId,
+        description: `Reconciled payment fulfillment for ${plan ? plan.name : storedPayment.planId} (Order: ${orderId}, Payment: ${capturedPayment.id})`,
+        idempotencyKey: `fulfillment_${capturedPayment.id}`,
+      });
+
+      return {
+        success: true,
+        reconciled: true,
+        creditsGranted: creditsToGrant,
+        newBalance: grantResult.newBalance,
+      };
+    } catch (err: any) {
+      console.error("Error during payment status reconciliation:", err);
+      return { success: false, error: err.message || "Failed to query Razorpay order payments." };
+    }
   }
 }
 
