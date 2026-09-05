@@ -25,6 +25,7 @@ import { motion } from 'motion/react';
 import { submitSalesInquiry } from '@web/infrastructure/repositories/salesRepository.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
 import type { PlanId } from '@shared-types/billing.js';
+import { PaymentStatusModal } from './PaymentStatusModal.js';
 
 interface EnterprisePlanProps {
   credits?: number;
@@ -589,101 +590,15 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
           )}
         </div>
 
-        {/* Global Payment Notification Dialog (Modal Overlay) */}
-        {paymentStatus.status !== 'idle' && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-xl p-6 md:p-8 space-y-6 relative overflow-hidden"
-            >
-              {paymentStatus.status === 'loading' && (
-                <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                  <div className="w-12 h-12 border-4 border-rose-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{paymentStatus.message}</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">Connecting outer secure channels...</p>
-                </div>
-              )}
-
-              {paymentStatus.status === 'failed' && (
-                <div className="space-y-4">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-full">
-                      <HelpCircle size={24} />
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white uppercase tracking-wider">Gateway Initialization Bounds</h3>
-                      <p className="text-xs text-slate-505 dark:text-slate-400 leading-relaxed">{paymentStatus.message}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      onClick={() => setPaymentStatus({ status: 'idle' })}
-                      className="px-4 py-1.5 text-xs font-bold uppercase tracking-wide border dark:border-slate-850 rounded hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-500 cursor-pointer"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {paymentStatus.status === 'success' && (
-                <div className="space-y-6 relative z-10">
-                  <div className="text-center space-y-2 py-4">
-                    <div className="inline-flex p-3 bg-emerald-100 dark:bg-emerald-950/45 text-emerald-600 dark:text-emerald-400 rounded-full mb-2">
-                      <Sparkles className="animate-pulse" size={32} />
-                    </div>
-                    <h3 className="text-2xl font-light text-slate-900 dark:text-white tracking-tight">Payment Successfully Received!</h3>
-                    <p className="text-xs text-slate-505 dark:text-slate-400 uppercase tracking-widest font-mono">ID: {paymentStatus.paymentId}</p>
-                  </div>
-
-                  <div className="bg-slate-50 dark:bg-slate-950/60 rounded border border-slate-200 dark:border-slate-800 p-6 space-y-4">
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300 border-b pb-2">Purchase Receipt & Credits Applied</h4>
-                    <div className="grid grid-cols-2 gap-4 text-xs">
-                      <div>
-                        <span className="text-slate-400">Purchased Plan</span>
-                        <p className="font-bold text-slate-900 dark:text-white mt-0.5">{paymentStatus.planName} Tier</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-400">Cost Authorized</span>
-                        <p className="font-bold text-slate-900 dark:text-white mt-0.5">
-                          {currency === 'INR' ? '₹' : '$'}{paymentStatus.amountPaid?.toLocaleString() || '0'}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-slate-400">Total Credits Added</span>
-                        <p className="font-mono text-rose-500 font-bold text-sm mt-0.5">+{paymentStatus.creditsAdded?.toLocaleString()} Credits</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-400">Workspace Status</span>
-                        <p className="font-bold text-emerald-500 mt-0.5">Active & Synchronized</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-rose-500/10 p-3 rounded border border-rose-500/20 text-xs">
-                    <span className="text-rose-600 dark:text-rose-400 font-medium">Your current total balance has been updated live!</span>
-                    <strong className="font-mono text-rose-650 dark:text-rose-450 text-sm flex items-center gap-1">
-                      <Coins size={14} className="text-rose-500" />
-                      <span>{credits} Credits</span>
-                    </strong>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      onClick={() => setPaymentStatus({ status: 'idle' })}
-                      className="px-6 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-extrabold uppercase tracking-widest rounded transition-all cursor-pointer"
-                    >
-                      Access Workspace
-                    </button>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
+        {/* Unified Payment Notification Dialog */}
+        <PaymentStatusModal
+          status={paymentStatus}
+          currency={currency}
+          currentBalance={credits}
+          onDismiss={() => setPaymentStatus({ status: 'idle' })}
+          onAction={() => setPaymentStatus({ status: 'idle' })}
+          actionLabel="Access Workspace"
+        />
 
         {/* Pricing Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative">

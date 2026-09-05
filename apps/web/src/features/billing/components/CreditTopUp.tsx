@@ -16,6 +16,7 @@ import { motion } from 'motion/react';
 import { useCreditGate } from '../context/CreditGateContext.js';
 import { findRecommendedCreditPack, PLAN_PRICING_CATALOG } from '@shared-types/billing.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
+import { PaymentStatusModal } from './PaymentStatusModal.js';
 
 interface CreditTopUpProps {
   credits?: number;
@@ -411,97 +412,20 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
           </div>
         </div>
 
-        {/* Global Payment Notification Dialog */}
-        {paymentStatus.status !== 'idle' && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 dark:bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-sm border border-slate-200 dark:border-slate-800 shadow-2xl p-6 md:p-8 space-y-6 overflow-hidden relative"
-            >
-              {paymentStatus.status === 'loading' && (
-                <div className="py-8 text-center space-y-4">
-                  <div className="flex justify-center">
-                    <div className="w-12 h-12 rounded-full border-2 border-indigo-200 dark:border-indigo-950 border-t-indigo-600 animate-spin" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Processing Checkout Securely</h3>
-                  <p className="text-xs text-slate-505 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">{paymentStatus.message}</p>
-                </div>
-              )}
-
-              {paymentStatus.status === 'failed' && (
-                <div className="space-y-4 text-center">
-                  <div className="mx-auto w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-450">
-                    <Info size={24} />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Secure Redirection Blocked</h3>
-                  <p className="text-xs text-slate-505 dark:text-slate-450 leading-relaxed">{paymentStatus.message}</p>
-                  <div className="pt-4 flex justify-center">
-                    <button
-                      onClick={() => setPaymentStatus({ status: 'idle' })}
-                      className="px-6 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded text-xs uppercase font-bold tracking-wider cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {paymentStatus.status === 'success' && (
-                <div className="space-y-6">
-                  <div className="text-center space-y-2">
-                    <div className="mx-auto w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600">
-                      <Sparkles className="animate-pulse" size={32} />
-                    </div>
-                    <h3 className="text-2xl font-light text-slate-900 dark:text-white tracking-tight">Top-Up successfully received!</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-mono">ID: {paymentStatus.paymentId}</p>
-                  </div>
-
-                  <div className="bg-slate-50 dark:bg-slate-950/60 rounded border border-slate-200 dark:border-slate-800 p-6 space-y-4">
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono uppercase text-slate-505 dark:text-slate-400 font-medium">
-                      <div>
-                        <span className="text-slate-400">Recipient Gateway</span>
-                        <p className="font-bold text-slate-950 dark:text-white mt-0.5">Razorpay</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-400">Total Authorized</span>
-                        <p className="font-bold text-slate-950 dark:text-white mt-0.5">
-                          {currency === 'INR' ? '₹' : '$'}{paymentStatus.amountPaid?.toLocaleString() || '0'}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-slate-400">Credits Credited</span>
-                        <p className="font-bold text-emerald-600 mt-0.5 font-sans">+{paymentStatus.creditsAdded} Cr</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-indigo-500/10 p-3 rounded border border-indigo-500/20 text-xs text-indigo-700 dark:text-indigo-400">
-                    <span className="font-medium">Direct workspace balance is updated instantly!</span>
-                    <strong className="font-mono text-indigo-805 text-sm flex items-center gap-1">
-                      <Coins size={14} className="text-indigo-500" />
-                      <span>{credits} Credits</span>
-                    </strong>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      onClick={() => {
-                        setPaymentStatus({ status: 'idle' });
-                        if (returnContext) {
-                          returnToGem();
-                        }
-                      }}
-                      className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 hover:scale-[1.01] active:scale-[0.99] text-white text-xs uppercase font-extrabold tracking-wider rounded transition-all shadow-md cursor-pointer"
-                    >
-                      {returnContext ? `Return to ${returnContext.serviceName || 'Generator'}` : 'Resume Workspace'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
+        {/* Unified Payment Notification Dialog */}
+        <PaymentStatusModal
+          status={paymentStatus}
+          currency={currency}
+          currentBalance={credits}
+          onDismiss={() => setPaymentStatus({ status: 'idle' })}
+          onAction={() => {
+            setPaymentStatus({ status: 'idle' });
+            if (returnContext) {
+              returnToGem();
+            }
+          }}
+          actionLabel={returnContext ? `Return to ${returnContext.serviceName || 'Generator'}` : 'Resume Workspace'}
+        />
 
         {/* Page-Aware Context Banner if navigated via Credit Gate */}
         {returnContext && (
