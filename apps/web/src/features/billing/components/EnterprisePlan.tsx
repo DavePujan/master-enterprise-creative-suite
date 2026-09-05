@@ -424,6 +424,13 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
     setIsScriptLoading(false);
     try {
       const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', function (resp: any) {
+        console.error("Razorpay payment.failed event:", resp?.error);
+        setPaymentStatus({
+          status: 'failed',
+          message: resp?.error?.description || resp?.error?.reason || "Payment was declined or cancelled at the gateway."
+        });
+      });
       rzp.open();
     } catch (err: any) {
       console.error("RazorPay init failed:", err);

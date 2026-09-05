@@ -67,8 +67,45 @@ export function App() {
     return saved ? parseInt(saved) : 50;
   });
 
-  const [selectedGem, setSelectedGem] = useState<Gem>(GENERIC_GEMS[0]);
-  const [view, setView] = useState<'tools' | 'assets' | 'plan' | 'admin' | 'curation' | 'topup'>('tools');
+  const [selectedGem, setSelectedGem] = useState<Gem>(() => {
+    try {
+      const savedGemId = localStorage.getItem('active_selected_gem_id');
+      if (savedGemId) {
+        const found = GENERIC_GEMS.find(g => g.id === savedGemId);
+        if (found) return found;
+      }
+    } catch {}
+    return GENERIC_GEMS[0];
+  });
+
+  const [view, setView] = useState<'tools' | 'assets' | 'plan' | 'admin' | 'curation' | 'topup'>(() => {
+    try {
+      const savedView = localStorage.getItem('active_workspace_view');
+      const validViews = ['tools', 'assets', 'plan', 'admin', 'curation', 'topup'];
+      if (savedView && validViews.includes(savedView)) {
+        return savedView as any;
+      }
+    } catch {}
+    return 'tools';
+  });
+
+  // Persist view and selected tool across page refreshes
+  useEffect(() => {
+    if (view) {
+      try {
+        localStorage.setItem('active_workspace_view', view);
+      } catch {}
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (selectedGem?.id) {
+      try {
+        localStorage.setItem('active_selected_gem_id', selectedGem.id);
+      } catch {}
+    }
+  }, [selectedGem?.id]);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
