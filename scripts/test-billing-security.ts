@@ -16,6 +16,7 @@ import {
 } from "../apps/api/src/infrastructure/payment/razorpayClient.js";
 import { billingService } from "../apps/api/src/services/billingService.js";
 import { paymentRepository } from "../apps/api/src/repositories/paymentRepository.js";
+import { creditService } from "../apps/api/src/services/creditService.js";
 import { serverConfig, validatePaymentConfig } from "../apps/api/src/config/env.js";
 
 let passed = 0;
@@ -291,6 +292,81 @@ async function runSecurityTestSuite() {
     assert(replayAttempt.success === true, "Replay verification returns success");
     assert(replayAttempt.alreadyFulfilled === true, "Replay verification flags alreadyFulfilled: true");
     assert(replayAttempt.creditsGranted === 100, "Entitlement derived strictly from stored booster-starter (100c)");
+
+    // Defense 5: Terminal State Protection (expired & failed cannot be fulfilled)
+    const expiredMockOrder = { ...mockOrder, status: "expired" as const };
+    (paymentRepository as any).getByOrderId = async () => expiredMockOrder;
+
+    const expiredVerify = await billingService.verifyAndFulfillPayment({
+      workspaceId: "ws_valid_1",
+      userId: "usr_valid_1",
+      orderId: "order_mock_123",
+      paymentId: "pay_1",
+      signature: "sig_1",
+    });
+    assert(expiredVerify.success === false, "Rejects verification of expired order");
+    assert(
+      expiredVerify.error?.includes("Order has expired"),
+      "Explicitly flags that order has expired"
+    );
+
+    const expiredWebhook = await billingService.handleWebhookEvent({
+      event: "payment.captured",
+      payload: { payment: { entity: { id: "pay_exp_1", order_id: "order_mock_123" } } },
+    });
+    assert(expiredWebhook.handled === false, "Rejects webhook capture of expired order");
+    assert(
+      expiredWebhook.message.includes("terminal state"),
+      "Webhook flags terminal state rejection"
+    );
+
+    // Defense 6: Out-of-Order Webhook Delivery (order.paid arrives before payment.captured)
+    const outOfOrderMockOrder: any = { ...mockOrder, status: "created" };
+    (paymentRepository as any).getByOrderId = async () => outOfOrderMockOrder;
+    const origUpdateStatus = paymentRepository.updateStatus;
+    const origGrantCredits = creditService.grantCredits;
+
+    let grantCalls = 0;
+    (creditService as any).grantCredits = async () => {
+      grantCalls++;
+      return { success: true, newBalance: 100 };
+    };
+
+    (paymentRepository as any).updateStatus = async (params: any) => {
+      outOfOrderMockOrder.status = params.status;
+      if (params.paymentId) (outOfOrderMockOrder as any).paymentId = params.paymentId;
+      return true;
+    };
+
+    // Step 1: order.paid arrives FIRST
+    const firstPaidEvent = await billingService.handleWebhookEvent(
+      {
+        event: "order.paid",
+        payload: { order: { entity: { id: "order_mock_123" } } },
+      },
+      "evt_order_paid_first"
+    );
+    assert(firstPaidEvent.handled === true, "Out-of-order: order.paid processed first");
+    assert(grantCalls === 1, "Credits granted exactly once by order.paid");
+    assert(outOfOrderMockOrder.status === "captured", "Order status transitioned to captured");
+
+    // Step 2: payment.captured arrives SECOND
+    const secondCapturedEvent = await billingService.handleWebhookEvent(
+      {
+        event: "payment.captured",
+        payload: { payment: { entity: { id: "pay_subsequent_1", order_id: "order_mock_123" } } },
+      },
+      "evt_payment_captured_second"
+    );
+    assert(secondCapturedEvent.handled === true, "Out-of-order: subsequent payment.captured handled as idempotent no-op");
+    assert(grantCalls === 1, "No second credit grant when payment.captured arrives second (grant count remains 1)");
+    assert(
+      (outOfOrderMockOrder as any).paymentId === "pay_subsequent_1",
+      "Payment ID attached to existing captured record for audit completeness"
+    );
+
+    paymentRepository.updateStatus = origUpdateStatus;
+    creditService.grantCredits = origGrantCredits;
   } finally {
     paymentRepository.getByOrderId = origGetByOrderId;
   }

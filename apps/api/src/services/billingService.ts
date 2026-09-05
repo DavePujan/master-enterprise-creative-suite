@@ -114,7 +114,21 @@ export class BillingService {
     const plan = PLAN_PRICING_CATALOG[storedPayment.planId as PlanId];
     const creditsToGrant = plan?.credits || 100;
 
-    // 4. Idempotency Check: If already captured, return existing fulfillment without granting duplicate credits
+    // 4. Check terminal states: expired or failed orders can never receive credits
+    if (storedPayment.status === "expired") {
+      return {
+        success: false,
+        error: `Cannot fulfill payment for order "${params.orderId}": Order has expired.`,
+      };
+    }
+    if (storedPayment.status === "failed") {
+      return {
+        success: false,
+        error: `Cannot fulfill payment for order "${params.orderId}": Order is marked as failed.`,
+      };
+    }
+
+    // 5. Idempotency Check: If already captured, return existing fulfillment without granting duplicate credits
     if (storedPayment.status === "captured") {
       return {
         success: true,
@@ -123,7 +137,7 @@ export class BillingService {
       };
     }
 
-    // 5. Cryptographic HMAC Signature Verification
+    // 6. Cryptographic HMAC Signature Verification
     const verification = verifyRazorpaySignature(
       storedPayment.orderId,
       params.paymentId,
@@ -143,8 +157,8 @@ export class BillingService {
       };
     }
 
-    // 6. Transition state to 'captured'
-    await paymentRepository.updateStatus({
+    // 7. Transition state to 'captured'
+    const updated = await paymentRepository.updateStatus({
       orderId: storedPayment.orderId,
       paymentId: params.paymentId,
       signature: params.signature,
@@ -152,7 +166,14 @@ export class BillingService {
       providerEventId: params.providerEventId || `pay_${params.paymentId}`,
     });
 
-    // 7. Atomic Credit Grant via idempotent stored procedure
+    if (!updated) {
+      return {
+        success: false,
+        error: `State transition rejected: Order "${storedPayment.orderId}" cannot transition to captured from "${storedPayment.status}".`,
+      };
+    }
+
+    // 8. Atomic Credit Grant via idempotent stored procedure
     const grantResult = await creditService.grantCredits({
       workspaceId: storedPayment.workspaceId,
       actorUserId: storedPayment.userId,
@@ -174,11 +195,16 @@ export class BillingService {
    * Processes server-to-server Razorpay Webhooks (payment.captured, order.paid).
    * Fully idempotent: safe against out-of-order or duplicate webhook deliveries.
    */
-  async handleWebhookEvent(event: {
-    event: string;
-    payload: any;
-  }): Promise<{ handled: boolean; message: string }> {
+  async handleWebhookEvent(
+    event: {
+      event: string;
+      payload: any;
+      id?: string;
+    },
+    headerEventId?: string
+  ): Promise<{ handled: boolean; message: string }> {
     const { event: eventName, payload } = event;
+    const providerEventId = headerEventId || event.id;
 
     if (eventName === "payment.captured") {
       const paymentEntity = payload?.payment?.entity;
@@ -196,18 +222,37 @@ export class BillingService {
       }
 
       if (storedPayment.status === "captured") {
+        // If previously captured by order.paid before payment.captured arrived, record paymentId if missing
+        if (!storedPayment.paymentId && paymentId) {
+          await paymentRepository.updateStatus({
+            orderId,
+            paymentId,
+            status: "captured",
+          });
+        }
         return { handled: true, message: "Order already captured; idempotent no-op." };
+      }
+
+      if (storedPayment.status === "expired" || storedPayment.status === "failed") {
+        return {
+          handled: false,
+          message: `Order "${orderId}" is in terminal state "${storedPayment.status}". Cannot transition to captured.`,
+        };
       }
 
       const plan = PLAN_PRICING_CATALOG[storedPayment.planId as PlanId];
       const creditsToGrant = plan?.credits || 100;
 
-      await paymentRepository.updateStatus({
+      const updated = await paymentRepository.updateStatus({
         orderId,
         paymentId,
         status: "captured",
-        providerEventId: `webhook_${paymentId}`,
+        providerEventId: providerEventId || `webhook_${paymentId}`,
       });
+
+      if (!updated) {
+        return { handled: false, message: `State transition rejected: Order "${orderId}" cannot transition to captured.` };
+      }
 
       await creditService.grantCredits({
         workspaceId: storedPayment.workspaceId,
@@ -236,14 +281,25 @@ export class BillingService {
         return { handled: true, message: "Order already captured; idempotent no-op." };
       }
 
+      if (storedPayment.status === "expired" || storedPayment.status === "failed") {
+        return {
+          handled: false,
+          message: `Order "${orderId}" is in terminal state "${storedPayment.status}". Cannot transition to captured.`,
+        };
+      }
+
       const plan = PLAN_PRICING_CATALOG[storedPayment.planId as PlanId];
       const creditsToGrant = plan?.credits || 100;
 
-      await paymentRepository.updateStatus({
+      const updated = await paymentRepository.updateStatus({
         orderId,
         status: "captured",
-        providerEventId: `webhook_order_${orderId}`,
+        providerEventId: providerEventId || `webhook_order_${orderId}`,
       });
+
+      if (!updated) {
+        return { handled: false, message: `State transition rejected: Order "${orderId}" cannot transition to captured.` };
+      }
 
       await creditService.grantCredits({
         workspaceId: storedPayment.workspaceId,
@@ -276,6 +332,14 @@ export class BillingService {
     const storedPayment = await paymentRepository.getByOrderId(orderId);
     if (!storedPayment) {
       return { success: false, error: `Order "${orderId}" not found in database.` };
+    }
+
+    // Check terminal states: expired or failed orders can never receive credits
+    if (storedPayment.status === "expired" || storedPayment.status === "failed") {
+      return {
+        success: false,
+        error: `Cannot reconcile payment for order "${orderId}": Order is in terminal state "${storedPayment.status}".`,
+      };
     }
 
     const plan = PLAN_PRICING_CATALOG[storedPayment.planId as PlanId];

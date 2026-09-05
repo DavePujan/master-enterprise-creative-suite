@@ -168,7 +168,8 @@ billingRouter.post("/webhook", async (req, res) => {
       return res.status(400).json({ error: "Invalid webhook signature" });
     }
 
-    const result = await billingService.handleWebhookEvent(req.body);
+    const eventId = (req.headers["x-razorpay-event-id"] as string) || req.body?.id;
+    const result = await billingService.handleWebhookEvent(req.body, eventId);
     return res.json({ success: true, result });
   } catch (err: any) {
     console.error("Error processing Razorpay webhook:", err);
