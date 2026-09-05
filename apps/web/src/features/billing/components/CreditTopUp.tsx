@@ -182,8 +182,12 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
     return 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400';
   };
 
+  // Reference to last attempted pack for instant retry on failure
+  const lastSelectedTopUpRef = React.useRef<typeof topUpModels[0] | null>(null);
+
   // Launch Razorpay checkout flow
   const handlePurchaseTopUp = async (plan: typeof topUpModels[0]) => {
+    lastSelectedTopUpRef.current = plan;
     if (!user) {
       localStorage.setItem('pending_pricing_plan', JSON.stringify({
         name: plan.name,
@@ -418,6 +422,7 @@ export const CreditTopUp: React.FC<CreditTopUpProps> = ({ credits = 50, setCredi
           currency={currency}
           currentBalance={credits}
           onDismiss={() => setPaymentStatus({ status: 'idle' })}
+          onRetry={lastSelectedTopUpRef.current ? () => handlePurchaseTopUp(lastSelectedTopUpRef.current!) : undefined}
           onAction={() => {
             setPaymentStatus({ status: 'idle' });
             if (returnContext) {

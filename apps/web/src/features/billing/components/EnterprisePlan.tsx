@@ -253,12 +253,16 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
   const getBadgeClass = (type: string) => {
     if (type === 'rose') return 'bg-rose-500/10 text-rose-600 dark:text-rose-400';
     if (type === 'indigo') return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400';
-    if (type === 'gold') return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
+      if (type === 'gold') return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
     return 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400';
   };
 
   // Launch Razorpay payment flow
+  // Reference to last selected plan for instant retry on failure
+  const lastSelectedPlanRef = React.useRef<typeof pricingModels[0] | null>(null);
+
   const handleActivatePlan = async (plan: typeof pricingModels[0]) => {
+    lastSelectedPlanRef.current = plan;
     if (plan.name === 'Enterprise') {
       setShowSalesForm(true);
       setSalesSubmitMessage(null);
@@ -596,6 +600,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
           currency={currency}
           currentBalance={credits}
           onDismiss={() => setPaymentStatus({ status: 'idle' })}
+          onRetry={lastSelectedPlanRef.current && lastSelectedPlanRef.current.name !== 'Enterprise' ? () => handleActivatePlan(lastSelectedPlanRef.current!) : undefined}
           onAction={() => setPaymentStatus({ status: 'idle' })}
           actionLabel="Access Workspace"
         />
