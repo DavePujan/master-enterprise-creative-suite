@@ -12,11 +12,13 @@
     "check:boundaries": "node scripts/check-boundaries.cjs",
     "lint": "tsc --noEmit",
     "test:billing": "tsx scripts/test-billing-security.ts",
-    "test:razorpay:integration": "tsx scripts/test-razorpay-integration.ts --run"
+    "test:razorpay:integration": "tsx scripts/test-razorpay-integration.ts --run",
+    "tunnel": "node scripts/tunnel.cjs"
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.1",
     "@google/genai": "^2.21.0",
+    "@ngrok/ngrok": "^1.7.0",
     "@supabase/supabase-js": "^2.114.0",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.1.14",
@@ -30,6 +32,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "ngrok": "^5.0.0-beta.2",
     "pptxgenjs": "^3.12.0",
     "razorpay": "^2.9.6",
     "react": "19.0.0",

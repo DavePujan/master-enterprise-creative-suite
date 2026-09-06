@@ -13,6 +13,7 @@ import {
 } from "../infrastructure/payment/razorpayClient.js";
 import { serverConfig } from "../config/env.js";
 import { PLAN_PRICING_CATALOG, type PlanId } from "../../../../packages/types/billing.js";
+import { billingNotificationService } from "./billingNotificationService.js";
 
 export class BillingService {
   /**
@@ -207,6 +208,17 @@ export class BillingService {
       };
     }
 
+    billingNotificationService.notifyPaymentSuccess({
+      orderId: storedPayment.orderId,
+      paymentId: params.paymentId,
+      planName: plan?.name || storedPayment.planId,
+      creditsGranted: creditsToGrant,
+      amountSubunits: storedPayment.amountSubunits,
+      currency: storedPayment.currency,
+      workspaceId: storedPayment.workspaceId,
+      source: "client_verify",
+    }).catch((err) => console.warn("[BillingService] Notification dispatch error:", err));
+
     return {
       success: true,
       creditsGranted: creditsToGrant,
@@ -293,6 +305,19 @@ export class BillingService {
         return { handled: false, message: `Failed to grant credits: ${grantResult.error || "Database error"}` };
       }
 
+      billingNotificationService.notifyPaymentSuccess({
+        orderId,
+        paymentId,
+        planName: plan?.name || storedPayment.planId,
+        creditsGranted: creditsToGrant,
+        amountSubunits: storedPayment.amountSubunits,
+        currency: storedPayment.currency,
+        customerEmail: paymentEntity?.email,
+        paymentMethod: paymentEntity?.method,
+        workspaceId: storedPayment.workspaceId,
+        source: "webhook",
+      }).catch((err) => console.warn("[BillingService] Webhook notification dispatch error:", err));
+
       return { handled: true, message: `Successfully captured and granted ${creditsToGrant} credits.` };
     }
 
@@ -345,6 +370,16 @@ export class BillingService {
         console.error(`[BillingService] Webhook order.paid credit grant DB failure for order ${orderId}:`, grantResult.error);
         return { handled: false, message: `Failed to grant credits: ${grantResult.error || "Database error"}` };
       }
+
+      billingNotificationService.notifyPaymentSuccess({
+        orderId,
+        planName: plan?.name || storedPayment.planId,
+        creditsGranted: creditsToGrant,
+        amountSubunits: storedPayment.amountSubunits,
+        currency: storedPayment.currency,
+        workspaceId: storedPayment.workspaceId,
+        source: "webhook",
+      }).catch((err) => console.warn("[BillingService] Webhook order.paid notification dispatch error:", err));
 
       return { handled: true, message: `Successfully completed order.paid fulfillment.` };
     }
