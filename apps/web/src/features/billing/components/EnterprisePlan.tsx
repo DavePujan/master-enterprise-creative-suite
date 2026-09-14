@@ -463,7 +463,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
     setSalesSubmitMessage(null);
 
     try {
-      // 1. Save to cloud Firestore database (accessible by admins in AdminOperations)
+      // 1. Save to cloud database (accessible by admins in AdminOperations)
       const submissionDoc = {
         companyName: companyName.trim(),
         contactName: contactName.trim(),
@@ -498,7 +498,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
       console.error("Sales submission failed:", err);
       setSalesSubmitMessage({
         type: 'error',
-        text: `Network failure: ${err.message || 'Unknown Firestore write error. Please try again.'}`
+        text: `Network failure: ${err.message || 'Unknown database write error. Please try again.'}`
       });
     } finally {
       setIsSalesSubmitting(false);

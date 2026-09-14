@@ -18,6 +18,9 @@ export default defineConfig(() => {
         '@presentation-engine': path.resolve(__dirname, 'packages/presentation-engine'),
       },
     },
+    build: {
+      assetsDir: 'static',
+    },
     server: {
       headers: {
         'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',

@@ -3,7 +3,7 @@
  */
 
 /**
- * Resizes and compresses a base64 image URL using HTML Canvas so it is guaranteed to fit within Firestore's 1MB limit.
+ * Resizes and compresses a base64 image URL using HTML Canvas for optimal storage and payload size.
  */
 export function compressBase64Image(
   base64Str: string,

@@ -20,20 +20,19 @@ This document describes the modular architectural design, layer boundaries, and 
 ```
 
 ### Dependency Rules:
-1. **Shared Core (`src/shared/`)**:
+1. **Shared Core (`packages/`)**:
    - Contains pure TypeScript domain types, DTO contracts, error classes, and utilities.
-   - **MUST NOT** import React, Express, Firebase, browser APIs, or vendor SDKs.
+   - **MUST NOT** import React, Express, browser APIs, or vendor SDKs.
    - Independent of all other layers.
 
-2. **Server Layer (`src/server/`)**:
+2. **Server Layer (`apps/api/`)**:
    - Contains Express application setup, security middleware, routing modules, and infrastructure adapters.
    - **MUST NOT** import React or client feature code.
-   - Owns provider secrets (`GEMINI_API_KEY`, `FAL_API_KEY`, `RAZORPAY_KEY_SECRET`).
+   - Owns provider secrets (`GEMINI_API_KEY`, `FAL_API_KEY`, `RAZORPAY_KEY_SECRET`, `SUPABASE_SECRET_KEY`).
 
-3. **Client Layer (`src/client/`)**:
-   - Organized into **Infrastructure** (`src/client/infrastructure/`) and **Features** (`src/client/features/`).
-   - Feature components **MUST NOT** import `firebase/*` SDK directly.
-   - Feature components communicate with repositories (`src/client/infrastructure/firebase/repositories/`) and the API gateway (`/api/*`).
+3. **Client Layer (`apps/web/`)**:
+   - Organized into **Infrastructure** (`apps/web/src/infrastructure/`) and **Features** (`apps/web/src/features/`).
+   - UI components communicate with typed repositories (`apps/web/src/infrastructure/repositories/`), Supabase client, and the API gateway (`/api/*`).
 
 ---
 
@@ -103,67 +102,45 @@ Streams verified content (enforces 25MB max size & 10s timeout)
 ## 3. Directory Layout
 
 ```text
-src/
-├── shared/
+├── apps/
+│   ├── api/
+│   │   └── src/
+│   │       ├── config/env.ts
+│   │       ├── middleware/
+│   │       │   ├── authMiddleware.ts
+│   │       │   └── rateLimiter.ts
+│   │       ├── modules/
+│   │       │   ├── ai/
+│   │       │   ├── audio/
+│   │       │   ├── billing/
+│   │       │   └── ...
+│   │       ├── repositories/
+│   │       │   ├── supabaseClient.ts
+│   │       │   └── ...
+│   │       └── server.ts
+│   └── web/
+│       └── src/
+│           ├── features/
+│           │   ├── admin/
+│           │   ├── assets/
+│           │   ├── auth/
+│           │   ├── billing/
+│           │   ├── brand/
+│           │   ├── campaigns/
+│           │   └── ...
+│           └── infrastructure/
+│               ├── api/apiClient.ts
+│               ├── repositories/
+│               │   ├── adminRepository.ts
+│               │   ├── assetRepository.ts
+│               │   ├── brandRepository.ts
+│               │   └── ...
+│               └── supabase/supabaseClient.ts
+├── packages/
 │   ├── contracts/api.ts
 │   ├── errors/AppError.ts
 │   ├── types/
-│   │   ├── billing.ts
-│   │   ├── brand.ts
-│   │   ├── creative.ts
-│   │   └── user.ts
 │   └── utils/
-│       ├── audio.ts
-│       └── image.ts
-│
-├── server/
-│   ├── config/env.ts
-│   ├── http/app.ts
-│   ├── middleware/
-│   │   ├── authMiddleware.ts
-│   │   └── rateLimiter.ts
-│   ├── modules/
-│   │   ├── ai/aiRoutes.ts
-│   │   ├── billing/billingRoutes.ts
-│   │   ├── campaigns/campaignRoutes.ts
-│   │   ├── humanTouch/humanTouchRoutes.ts
-│   │   ├── proxy/proxyRoutes.ts
-│   │   └── sales/salesRoutes.ts
-│   ├── infrastructure/
-│   │   ├── fal/falClient.ts
-│   │   ├── fallback/pollinationsFallback.ts
-│   │   ├── firebase/serverAuth.ts
-│   │   ├── gemini/serverGeminiClient.ts
-│   │   └── payment/razorpayClient.ts
-│   └── utils/logger.ts
-│
-└── client/
-    ├── infrastructure/
-    │   ├── ai/
-    │   │   ├── geminiClient.ts
-    │   │   ├── geminiService.ts
-    │   │   ├── modelRegistry.ts
-    │   │   └── promptBuilders.ts
-    │   └── firebase/
-    │       ├── auth.ts
-    │       ├── firebaseApp.ts
-    │       ├── firestore.ts
-    │       ├── storage.ts
-    │       └── repositories/
-    │           ├── adminRepository.ts
-    │           ├── assetRepository.ts
-    │           ├── brandRepository.ts
-    │           ├── historyRepository.ts
-    │           ├── humanTouchRepository.ts
-    │           ├── salesRepository.ts
-    │           └── userRepository.ts
-    └── features/
-        ├── admin/
-        ├── assets/
-        ├── auth/
-        ├── billing/
-        ├── brand/
-        ├── campaigns/
-        ├── marketing/
-        └── slideshow/
+└── supabase/
+    └── migrations/
 ```

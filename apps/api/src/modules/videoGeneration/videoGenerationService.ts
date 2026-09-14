@@ -4,6 +4,7 @@
  * provider dispatch, and job lifecycle.
  */
 
+import { randomUUID } from 'node:crypto';
 import {
   VideoGenerationRequest,
   VideoJob,
@@ -51,15 +52,16 @@ export class VideoGenerationService {
     }
 
     // 3. Authoritative Backend Atomic Credit Reservation (Row-level lock)
+    const jobId = randomUUID();
     const requiredCredits = capability.creditCost;
-    const idempotencyKey = `video_gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const idempotencyKey = `video_gen_${jobId}`;
 
     const holdResult = await creditService.reserveCredits({
       workspaceId,
       userId,
       amount: requiredCredits,
       idempotencyKey: `hold_${idempotencyKey}`,
-      referenceId: idempotencyKey,
+      referenceId: jobId,
       description: `AI Video Generation: ${capability.displayName}`
     });
 
@@ -73,8 +75,9 @@ export class VideoGenerationService {
 
     const reservationId = holdResult.holdId;
 
-    // 4. Create Video Job in repository
+    // 4. Create Video Job in repository with explicit canonical jobId
     const job = await videoJobService.createJob({
+      jobId,
       workspaceId,
       userId,
       mode: request.mode,

@@ -363,7 +363,7 @@ export function CampaignDeckWorkspace({
             engine: engine,
             data: currentCampaign
           };
-          // Save in parental logs for persistence and automatic Firestore syncing
+          // Save in parental logs for persistence and automatic database syncing
           onSaveHistory(
             activeResult,
             'bundles-campaigns',

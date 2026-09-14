@@ -190,10 +190,10 @@ presentationRouter.post('/:id/export', async (req, res) => {
 });
 
 /**
- * GET /api/presentation/export/:exportId
+ * GET /api/presentation/export/:exportId and GET /api/presentation/export/status/:exportId
  * Polls status of an export job and returns signed download URL when ready.
  */
-presentationRouter.get('/export/:exportId', async (req, res) => {
+const handleGetExportStatus = async (req: any, res: any) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   }
@@ -207,4 +207,8 @@ presentationRouter.get('/export/:exportId', async (req, res) => {
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
-});
+};
+
+presentationRouter.get('/export/:exportId', handleGetExportStatus);
+presentationRouter.get('/export/status/:exportId', handleGetExportStatus);
+
