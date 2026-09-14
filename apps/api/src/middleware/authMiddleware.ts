@@ -18,8 +18,12 @@ declare global {
 
 // Explicitly allowlisted public endpoints (landing, sales inquiry, safe media proxy, health probes, payment webhooks)
 const PUBLIC_ROUTE_PREFIXES = [
+  "/api/health",
+  "/health",
   "/api/payment/webhook",
   "/payment/webhook",
+  "/api/billing/webhook",
+  "/billing/webhook",
   "/api/contact-sales",
   "/api/proxy",
   "/api/proxy-image",

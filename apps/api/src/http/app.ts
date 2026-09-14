@@ -63,6 +63,11 @@ export function createExpressApp(): Express {
   );
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+  // 2B. Lightweight API Health Check Probes (public, lightweight)
+  app.get(["/api/health", "/health"], (_req, res) => {
+    res.json({ status: "ok", service: "writopedia-api", timestamp: new Date().toISOString() });
+  });
+
   // 3. Centralized Authentication Middleware (Default-Deny)
   app.use("/api", authMiddleware);
 
