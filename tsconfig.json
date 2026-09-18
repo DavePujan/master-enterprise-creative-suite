@@ -39,6 +39,12 @@
       ],
       "@presentation-engine/*": [
         "./packages/presentation-engine/*"
+      ],
+      "@ad-director": [
+        "./packages/ad-director/index.ts"
+      ],
+      "@ad-director/*": [
+        "./packages/ad-director/*"
       ]
     },
     "allowImportingTsExtensions": true,

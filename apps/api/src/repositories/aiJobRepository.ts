@@ -6,6 +6,7 @@
 import { getSupabaseAdmin } from "../infrastructure/supabase/supabaseClient.js";
 
 export interface CreateAiJobParams {
+  id?: string;
   workspaceId: string;
   requestedBy: string;
   operation: string;
@@ -64,18 +65,23 @@ export class AiJobRepository {
       }
     }
 
+    const insertPayload: any = {
+      workspace_id: params.workspaceId,
+      requested_by: params.requestedBy,
+      operation: params.operation,
+      provider: params.provider,
+      model_requested: params.modelRequested,
+      status: "pending",
+      credits_reserved: params.creditsReserved,
+      idempotency_key: params.idempotencyKey,
+    };
+    if (params.id) {
+      insertPayload.id = params.id;
+    }
+
     const { data, error } = await supabase
       .from("ai_generation_jobs")
-      .insert({
-        workspace_id: params.workspaceId,
-        requested_by: params.requestedBy,
-        operation: params.operation,
-        provider: params.provider,
-        model_requested: params.modelRequested,
-        status: "pending",
-        credits_reserved: params.creditsReserved,
-        idempotency_key: params.idempotencyKey,
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
 

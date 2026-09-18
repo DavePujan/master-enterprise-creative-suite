@@ -72,3 +72,14 @@ desktop.ini
 # 7. Local Agent Memory & Scratch Workspaces
 agent/
 scratch/
+
+
+zzz_video.md
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+.github/

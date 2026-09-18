@@ -4,6 +4,7 @@
  * provider dispatch, and job lifecycle.
  */
 
+import { randomUUID } from 'node:crypto';
 import {
   VideoGenerationRequest,
   VideoJob,
@@ -22,19 +23,30 @@ import { creditService } from '../../services/creditService.js';
 import { workspaceRepository } from '../../repositories/workspaceRepository.js';
 import { InsufficientCreditsError } from '../billing/billingErrorUtils.js';
 
+import { getSupabaseAdmin } from '../../infrastructure/supabase/supabaseClient.js';
+
 export class VideoGenerationService {
   /**
    * Dispatches an asynchronous video generation request.
    */
   async generate(
     request: VideoGenerationRequest,
-    authContext: { userId: string; workspaceId?: string }
+    authContext: { userId: string; workspaceId: string }
   ): Promise<VideoJob> {
-    const { userId } = authContext;
-    const workspaces = await workspaceRepository.getUserWorkspaces(userId);
-    const workspaceId = authContext.workspaceId || workspaces?.[0]?.id;
+    const { userId, workspaceId } = authContext;
     if (!workspaceId) {
-      throw new Error('No authorized workspace found for user.');
+      const err: any = new Error('No authorized workspace provided.');
+      err.statusCode = 400;
+      err.code = 'WORKSPACE_REQUIRED';
+      throw err;
+    }
+
+    const isMember = await workspaceRepository.isUserMemberOfWorkspace(userId, workspaceId);
+    if (!isMember) {
+      const err: any = new Error(`Forbidden: User ${userId} is not authorized for workspace ${workspaceId}.`);
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN_WORKSPACE_ACCESS';
+      throw err;
     }
 
     // 1. Resolve Engine & Capability
@@ -50,35 +62,28 @@ export class VideoGenerationService {
       throw err;
     }
 
-    // 3. Authoritative Backend Atomic Credit Reservation (Row-level lock)
+    // 3. Atomically Reserve Credits (Hold) via PostgreSQL RPC
     const requiredCredits = capability.creditCost;
-    const idempotencyKey = `video_gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    let reservationId = '';
 
-    const holdResult = await creditService.reserveCredits({
-      workspaceId,
-      userId,
-      amount: requiredCredits,
-      idempotencyKey: `hold_${idempotencyKey}`,
-      referenceId: idempotencyKey,
-      description: `AI Video Generation: ${capability.displayName}`
-    });
-
-    if (!holdResult.success || !holdResult.holdId) {
-      throw new InsufficientCreditsError({
-        required: requiredCredits,
-        available: holdResult.available ?? 0,
-        service: capability.displayName
-      });
+    try {
+      reservationId = await creditService.holdCredits(
+        workspaceId,
+        userId,
+        requiredCredits,
+        `video_generation_${resolution.engine}`
+      );
+    } catch (holdErr: any) {
+      const available = await creditService.getBalance(workspaceId).catch(() => 0);
+      throw new InsufficientCreditsError('Video Generation', requiredCredits, available);
     }
 
-    const reservationId = holdResult.holdId;
-
-    // 4. Create Video Job in repository
+    // 4. Create Active Job in Domain Service and DB
     const job = await videoJobService.createJob({
       workspaceId,
       userId,
-      mode: request.mode,
-      engine: capability.engineKey,
+      mode: request.mode || 'text_to_video',
+      engine: resolution.engine,
       productTier: capability.productTier,
       provider: capability.provider,
       reservationId,
@@ -86,24 +91,41 @@ export class VideoGenerationService {
       prompt: request.prompt
     });
 
-    // 5. Submit to upstream provider asynchronously
+    // 5. Dispatch Asynchronously to Underlying Engine Provider
     try {
-      let submitRes;
-      if (capability.engineKey === 'google-omni') {
-        submitRes = await googleOmniProvider.submit(request, workspaceId);
-      } else if (capability.engineKey.startsWith('veo')) {
-        submitRes = await googleVeoProvider.submit(request, workspaceId);
-      } else if (capability.engineKey === 'kling-v3') {
-        submitRes = await falKlingProvider.submit(request, workspaceId);
-      } else if (capability.engineKey === 'seedance-2') {
-        submitRes = await falSeedanceProvider.submit(request, workspaceId);
+      let dispatchPromise: Promise<string>;
+
+      if (resolution.engine === 'google_veo_3_1_fast' || resolution.engine === 'google_veo_3_1_director') {
+        dispatchPromise = googleVeoProvider.generate(request, resolution.engine);
+      } else if (resolution.engine === 'google_omni_motion') {
+        dispatchPromise = googleOmniProvider.generate(request);
+      } else if (resolution.engine === 'fal_kling_2_1_master') {
+        dispatchPromise = falKlingProvider.generate(request);
+      } else if (resolution.engine === 'fal_seedance_2_pro') {
+        dispatchPromise = falSeedanceProvider.generate(request);
       } else {
-        throw new Error(`Unsupported engine key: ${capability.engineKey}`);
+        dispatchPromise = googleVeoProvider.generate(request, 'google_veo_3_1_fast');
       }
 
+      // Track provider request ID once accepted
+      dispatchPromise.then((providerRequestId) => {
+        videoJobService.updateJob(job.jobId, {
+          providerJobId: providerRequestId,
+          status: 'generating_motion',
+          progress: 25
+        });
+      }).catch(async (asyncErr) => {
+        console.error(`[VideoGenerationService] Async dispatch failed for job ${job.jobId}:`, asyncErr);
+        await creditService.releaseCredits(reservationId, `Dispatch failure: ${asyncErr?.message}`);
+        videoJobService.updateJob(job.jobId, {
+          status: 'failed',
+          creditState: 'released',
+          error: asyncErr?.message || 'Upstream provider failure'
+        });
+      });
+
+      // Advance job to queued state
       videoJobService.updateJob(job.jobId, {
-        providerJobId: submitRes.providerJobId,
-        interactionId: submitRes.interactionId,
         status: 'generating_motion',
         progress: 10
       });
@@ -128,6 +150,84 @@ export class VideoGenerationService {
 
   async cancelJob(jobId: string, workspaceId: string) {
     return videoJobService.cancelJob(jobId, workspaceId);
+  }
+
+  async editJob(
+    jobId: string,
+    input: { instruction: string; editMode?: string; extendSeconds?: number },
+    authContext: { userId: string; workspaceId: string }
+  ): Promise<VideoJob> {
+    const parentJob = await this.getJobStatus(jobId, authContext.workspaceId);
+    if (!parentJob) {
+      const err: any = new Error(`Video job ${jobId} not found in workspace.`);
+      err.statusCode = 404;
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    const editRequest: VideoGenerationRequest = {
+      prompt: `${parentJob.prompt || ''} Edit: ${input.instruction}`,
+      mode: 'edit',
+      selectedEngine: parentJob.engine,
+      referenceAssetId: parentJob.outputAssetId,
+      aspectRatio: parentJob.aspectRatio,
+      durationSeconds: input.extendSeconds || parentJob.durationSeconds,
+    };
+
+    return this.generate(editRequest, authContext);
+  }
+
+  async extendJob(
+    jobId: string,
+    input: { extendSeconds: number; promptAddition?: string },
+    authContext: { userId: string; workspaceId: string }
+  ): Promise<VideoJob> {
+    const parentJob = await this.getJobStatus(jobId, authContext.workspaceId);
+    if (!parentJob) {
+      const err: any = new Error(`Video job ${jobId} not found in workspace.`);
+      err.statusCode = 404;
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    const extendRequest: VideoGenerationRequest = {
+      prompt: input.promptAddition ? `${parentJob.prompt || ''} ${input.promptAddition}` : parentJob.prompt,
+      mode: 'extend',
+      selectedEngine: parentJob.engine,
+      referenceAssetId: parentJob.outputAssetId,
+      aspectRatio: parentJob.aspectRatio,
+      durationSeconds: (parentJob.durationSeconds || 5) + input.extendSeconds,
+    };
+
+    return this.generate(extendRequest, authContext);
+  }
+
+  async getJobHistory(workspaceId: string, limit = 20): Promise<VideoJob[]> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) {
+      return videoJobService.getActiveJobs().filter((j) => j.workspaceId === workspaceId).slice(0, limit);
+    }
+
+    const { data, error } = await supabase
+      .from('ai_generation_jobs')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('operation', 'generate_video')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error || !data) {
+      return videoJobService.getActiveJobs().filter((j) => j.workspaceId === workspaceId).slice(0, limit);
+    }
+
+    const jobs: VideoJob[] = [];
+    for (const row of data) {
+      const job = await videoJobService.getJobWithFallback(row.id, workspaceId);
+      if (job) {
+        jobs.push(job);
+      }
+    }
+    return jobs;
   }
 
   getCapabilities(): Record<VideoEngineKey, VideoEngineCapability> {

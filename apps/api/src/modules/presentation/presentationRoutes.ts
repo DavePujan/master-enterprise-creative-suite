@@ -86,21 +86,24 @@ presentationRouter.post('/generate', async (req, res) => {
       });
     }
     const status = err.status || 500;
-    return res.status(status).json({
-      error: err.message || 'Presentation generation failed.',
-      code: err.code || 'PRESENTATION_GENERATION_FAILED',
-      retryable: Boolean(err.retryable),
-      available: err.available ?? err.details?.available,
-      required: err.required ?? err.details?.required,
-      details: err.details
-    });
+    if (status < 500) {
+      return res.status(status).json({
+        error: err.message || 'Presentation generation failed.',
+        code: err.code || 'PRESENTATION_GENERATION_FAILED',
+        retryable: Boolean(err.retryable),
+        available: err.available ?? err.details?.available,
+        required: err.required ?? err.details?.required,
+        details: err.details
+      });
+    }
+    next(err);
   }
 });
 
 /**
  * GET /api/presentation/:id
  */
-presentationRouter.get('/:id', async (req, res) => {
+presentationRouter.get('/:id', async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   }
@@ -116,7 +119,7 @@ presentationRouter.get('/:id', async (req, res) => {
     }
     return res.json(doc);
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
@@ -124,7 +127,7 @@ presentationRouter.get('/:id', async (req, res) => {
  * PUT /api/presentation/:id
  * Optimistic concurrency update.
  */
-presentationRouter.put('/:id', async (req, res) => {
+presentationRouter.put('/:id', async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   }
@@ -151,11 +154,14 @@ presentationRouter.put('/:id', async (req, res) => {
     return res.json(updated);
   } catch (err: any) {
     const status = err.status || 500;
-    return res.status(status).json({
-      error: err.message,
-      code: err.code || 'UPDATE_FAILED',
-      currentVersion: err.currentVersion
-    });
+    if (status < 500) {
+      return res.status(status).json({
+        error: err.message,
+        code: err.code || 'UPDATE_FAILED',
+        currentVersion: err.currentVersion
+      });
+    }
+    next(err);
   }
 });
 
@@ -163,7 +169,7 @@ presentationRouter.put('/:id', async (req, res) => {
  * POST /api/presentation/:id/export
  * Queues server-side export job (pptx or pdf).
  */
-presentationRouter.post('/:id/export', async (req, res) => {
+presentationRouter.post('/:id/export', async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   }
@@ -185,26 +191,44 @@ presentationRouter.post('/:id/export', async (req, res) => {
     return res.json(job);
   } catch (err: any) {
     const status = err.status || 500;
-    return res.status(status).json({ error: err.message, code: err.code || 'EXPORT_JOB_FAILED' });
+    if (status < 500) {
+      return res.status(status).json({ error: err.message, code: err.code || 'EXPORT_JOB_FAILED' });
+    }
+    next(err);
   }
 });
 
 /**
- * GET /api/presentation/export/:exportId
+ * GET /api/presentation/export/:exportId and GET /api/presentation/export/status/:exportId
  * Polls status of an export job and returns signed download URL when ready.
  */
-presentationRouter.get('/export/:exportId', async (req, res) => {
+const handleGetExportStatus = async (req: any, res: any, next: any) => {
   if (!req.user || !req.user.uid) {
-    return res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+    return res.status(401).json({ error: 'Unauthorized: Authenticated user session required.', code: 'AUTH_REQUIRED' });
   }
 
+  const userId = req.user.uid;
+  const workspaceId = req.user.workspaceId;
+
   try {
-    const job = await presentationService.getExportStatus(req.params.exportId);
+    const job = await presentationService.getExportStatus(req.params.exportId, {
+      userId,
+      workspaceId
+    });
     if (!job) {
       return res.status(404).json({ error: 'Export job not found.', code: 'NOT_FOUND' });
     }
     return res.json(job);
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    const status = err.status || 500;
+    if (status < 500) {
+      return res.status(status).json({ error: err.message, code: err.code || 'EXPORT_STATUS_FAILED' });
+    }
+    next(err);
   }
-});
+};
+
+presentationRouter.get('/export/:exportId', handleGetExportStatus);
+presentationRouter.get('/export/status/:exportId', handleGetExportStatus);
+
+

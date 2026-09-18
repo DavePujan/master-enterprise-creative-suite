@@ -417,7 +417,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             )}
           </button>
 
-          {user && (user.admin || user.email === 'writopedia.platform@gmail.com' || user.email === 'pujan.work1@gmail.com' || user.email === 'hardeep.pathak@gmail.com' || user.email === 'avdhesh.babaria@gmail.com' || user.email === 'business@writopedia.com') && (
+          {user && Boolean((user as any).admin) && (
             <button
               onClick={() => {
                 if (navigateTo) {

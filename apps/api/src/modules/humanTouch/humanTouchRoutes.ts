@@ -9,6 +9,7 @@ import { Router } from "express";
 import { humanTouchRepository } from "../../repositories/humanTouchRepository.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import { assetRepository } from "../../repositories/assetRepository.js";
+import { getSupabaseAdmin } from "../../infrastructure/supabase/supabaseClient.js";
 
 export const humanTouchRouter = Router();
 
@@ -328,10 +329,27 @@ humanTouchRouter.patch("/human-touch/:id", async (req, res) => {
         console.warn("[HumanTouch] Failed to auto-save deliverable to user asset library:", assetErr?.message || assetErr);
       }
 
-      // 2. Dispatch Completion Notification Email to requester
-      const recipientEmail = existing.emailReceipt || userEmail;
+      // 2. Dispatch Completion Notification Email to requester (lookup actual requester profile if needed)
+      let recipientEmail = existing.emailReceipt;
+      if (!recipientEmail || recipientEmail === "business@writopedia.com") {
+        const supabase = getSupabaseAdmin();
+        if (supabase && existing.requesterId) {
+          const { data: requesterProfile } = await supabase
+            .from("profiles")
+            .select("email")
+            .eq("id", existing.requesterId)
+            .maybeSingle();
+          if (requesterProfile?.email) {
+            recipientEmail = requesterProfile.email;
+          }
+        }
+      }
+      if (!recipientEmail && !isAdmin) {
+        recipientEmail = userEmail;
+      }
+
       const resendApiKey = process.env.RESEND_API_KEY;
-      const fromEmail = process.env.RESEND_FROM_EMAIL || "Writopedia <onboarding@resend.dev>";
+      const fromEmail = process.env.RESEND_FROM_EMAIL || "Writopedia <notifications@writopedia.com>";
 
       if (resendApiKey && recipientEmail) {
         try {
@@ -414,8 +432,8 @@ humanTouchRouter.patch("/human-touch/:id", async (req, res) => {
             <img src="${finalDeliverableUrl}" alt="Completed Creative Deliverable" style="max-width: 100%; max-height: 340px; display: inline-block; vertical-align: middle;" />
           </div>
         ` : ""}
-        <a href="${finalDeliverableUrl}" target="_blank" style="color: #e11d48; font-size: 12px; font-weight: 600; text-decoration: none; word-break: break-all;">
-          Download / Inspect Raw Deliverable File &rarr;
+        <a href="https://ai.writopedia.com/assets" target="_blank" style="color: #e11d48; font-size: 12px; font-weight: 600; text-decoration: none; word-break: break-all;">
+          View & Download Deliverable in Asset Library &rarr;
         </a>
       </div>
 

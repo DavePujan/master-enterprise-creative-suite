@@ -33,7 +33,7 @@ export interface ServerConfig {
   supabaseServiceRoleKey: string;
   databaseUrl: string;
   databaseConnectionMode: "persistent" | "serverless";
-  dbDriver: "supabase" | "firebase";
+  dbDriver: "supabase";
 }
 
 const rawGeminiKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";

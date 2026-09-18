@@ -183,6 +183,36 @@ export class WorkspaceRepository {
 
     return data;
   }
+
+  /**
+   * Verifies if a user is an authorized member (owner, admin, member) of a workspace.
+   */
+  async isUserMemberOfWorkspace(userId: string, workspaceId: string): Promise<boolean> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return false;
+
+    // 1. Check workspace_members table
+    const { data: memberData, error: memberError } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+
+    if (!memberError && memberData) {
+      return true;
+    }
+
+    // 2. Direct check on workspaces table if user is the direct owner
+    const { data: ownerData, error: ownerError } = await supabase
+      .from("workspaces")
+      .select("id")
+      .eq("id", workspaceId)
+      .eq("owner_id", userId)
+      .maybeSingle();
+
+    return Boolean(!ownerError && ownerData);
+  }
 }
 
 export const workspaceRepository = new WorkspaceRepository();

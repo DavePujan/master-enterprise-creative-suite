@@ -10,19 +10,9 @@ import type { BrandGuidelines } from '@shared-types/brand.js';
 import { getAppDestination, isPublicRoute, normalizePath } from '@web/lib/navigation.js';
 import { AdminConsole } from '@web/features/admin/pages/AdminConsole.js';
 
-const ADMIN_EMAILS = [
-  'writopedia.platform@gmail.com',
-  'pujan.work1@gmail.com',
-  'hardeep.pathak@gmail.com',
-  'avdhesh.babaria@gmail.com',
-  'business@writopedia.com'
-];
-
 const isAdminUser = (user: any): boolean => {
   if (!user) return false;
-  if (user.admin) return true;
-  if (user.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) return true;
-  return false;
+  return Boolean(user.admin);
 };
 
 export interface AppRouterProps {

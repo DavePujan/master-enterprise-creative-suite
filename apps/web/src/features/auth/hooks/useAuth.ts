@@ -19,6 +19,7 @@ import {
   isUserEmailConfirmed,
   type AuthResult
 } from '../../../infrastructure/supabase/auth.js';
+import { getSupabaseClient } from '../../../infrastructure/supabase/supabaseClient.js';
 
 export interface NormalizedUser {
   uid: string;
@@ -28,6 +29,7 @@ export interface NormalizedUser {
   emailConfirmed: boolean;
   emailConfirmedAt?: string | null;
   provider?: string;
+  admin?: boolean;
   getIdToken?: () => Promise<string>;
 }
 
@@ -52,6 +54,21 @@ export function normalizeSupabaseUser(supaUser: any): NormalizedUser {
     provider,
     getIdToken: async () => (await getCurrentAccessToken()) || '',
   };
+}
+
+async function fetchUserAdminRole(userId: string): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return false;
+  try {
+    const { data: roleRow, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .maybeSingle();
+    return Boolean(!error && (roleRow?.role === 'admin' || roleRow?.role === 'superadmin'));
+  } catch {
+    return false;
+  }
 }
 
 export function useAuth() {
@@ -93,6 +110,15 @@ export function useAuth() {
             return prev;
           }
           return normalized;
+        });
+
+        // Query authoritative database role (RBAC)
+        fetchUserAdminRole(supaUser.id).then((isAdmin) => {
+          setUser((curr) => {
+            if (!curr || curr.uid !== supaUser.id) return curr;
+            if (curr.admin === isAdmin) return curr;
+            return { ...curr, admin: isAdmin };
+          });
         });
 
         if (normalized.emailConfirmed) {
@@ -240,6 +266,16 @@ export function useAuth() {
           }
           return normalized;
         });
+
+        // Query authoritative database role (RBAC)
+        fetchUserAdminRole(freshUser.id).then((isAdmin) => {
+          setUser((curr) => {
+            if (!curr || curr.uid !== freshUser.id) return curr;
+            if (curr.admin === isAdmin) return curr;
+            return { ...curr, admin: isAdmin };
+          });
+        });
+
         if (isConfirmed) {
           setUnconfirmedEmail(null);
           return true;

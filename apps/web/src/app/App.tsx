@@ -30,8 +30,22 @@ import { AppRouter } from './AppRouter.js';
 import { AppShell } from './AppShell.js';
 import { type HistoryItem } from '../features/layout/components/AppSidebar.js';
 import { CreditGateProvider } from '../features/billing/context/CreditGateContext.js';
-import { safeGetItem, safeSetItem, sanitizeHistory } from '../lib/storage.js';
+import { z } from 'zod';
+import { safeGetItem, safeGetValidatedItem, safeSetItem, sanitizeHistory, HistoryItemSchema } from '../lib/storage.js';
 import { normalizePath } from '../lib/navigation.js';
+
+const AppBrandGuidelinesSchema = z.object({
+  name: z.string().max(200).optional(),
+  industry: z.string().max(200).optional(),
+  tone: z.string().max(500).optional(),
+  pillars: z.array(z.string().max(200)).optional(),
+  colors: z.array(z.string().max(50)).optional(),
+  typography: z.record(z.string()).optional(),
+  logo: z.string().max(2000).optional(),
+  location: z.string().max(200).optional(),
+  voiceAccentStyle: z.string().max(200).optional(),
+  visualEthnicityStyle: z.string().max(200).optional(),
+}).passthrough();
 
 export function App() {
   const {
@@ -55,13 +69,13 @@ export function App() {
   });
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Core App State
+  // Core App State - Runtime validated from localStorage
   const [brandSetupComplete, setBrandSetupComplete] = useState<boolean>(() => {
-    return safeGetItem<boolean>('brandSetupComplete', false);
+    return safeGetValidatedItem('brandSetupComplete', z.boolean(), false);
   });
 
   const [brandGuidelines, setBrandGuidelines] = useState<BrandGuidelines>(() => {
-    return safeGetItem<BrandGuidelines>('brandGuidelines', {
+    return safeGetValidatedItem('brandGuidelines', AppBrandGuidelinesSchema, {
       name: 'Studio AI',
       industry: 'Creative Technology',
       tone: 'Professional & Innovative',
@@ -72,19 +86,23 @@ export function App() {
       location: 'India',
       voiceAccentStyle: 'Indian English',
       visualEthnicityStyle: 'Indian'
-    });
+    }) as BrandGuidelines;
   });
 
   const [editingGuidelines, setEditingGuidelines] = useState<BrandGuidelines>(brandGuidelines);
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [showAssetLibrary, setShowAssetLibrary] = useState(false);
   const [credits, setCredits] = useState<number>(() => {
-    const saved = safeGetItem<string | number>('studio_credits', 50);
-    return typeof saved === 'number' ? saved : (parseInt(saved) || 50);
+    const saved = safeGetValidatedItem(
+      'studio_credits',
+      z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]),
+      50
+    );
+    return typeof saved === 'number' ? saved : 50;
   });
 
   const [selectedGem, setSelectedGem] = useState<Gem>(() => {
-    const savedGemId = safeGetItem<string>('active_selected_gem_id', '');
+    const savedGemId = safeGetValidatedItem('active_selected_gem_id', z.string().max(100), '');
     if (savedGemId) {
       const found = GENERIC_GEMS.find(g => g.id === savedGemId);
       if (found) return found;
@@ -93,12 +111,8 @@ export function App() {
   });
 
   const [view, setView] = useState<'tools' | 'assets' | 'plan' | 'admin' | 'curation' | 'topup'>(() => {
-    const savedView = safeGetItem<string>('active_workspace_view', 'tools');
-    const validViews = ['tools', 'assets', 'plan', 'admin', 'curation', 'topup'];
-    if (validViews.includes(savedView)) {
-      return savedView as any;
-    }
-    return 'tools';
+    const ViewSchema = z.enum(['tools', 'assets', 'plan', 'admin', 'curation', 'topup']);
+    return safeGetValidatedItem('active_workspace_view', ViewSchema, 'tools');
   });
 
   // Persist view and selected tool across page refreshes
@@ -127,8 +141,8 @@ export function App() {
   // Asset & History Persistence
   const [assets, setAssets] = useState<any[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>(() => {
-    const saved = safeGetItem<HistoryItem[]>('creative_history', []);
-    return Array.isArray(saved) ? sanitizeHistory(saved, 20) : [];
+    const saved = safeGetValidatedItem('creative_history', z.array(HistoryItemSchema), []);
+    return Array.isArray(saved) ? sanitizeHistory(saved as any, 20) : [];
   });
 
   // Curation & Human Touch State
@@ -343,13 +357,7 @@ export function App() {
 
     // If Admin user, also subscribe to the global operational desk queue
     let unsubAdminQueue = () => {};
-    const isAdmin = Boolean(
-      (user as any).admin || 
-      user.email === 'writopedia.platform@gmail.com' ||
-      user.email === 'hardeep.pathak@gmail.com' || 
-      user.email === 'avdhesh.babaria@gmail.com' ||
-      user.email === 'business@writopedia.com'
-    );
+    const isAdmin = Boolean(user && (user as any).admin);
     if (isAdmin) {
       unsubAdminQueue = subscribeHumanTouchQueue(
         (queue) => {

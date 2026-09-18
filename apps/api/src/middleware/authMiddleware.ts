@@ -6,6 +6,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import { verifyAuthToken, type AuthContextUser } from "../infrastructure/supabase/serverAuth.js";
+import { logSecurityEvent } from "../services/securityAuditService.js";
 
 declare global {
   namespace Express {
@@ -18,8 +19,12 @@ declare global {
 
 // Explicitly allowlisted public endpoints (landing, sales inquiry, safe media proxy, health probes, payment webhooks)
 const PUBLIC_ROUTE_PREFIXES = [
+  "/api/health",
+  "/health",
   "/api/payment/webhook",
   "/payment/webhook",
+  "/api/billing/webhook",
+  "/billing/webhook",
   "/api/contact-sales",
   "/api/proxy",
   "/api/proxy-image",
@@ -60,6 +65,14 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
 
   const user = await verifyAuthToken(token);
   if (!user) {
+    await logSecurityEvent(req, {
+      eventType: "AUTH_TOKEN_INVALID",
+      severity: "medium",
+      route: fullPath,
+      method: req.method,
+      reason: "Cryptographic bearer token verification failed or token is expired",
+    });
+
     return res.status(401).json({
       error: "Unauthorized: Invalid or expired authentication token.",
       code: "AUTH_TOKEN_INVALID",
@@ -70,8 +83,20 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   next();
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.user || !req.user.admin) {
+    await logSecurityEvent(req, {
+      eventType: "FORBIDDEN_ADMIN_REQUIRED",
+      severity: "high",
+      userId: req.user?.uid || req.user?.id || null,
+      route: req.originalUrl.split("?")[0],
+      method: req.method,
+      reason: "Non-administrator user attempted to access administrator-restricted endpoint",
+      metadata: {
+        attemptedRole: req.user?.role || (req.user?.admin ? "admin" : "user") || "unauthenticated",
+      },
+    });
+
     return res.status(403).json({
       error: "Forbidden: Administrator privileges required.",
       code: "FORBIDDEN_ADMIN_REQUIRED",

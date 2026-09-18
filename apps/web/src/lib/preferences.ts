@@ -67,22 +67,46 @@ export function deleteCookie(name: string): void {
 }
 
 // ==========================================
+import { z } from 'zod';
+
+export const UserPreferencesSchema = z.object({
+  theme: z.enum(['dark', 'light', 'system']).optional(),
+  sidebarOpen: z.boolean().optional(),
+  aspectRatio: z.string().max(20).optional(),
+  audioVolume: z.number().min(0).max(1).optional(),
+  audioVoice: z.string().max(50).optional(),
+  bakeLogoOnGeneration: z.boolean().optional(),
+  logoPosition: z.object({ x: z.number(), y: z.number() }).optional(),
+  logoScale: z.number().optional(),
+  logoInverted: z.boolean().optional(),
+  activeProfileId: z.string().max(100).optional(),
+  brandSetupComplete: z.boolean().optional(),
+  brandGuidelines: z.record(z.unknown()).optional(),
+});
+
 // Preferences Loader & Saver
 // ==========================================
 
 export function loadPreferences(): UserPreferences {
   const prefs: UserPreferences = { ...DEFAULT_PREFERENCES };
 
-  // 1. Try to load structured JSON from localStorage
+  // 1. Try to load structured JSON from localStorage with strict runtime validation
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        Object.assign(prefs, parsed);
+        const validated = UserPreferencesSchema.safeParse(parsed);
+        if (validated.success) {
+          Object.assign(prefs, validated.data);
+        } else {
+          console.warn("[Preferences] Invalid stored preferences schema:", validated.error.issues);
+          localStorage.removeItem(STORAGE_KEY);
+        }
       }
     } catch (e) {
       console.warn("Failed to parse stored preferences from localStorage:", e);
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
     }
   }
 

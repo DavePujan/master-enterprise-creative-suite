@@ -182,10 +182,13 @@ export class PresentationService {
   }
 
   /**
-   * Retrieves status and download URL for an export job.
+   * Retrieves status and download URL for an export job, verifying ownership/workspace access.
    */
-  async getExportStatus(exportId: string): Promise<ExportJobRecord | null> {
-    return presentationRepository.getExportJob(exportId);
+  async getExportStatus(
+    exportId: string,
+    authContext?: { userId: string; workspaceId?: string }
+  ): Promise<ExportJobRecord | null> {
+    return presentationRepository.getExportJob(exportId, authContext);
   }
 }
 

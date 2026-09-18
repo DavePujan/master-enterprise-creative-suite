@@ -99,7 +99,7 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
   });
 
   useEffect(() => {
-    // Sync settings in real-time from Firestore if available
+    // Sync settings in real-time from Supabase if available
     const unsub = subscribeAdminSettings('magicPromptConfig', (data) => {
       if (data) {
         const updated: PromptEngineSettings = {
@@ -127,7 +127,7 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
     try {
       await saveAdminSettings(newSettings, 'magicPromptConfig');
     } catch (e) {
-      console.error("Failed to commit settings update to Firestore:", e);
+      console.error("Failed to commit settings update to Supabase:", e);
     }
   };
 
@@ -240,7 +240,7 @@ export default function AdminPanel({ onClose, selectedRequestId, onClearSelected
     try {
       const assetId = `curated_${selectedRequest.id}_${Date.now()}`;
       
-      // 1. Upload the curated output directly to Google Firebase Storage
+      // 1. Upload the curated output directly to Supabase Storage
       const uploadedUrl = await uploadAssetToStorage(
         selectedRequest.userId, 
         assetId, 

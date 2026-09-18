@@ -75,8 +75,8 @@ packageFiles.forEach(file => {
   const content = fs.readFileSync(file, 'utf8');
 
   // Rule: packages cannot import from apps
-  if (/from ['"](?:@web\/|@api\/|\.\.\/.*apps\/)/.test(content)) {
-    reportViolation(file, 'Shared packages cannot depend on application layers (apps/web or apps/api).');
+  if (/from ['"](?:@web\/|@api\/|@worker\/|\.\.\/.*apps\/)/.test(content)) {
+    reportViolation(file, 'Shared packages cannot depend on application layers (apps/web, apps/api, or apps/worker).');
   }
 
   // Rule: packages cannot import react or express
@@ -85,7 +85,23 @@ packageFiles.forEach(file => {
   }
 });
 
-// 4. Secret Invariant Enforcement across all scripts
+// 4. Check apps/worker
+const workerFiles = walk(path.join(ROOT, 'apps/worker'));
+workerFiles.forEach(file => {
+  const content = fs.readFileSync(file, 'utf8');
+
+  // Rule: worker cannot import web
+  if (/from ['"](?:@web\/|\.\.\/.*apps\/web)/.test(content)) {
+    reportViolation(file, 'Worker apps/worker cannot import from apps/web.');
+  }
+
+  // Rule: worker cannot import react
+  if (/from ['"]react['"]|from ['"]react-dom['"]/.test(content)) {
+    reportViolation(file, 'Worker apps/worker cannot import React or React DOM.');
+  }
+});
+
+// 5. Secret Invariant Enforcement across all scripts
 const scriptFiles = walk(path.join(ROOT, 'scripts'));
 scriptFiles.forEach(file => {
   const content = fs.readFileSync(file, 'utf8');
@@ -100,5 +116,6 @@ if (violations > 0) {
   console.error(`\n🚨 Architecture boundary check FAILED with ${violations} violation(s).`);
   process.exit(1);
 } else {
-  console.log(`\n✅ Architecture boundary check PASSED. All ${webFiles.length + apiFiles.length + packageFiles.length + scriptFiles.length} files conform to architectural isolation & secret safety rules.`);
+  console.log(`\n✅ Architecture boundary check PASSED. All ${webFiles.length + apiFiles.length + packageFiles.length + workerFiles.length + scriptFiles.length} files conform to architectural isolation & secret safety rules.`);
 }
+

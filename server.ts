@@ -4,6 +4,7 @@ import path from "path";
 import { serverConfig, validatePaymentConfig } from "./apps/api/src/config/env.js";
 import { createExpressApp } from "./apps/api/src/http/app.js";
 import { videoJobWorker } from "./apps/api/src/modules/videoGeneration/videoJobWorker.js";
+import { presentationExportWorker } from "./apps/api/src/modules/presentation/jobs/presentationExportWorker.js";
 
 async function startServer() {
   validatePaymentConfig();
@@ -31,6 +32,11 @@ async function startServer() {
     videoJobWorker.start();
     videoJobWorker.reconcileStaleJobs().catch(err => {
       console.warn("Error reconciling stale video jobs:", err);
+    });
+    // Start background presentation export worker & reconcile stale exports
+    presentationExportWorker.start();
+    presentationExportWorker.reconcileStaleJobs().catch(err => {
+      console.warn("Error reconciling stale presentation export jobs:", err);
     });
   });
 }

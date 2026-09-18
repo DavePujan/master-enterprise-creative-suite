@@ -14,7 +14,9 @@ if (fs.existsSync(envPath)) {
       if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
         v = v.slice(1, -1);
       }
-      process.env[k] = v;
+      if (process.env[k] === undefined) {
+        process.env[k] = v;
+      }
     }
   }
 }
@@ -35,13 +37,19 @@ const supabase = createClient(url, key, {
 });
 
 async function main() {
+  if (process.argv.length > 2) {
+    console.error("❌ Fatal Error: Passing passwords or credentials via command-line arguments is strictly prohibited.");
+    console.error("Please configure ADMIN_PASSWORD as an environment variable or in your .env file.");
+    process.exit(1);
+  }
+
   const email = process.env.ADMIN_EMAIL || "writopedia.platform@gmail.com";
-  const password = process.env.ADMIN_PASSWORD || process.argv[2];
+  const password = process.env.ADMIN_PASSWORD;
   const fullName = process.env.ADMIN_NAME || "Writopedia Platform Admin";
 
   if (!password) {
-    console.error("❌ Fatal Error: Missing ADMIN_PASSWORD in environment or arguments.");
-    console.error("Please configure ADMIN_PASSWORD in .env or run: node scripts/setup_admin_user.cjs <password>");
+    console.error("❌ Fatal Error: Missing ADMIN_PASSWORD environment variable.");
+    console.error("Please configure ADMIN_PASSWORD in your environment or .env file.");
     process.exit(1);
   }
 
@@ -207,7 +215,7 @@ async function main() {
   console.log("\n==========================================");
   console.log("✅ Admin account setup completed perfectly!");
   console.log(`Email    : ${email}`);
-  console.log(`Password : [SECURELY CONFIGURED VIA ENV/CLI]`);
+  console.log(`Password : [SECURELY CONFIGURED VIA ENVIRONMENT]`);
   console.log(`Role     : admin`);
   console.log(`User ID  : ${userId}`);
   console.log("==========================================");

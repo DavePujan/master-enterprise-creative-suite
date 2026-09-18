@@ -47,7 +47,7 @@ const loadRazorpayScript = () => {
 };
 
 export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, setCredits, user, onLogin }) => {
-  const isAdmin = user && (user.admin || user.email === 'writopedia.platform@gmail.com' || user.email === 'hardeep.pathak@gmail.com' || user.email === 'avdhesh.babaria@gmail.com' || user.email === 'business@writopedia.com');
+  const isAdmin = Boolean(user && user.admin);
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annually'>('monthly');
   const [currency, setCurrency] = useState<'INR' | 'USD'>('USD');
   const [currencySource, setCurrencySource] = useState<string>('default'); // 'timezone', 'ipapi', 'ip-api', 'manual'
@@ -463,7 +463,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
     setSalesSubmitMessage(null);
 
     try {
-      // 1. Save to cloud Firestore database (accessible by admins in AdminOperations)
+      // 1. Save to cloud database (accessible by admins in AdminOperations)
       const submissionDoc = {
         companyName: companyName.trim(),
         contactName: contactName.trim(),
@@ -498,7 +498,7 @@ export const EnterprisePlan: React.FC<EnterprisePlanProps> = ({ credits = 50, se
       console.error("Sales submission failed:", err);
       setSalesSubmitMessage({
         type: 'error',
-        text: `Network failure: ${err.message || 'Unknown Firestore write error. Please try again.'}`
+        text: `Network failure: ${err.message || 'Unknown database write error. Please try again.'}`
       });
     } finally {
       setIsSalesSubmitting(false);

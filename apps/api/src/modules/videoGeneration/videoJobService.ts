@@ -15,6 +15,7 @@ import {
 } from '../../../../../packages/types/videoGeneration.js';
 import { aiJobRepository } from '../../repositories/aiJobRepository.js';
 import { creditService } from '../../services/creditService.js';
+import { storageService } from '../../services/storageService.js';
 import { getSupabaseAdmin } from '../../infrastructure/supabase/supabaseClient.js';
 import { googleOmniProvider } from './providers/googleOmniProvider.js';
 import { googleVeoProvider } from './providers/googleVeoProvider.js';
@@ -22,6 +23,7 @@ import { falKlingProvider } from './providers/falKlingProvider.js';
 import { falSeedanceProvider } from './providers/falSeedanceProvider.js';
 
 export interface CreateVideoJobInput {
+  jobId?: string;
   workspaceId: string;
   userId: string;
   mode: VideoCreationMode;
@@ -37,10 +39,11 @@ export class VideoJobService {
   private activeJobs = new Map<string, VideoJob>();
 
   async createJob(input: CreateVideoJobInput): Promise<VideoJob> {
-    const jobId = randomUUID();
+    const jobId = input.jobId || randomUUID();
 
-    // Persist to ai_generation_jobs table
+    // Persist to ai_generation_jobs table with explicit id
     await aiJobRepository.createJob({
+      id: jobId,
       workspaceId: input.workspaceId,
       requestedBy: input.userId,
       operation: 'generate_video',
@@ -69,8 +72,6 @@ export class VideoJobService {
     };
 
     this.activeJobs.set(jobId, job);
-    await this.persistJobState(job);
-
     return job;
   }
 
@@ -79,15 +80,13 @@ export class VideoJobService {
   }
 
   async getJobWithFallback(jobId: string, workspaceId: string): Promise<VideoJob | null> {
-    const memoryJob = this.activeJobs.get(jobId);
-    if (memoryJob && memoryJob.workspaceId === workspaceId) {
-      return memoryJob;
+    const supabase = getSupabaseAdmin();
+    if (!supabase) {
+      const memJob = this.activeJobs.get(jobId);
+      return memJob && memJob.workspaceId === workspaceId ? memJob : null;
     }
 
-    // Attempt database retrieval from ai_generation_jobs
-    const supabase = getSupabaseAdmin();
-    if (!supabase) return null;
-
+    // Retrieve authoritative state directly from PostgreSQL ai_generation_jobs
     const { data, error } = await supabase
       .from('ai_generation_jobs')
       .select('*')
@@ -95,7 +94,57 @@ export class VideoJobService {
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      const memJob = this.activeJobs.get(jobId);
+      return memJob && memJob.workspaceId === workspaceId ? memJob : null;
+    }
+
+    // Fetch signed output URL if job is completed
+    let outputUrl: string | undefined = undefined;
+    let outputAssetId: string | undefined = undefined;
+
+    if (data.status === 'completed') {
+      const { data: outputData } = await supabase
+        .from('ai_generation_outputs')
+        .select('*')
+        .eq('generation_job_id', data.id)
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (outputData && outputData.storage_path) {
+        outputAssetId = outputData.asset_id || undefined;
+        outputUrl = (await storageService.getSignedUrl(outputData.storage_path, 86400)) || undefined;
+      }
+    }
+
+    let mappedStatus: VideoJobStatus = 'generating_motion';
+    let progress = 50;
+
+    if (data.status === 'pending') {
+      mappedStatus = 'queued';
+      progress = 10;
+    } else if (data.status === 'completed') {
+      mappedStatus = 'completed';
+      progress = 100;
+    } else if (data.status === 'failed') {
+      mappedStatus = 'failed';
+      progress = 0;
+    } else if (data.status === 'cancelled') {
+      mappedStatus = 'cancelled';
+      progress = 0;
+    }
+
+    // Recover reservationId from credit_holds if not present
+    let reservationId = '';
+    const { data: hold } = await supabase
+      .from('credit_holds')
+      .select('id')
+      .eq('reference_id', data.id)
+      .maybeSingle();
+    if (hold) {
+      reservationId = hold.id;
+    }
 
     const restoredJob: VideoJob = {
       jobId: data.id,
@@ -106,13 +155,16 @@ export class VideoJobService {
       productTier: 'pro',
       provider: (data.provider as any) || 'google',
       providerJobId: data.provider_request_id,
-      reservationId: data.reservation_id || '',
+      reservationId,
       reservedCredits: data.credits_reserved || 0,
-      creditState: data.status === 'completed' ? 'captured' : data.status === 'failed' ? 'released' : 'held',
-      status: data.status as VideoJobStatus,
+      creditState: data.status === 'completed' ? 'captured' : (data.status === 'failed' || data.status === 'cancelled') ? 'released' : 'held',
+      status: mappedStatus,
+      progress,
+      outputUrl,
+      outputAssetId,
       error: data.error_message,
       createdAt: data.created_at,
-      updatedAt: data.completed_at || data.created_at
+      updatedAt: data.completed_at || data.started_at || data.created_at
     };
 
     this.activeJobs.set(jobId, restoredJob);
@@ -121,13 +173,13 @@ export class VideoJobService {
 
   updateJob(jobId: string, updates: Partial<VideoJob>): VideoJob | null {
     const job = this.activeJobs.get(jobId);
-    if (!job) return null;
-
-    Object.assign(job, updates, { updatedAt: new Date().toISOString() });
-    this.persistJobState(job).catch(err =>
+    if (job) {
+      Object.assign(job, updates, { updatedAt: new Date().toISOString() });
+    }
+    this.persistJobState(jobId, updates).catch(err =>
       console.error(`[VideoJobService] Failed to persist job update for ${jobId}:`, err)
     );
-    return job;
+    return job || null;
   }
 
   /**
@@ -151,7 +203,7 @@ export class VideoJobService {
       }
       job.status = 'cancelled';
       job.updatedAt = new Date().toISOString();
-      await this.persistJobState(job);
+      await this.persistJobState(job.jobId, { status: 'cancelled' });
       return { success: true, status: 'cancelled', message: 'Job cancelled successfully before execution. Credits refunded.' };
     }
 
@@ -178,15 +230,14 @@ export class VideoJobService {
       }
       job.status = 'cancelled';
       job.updatedAt = new Date().toISOString();
-      await this.persistJobState(job);
+      await this.persistJobState(job.jobId, { status: 'cancelled' });
       return { success: true, status: 'cancelled', message: 'Job cancelled successfully upstream. Credits refunded.' };
     }
 
-    // Case 3: Upstream cancellation cannot be immediately confirmed (e.g. Veo or async fal in-progress)
-    // Safe invariant: hold credits until worker observes termination without generation output
+    // Case 3: Upstream cancellation cannot be immediately confirmed
     job.status = 'cancel_requested';
     job.updatedAt = new Date().toISOString();
-    await this.persistJobState(job);
+    await this.persistJobState(job.jobId, { status: 'cancel_requested' });
     return {
       success: true,
       status: 'cancel_requested',
@@ -198,19 +249,34 @@ export class VideoJobService {
     return Array.from(this.activeJobs.values());
   }
 
-  private async persistJobState(job: VideoJob): Promise<void> {
+  private async persistJobState(jobId: string, updates: Partial<VideoJob>): Promise<void> {
     const supabase = getSupabaseAdmin();
     if (!supabase) return;
 
-    await supabase
-      .from('ai_generation_jobs')
-      .update({
-        status: job.status,
-        provider_request_id: job.providerJobId,
-        error_message: job.error,
-        completed_at: (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') ? new Date().toISOString() : null
-      })
-      .eq('id', job.jobId);
+    const dbPayload: any = {};
+    if (updates.status) {
+      // Map VideoJobStatus to DB job_status enum
+      if (updates.status === 'completed') dbPayload.status = 'completed';
+      else if (updates.status === 'failed') dbPayload.status = 'failed';
+      else if (updates.status === 'cancelled') dbPayload.status = 'cancelled';
+      else if (updates.status === 'generating_motion' || updates.status === 'finalizing') dbPayload.status = 'running';
+    }
+    if (updates.providerJobId) {
+      dbPayload.provider_request_id = updates.providerJobId;
+    }
+    if (updates.error) {
+      dbPayload.error_message = updates.error;
+    }
+    if (updates.status === 'completed' || updates.status === 'failed' || updates.status === 'cancelled') {
+      dbPayload.completed_at = new Date().toISOString();
+    }
+
+    if (Object.keys(dbPayload).length > 0) {
+      await supabase
+        .from('ai_generation_jobs')
+        .update(dbPayload)
+        .eq('id', jobId);
+    }
   }
 }
 
