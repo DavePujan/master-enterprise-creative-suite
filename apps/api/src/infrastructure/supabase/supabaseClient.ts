@@ -132,6 +132,11 @@ export async function captureCreditHold(params: {
     return { success: false, error: "Database not configured" };
   }
 
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(params.holdId)) {
+    return { success: false, error: `Invalid holdId format: ${params.holdId}` };
+  }
+
   const { data, error } = await supabase.rpc("capture_credit_hold", {
     p_hold_id: params.holdId,
     p_idempotency_key: params.idempotencyKey,
@@ -167,6 +172,11 @@ export async function releaseCreditHold(params: {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return { success: true, amountReleased: 0 };
+  }
+
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(params.holdId)) {
+    return { success: false, error: `Invalid holdId format: ${params.holdId}` };
   }
 
   const { data, error } = await supabase.rpc("release_credit_hold", {

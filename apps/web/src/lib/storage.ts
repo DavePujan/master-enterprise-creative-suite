@@ -3,7 +3,37 @@
  * Prevents QuotaExceededError crashes across all browsers and environments.
  */
 
+import { z } from 'zod';
 import type { HistoryItem } from '@shared-types/user.js';
+
+export interface ValidatedStorageOptions {
+  removeOnFailure?: boolean;
+}
+
+export const HistoryItemSchema = z.object({
+  id: z.string().max(100),
+  timestamp: z.union([z.number(), z.string()]),
+  type: z.string().max(50),
+  prompt: z.string().max(10000),
+  model: z.string().max(100).optional(),
+  aspectRatio: z.string().max(20).optional(),
+  result: z.record(z.unknown()).optional(),
+}).passthrough();
+
+export const BrandGuidelinesSchema = z.object({
+  brandName: z.string().max(200).optional(),
+  industry: z.string().max(200).optional(),
+  tagline: z.string().max(500).optional(),
+  targetAudience: z.string().max(1000).optional(),
+  keyOfferings: z.union([z.string(), z.array(z.string())]).optional(),
+  brandValues: z.union([z.string(), z.array(z.string())]).optional(),
+  toneOfVoice: z.union([z.string(), z.array(z.string())]).optional(),
+  visualStyle: z.string().max(500).optional(),
+  colorPalette: z.array(z.string().max(50)).optional(),
+  typography: z.record(z.string()).optional(),
+  logoUrl: z.string().max(2000).optional(),
+  missionStatement: z.string().max(2000).optional(),
+}).passthrough();
 
 const TRANSIENT_KEYS = [
   'staged_text_brief',
@@ -70,9 +100,66 @@ export function sanitizeHistory(items: HistoryItem[], maxItems = 20): HistoryIte
 }
 
 /**
- * Safely retrieve and parse an item from LocalStorage without throwing.
+ * Safely retrieves, parses, and validates untrusted client-side LocalStorage data
+ * against a strict Zod runtime schema before it can enter application state.
+ * 
+ * If JSON parsing fails, schema validation fails, or type mismatch occurs:
+ * - Safely logs a warning
+ * - Falls back to safe default value
+ * - Never throws an exception or crashes the UI
+ * - Optionally removes the corrupted key from browser storage
  */
-export function safeGetItem<T>(key: string, fallback: T): T {
+export function safeGetValidatedItem<T>(
+  key: string,
+  schema: z.ZodType<T>,
+  fallback: T,
+  options: ValidatedStorageOptions = { removeOnFailure: true }
+): T {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return fallback;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null || raw === undefined) {
+      return fallback;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // If schema accepts a primitive string, evaluate raw string
+      parsed = raw;
+    }
+
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
+      console.warn(`[SafeStorage] Runtime validation failed for localStorage key "${key}":`, result.error.issues);
+      if (options.removeOnFailure) {
+        window.localStorage.removeItem(key);
+      }
+      return fallback;
+    }
+
+    return result.data;
+  } catch (err) {
+    console.warn(`[SafeStorage] Unexpected error validating key "${key}":`, err);
+    if (options.removeOnFailure) {
+      try { window.localStorage.removeItem(key); } catch {}
+    }
+    return fallback;
+  }
+}
+
+/**
+ * Safely retrieve and parse an item from LocalStorage with optional Zod runtime validation.
+ */
+export function safeGetItem<T>(key: string, fallback: T, schema?: z.ZodType<T>): T {
+  if (schema) {
+    return safeGetValidatedItem(key, schema, fallback);
+  }
+
   if (typeof window === 'undefined' || !window.localStorage) {
     return fallback;
   }

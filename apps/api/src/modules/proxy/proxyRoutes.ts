@@ -6,10 +6,19 @@
 
 import { Router } from "express";
 import dns from "dns/promises";
+import net from "net";
+import { Agent } from "undici";
+import { logSecurityEvent } from "../../services/securityAuditService.js";
 
 export const proxyRouter = Router();
 
-function isPrivateOrReservedIPv4(ip: string): boolean {
+export interface ValidatedDestination {
+  url: URL;
+  pinnedIp: string;
+  family: 4 | 6;
+}
+
+export function isPrivateOrReservedIPv4(ip: string): boolean {
   const parts = ip.split('.').map(Number);
   if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) {
     return true; // Malformed IPv4 is unsafe
@@ -28,7 +37,7 @@ function isPrivateOrReservedIPv4(ip: string): boolean {
   return false;
 }
 
-function isPrivateOrReservedIPv6(ip: string): boolean {
+export function isPrivateOrReservedIPv6(ip: string): boolean {
   const cleanIp = ip.toLowerCase().trim();
 
   // Loopback & Unspecified
@@ -52,7 +61,7 @@ function isPrivateOrReservedIPv6(ip: string): boolean {
   return false;
 }
 
-export async function validateDestinationUrl(urlStr: string): Promise<URL> {
+export async function validateDestinationUrl(urlStr: string): Promise<ValidatedDestination> {
   let urlObj: URL;
   try {
     urlObj = new URL(urlStr.trim());
@@ -87,6 +96,20 @@ export async function validateDestinationUrl(urlStr: string): Promise<URL> {
     throw new Error("Target hostname is restricted or internal.");
   }
 
+  // Check if hostname is an IP literal
+  const ipVersion = net.isIP(hostname);
+  if (ipVersion === 4) {
+    if (isPrivateOrReservedIPv4(hostname)) {
+      throw new Error(`Target IPv4 address is restricted/private: ${hostname}`);
+    }
+    return { url: urlObj, pinnedIp: hostname, family: 4 };
+  } else if (ipVersion === 6) {
+    if (isPrivateOrReservedIPv6(hostname)) {
+      throw new Error(`Target IPv6 address is restricted/private: ${hostname}`);
+    }
+    return { url: urlObj, pinnedIp: hostname, family: 6 };
+  }
+
   // Resolve all DNS records (both IPv4 and IPv6) and validate every returned IP
   try {
     const records = await dns.lookup(hostname, { all: true });
@@ -102,14 +125,41 @@ export async function validateDestinationUrl(urlStr: string): Promise<URL> {
         throw new Error(`DNS resolved to private/reserved IPv6 address: ${record.address}`);
       }
     }
+
+    // Select the first safe validated record for socket connection pinning
+    const selectedRecord = records[0];
+    return {
+      url: urlObj,
+      pinnedIp: selectedRecord.address,
+      family: selectedRecord.family as 4 | 6
+    };
   } catch (err: any) {
     if (err.message.includes("DNS resolved to private") || err.message.includes("restricted")) {
       throw err;
     }
     throw new Error(`DNS resolution failed for hostname "${hostname}": ${err.message}`);
   }
+}
 
-  return urlObj;
+/**
+ * Creates an Undici Agent that binds socket lookup directly to the pre-validated IP,
+ * preventing time-of-check to time-of-use (TOCTOU) DNS rebinding attacks.
+ */
+export function createPinnedAgent(hostname: string, pinnedIp: string, family: 4 | 6): Agent {
+  const targetHost = hostname.toLowerCase();
+  return new Agent({
+    connect: {
+      lookup: (lookupHost, options, callback) => {
+        if (lookupHost.toLowerCase() === targetHost) {
+          if (options && (options as any).all) {
+            return callback(null, [{ address: pinnedIp, family }] as any);
+          }
+          return callback(null, pinnedIp, family);
+        }
+        return callback(new Error(`Security violation: Unexpected connection hostname "${lookupHost}"`));
+      }
+    }
+  });
 }
 
 // Universal proxy endpoint with strict SSRF & manual redirect protections
@@ -124,13 +174,17 @@ proxyRouter.get("/proxy", async (req, res) => {
     let response: Response | null = null;
 
     while (redirectCount <= maxRedirects) {
-      const validatedUrl = await validateDestinationUrl(currentUrl);
+      const { url: validatedUrl, pinnedIp, family } = await validateDestinationUrl(currentUrl);
+
+      // Pin socket connection to the validated destination IP
+      const pinnedAgent = createPinnedAgent(validatedUrl.hostname, pinnedIp, family);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       try {
         response = await fetch(validatedUrl.toString(), {
+          dispatcher: pinnedAgent,
           signal: controller.signal,
           redirect: 'manual', // Manual redirect check to prevent DNS rebinding SSRF
           headers: {
@@ -144,7 +198,7 @@ proxyRouter.get("/proxy", async (req, res) => {
         clearTimeout(timeoutId);
       }
 
-      // Handle Redirects Manually
+      // Handle Redirects Manually - each hop undergoes full DNS validation & IP pinning
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get('location');
         if (!location) {
@@ -198,8 +252,20 @@ proxyRouter.get("/proxy", async (req, res) => {
     if (error.name === 'AbortError') {
       return res.status(504).send("Proxy request timed out after 10 seconds.");
     }
-    const isSecurityError = error.message.includes("forbidden") || error.message.includes("restricted") || error.message.includes("private");
+    const isSecurityError = error.message.includes("forbidden") || error.message.includes("restricted") || error.message.includes("private") || error.message.includes("Security violation");
     const statusCode = isSecurityError ? 403 : 500;
+    if (isSecurityError) {
+      await logSecurityEvent(req, {
+        eventType: "SSRF_BLOCKED",
+        severity: "high",
+        route: "/api/proxy",
+        method: "GET",
+        reason: `SSRF prevention blocked forbidden proxy destination: ${error.message}`,
+        metadata: {
+          requestedHost: (req.query.url as string)?.slice(0, 100),
+        },
+      });
+    }
     return res.status(statusCode).send(`SSRF Security Error: ${error.message}`);
   }
 });
@@ -210,3 +276,4 @@ proxyRouter.get("/proxy-image", (req, res) => {
   if (!targetUrl) return res.status(400).send("Missing url parameter");
   res.redirect(`/api/proxy?url=${encodeURIComponent(targetUrl)}`);
 });
+

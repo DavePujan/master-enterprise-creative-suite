@@ -13,3 +13,6 @@ export * from './presentation.js';
 export * from './campaignStrategy.js';
 export * from './videoGeneration.js';
 export * from './icons.js';
+export * from './adDirector.js';
+export * from './adSpec.js';
+export * from './directorOperations.js';

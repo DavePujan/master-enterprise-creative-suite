@@ -11,6 +11,55 @@ import { CreativeCommandBar } from './CreativeCommandBar.js';
 import { SoftWarningModal } from '../modals/SoftWarningModal.js';
 import { RefinePromptModal } from '../modals/RefinePromptModal.js';
 import { type TextWordLayer } from '../../canvas/hooks/useCanvasEditor.js';
+import { DirectorsPlanWorkspace } from '../../video/components/directors-plan/DirectorsPlanWorkspace.js';
+import { Clapperboard } from 'lucide-react';
+import { z } from 'zod';
+import { safeGetValidatedItem } from '@web/lib/storage.js';
+
+const StagedTextBriefSchema = z.object({
+  campaignTitle: z.string().max(300).optional(),
+  suggestedPrompt: z.string().max(8000).optional(),
+  coreHook: z.string().max(2000).optional(),
+  angle: z.string().max(1000).optional(),
+  tone: z.string().max(500).optional(),
+  callToAction: z.string().max(1000).optional(),
+}).passthrough();
+
+const StagedImageBriefSchema = z.object({
+  campaignTitle: z.string().max(300).optional(),
+  prompt: z.string().max(8000).optional(),
+  textlessPrompt: z.string().max(8000).optional(),
+  aspectRatio: z.string().max(50).optional(),
+  aspectRatios: z.array(z.string().max(50)).optional(),
+}).passthrough();
+
+const StagedVideoBriefSchema = z.object({
+  campaignTitle: z.string().max(300).optional(),
+  prompt: z.string().max(8000).optional(),
+  textlessPrompt: z.string().max(8000).optional(),
+  aspectRatio: z.string().max(50).optional(),
+}).passthrough();
+
+const StagedAudioBriefSchema = z.object({
+  campaignTitle: z.string().max(300).optional(),
+  prompt: z.string().max(8000).optional(),
+  spokenScriptText: z.string().max(8000).optional(),
+  scriptIntent: z.string().max(4000).optional(),
+  language: z.string().max(100).optional(),
+  musicMood: z.string().max(200).optional(),
+  mood: z.string().max(200).optional(),
+}).passthrough();
+
+const StagedDeckBriefSchema = z.object({
+  campaignTitle: z.string().max(300).optional(),
+  prompt: z.string().max(8000).optional(),
+  slides: z.array(
+    z.object({
+      slideNumber: z.union([z.number(), z.string()]).optional(),
+      slideTitle: z.string().max(500).optional(),
+    }).passthrough()
+  ).optional(),
+}).passthrough();
 
 export interface CreativeWorkspaceProps {
   selectedGem: Gem;
@@ -145,6 +194,7 @@ export interface CreativeWorkspaceProps {
   setHumanTouchSuccessMsg: (val: string | null) => void;
   getBrandStyles: () => React.CSSProperties;
   handleGenerate: () => Promise<void>;
+  credits?: number;
 }
 
 const renderCapabilityPill = (label: string, detail?: CapabilityDetail | boolean) => {
@@ -245,6 +295,8 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
     handleGenerate
   } = props;
 
+  const [videoMode, setVideoMode] = useState<'director_plan' | 'single_shot'>('director_plan');
+
   // Auto-reconcile video parameters whenever selectedModel or selectedGem changes
   useEffect(() => {
     if (selectedGem.type === 'video') {
@@ -272,32 +324,28 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
 
   useEffect(() => {
     try {
-      const campaignTitle = localStorage.getItem('staged_campaign_title') || '';
+      const campaignTitle = safeGetValidatedItem('staged_campaign_title', z.string().max(300), '');
       setStagedCampaignTitle(campaignTitle);
       setIsStagedDismissed(false);
       setIsBriefApplied(false);
 
-      let rawBrief: string | null = null;
+      let validatedBrief: any | null = null;
+
       if (selectedGem?.type === 'text') {
-        rawBrief = localStorage.getItem('staged_text_brief');
+        validatedBrief = safeGetValidatedItem('staged_text_brief', StagedTextBriefSchema, null);
       } else if (selectedGem?.type === 'image') {
-        rawBrief = localStorage.getItem('staged_image_brief');
+        validatedBrief = safeGetValidatedItem('staged_image_brief', StagedImageBriefSchema, null);
       } else if (selectedGem?.type === 'video') {
-        rawBrief = localStorage.getItem('staged_video_brief');
+        validatedBrief = safeGetValidatedItem('staged_video_brief', StagedVideoBriefSchema, null);
       } else if (selectedGem?.type === 'audio') {
-        rawBrief = localStorage.getItem('staged_audio_brief');
+        validatedBrief = safeGetValidatedItem('staged_audio_brief', StagedAudioBriefSchema, null);
       } else if (selectedGem?.id === 'corporate-presentations' || selectedGem?.type === 'slideshow') {
-        rawBrief = localStorage.getItem('staged_deck_brief');
+        validatedBrief = safeGetValidatedItem('staged_deck_brief', StagedDeckBriefSchema, null);
       }
 
-      if (rawBrief) {
-        const parsed = JSON.parse(rawBrief);
-        setStagedBrief(parsed);
-      } else {
-        setStagedBrief(null);
-      }
+      setStagedBrief(validatedBrief);
     } catch (e) {
-      console.warn('Error reading staged brief:', e);
+      console.warn('Error reading or validating staged brief:', e);
       setStagedBrief(null);
     }
   }, [selectedGem?.id, selectedGem?.type]);
@@ -424,18 +472,65 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
       )}
 
       {/* Gem Header */}
-      <div className="space-y-2 pb-1 text-left">
-        <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">
-          {getIcon(selectedGem.icon)}
-          {selectedGem.id === 'corporate-presentations' ? 'PPT' : selectedGem.type} Engine
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-1 text-left">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">
+            {getIcon(selectedGem.icon)}
+            {selectedGem.id === 'corporate-presentations' ? 'PPT' : selectedGem.type} Engine
+          </div>
+          <h1 className="text-3xl md:text-4xl font-light text-slate-950 dark:text-slate-50 tracking-tight">
+            {selectedGem.name}. <span className="text-rose-600 dark:text-rose-400 font-medium whitespace-nowrap">Simplified.</span>
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400 max-w-4xl text-sm font-light leading-relaxed">
+            {selectedGem.description}
+          </p>
         </div>
-        <h1 className="text-3xl md:text-4xl font-light text-slate-950 dark:text-slate-50 tracking-tight">
-          {selectedGem.name}. <span className="text-rose-600 dark:text-rose-400 font-medium whitespace-nowrap">Simplified.</span>
-        </h1>
-        <p className="text-slate-600 dark:text-slate-400 max-w-4xl text-sm font-light leading-relaxed">
-          {selectedGem.description}
-        </p>
+
+        {/* Video Gem Mode Switcher */}
+        {selectedGem.type === 'video' && (
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-sm border border-slate-200 dark:border-slate-800 shrink-0 self-start md:self-center">
+            <button
+              type="button"
+              onClick={() => setVideoMode('director_plan')}
+              className={cn(
+                "px-3 py-1.5 text-xs font-bold rounded-xs transition-all flex items-center gap-1.5 cursor-pointer font-sans",
+                videoMode === 'director_plan'
+                  ? "bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              )}
+            >
+              <Clapperboard size={13} />
+              <span>AI Director's Plan</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setVideoMode('single_shot')}
+              className={cn(
+                "px-3 py-1.5 text-xs font-bold rounded-xs transition-all flex items-center gap-1.5 cursor-pointer font-sans",
+                videoMode === 'single_shot'
+                  ? "bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              )}
+            >
+              <VideoIcon size={13} />
+              <span>Quick Single Shot</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Render AI Director's Plan when active on Video Gem */}
+      {selectedGem.type === 'video' && videoMode === 'director_plan' ? (
+        <DirectorsPlanWorkspace
+          userCredits={props.credits ?? 50}
+          brandGuidelines={brandGuidelines}
+          onLaunchVideoJob={async (_snapshot, modelId) => {
+            setSelectedModel(modelId);
+            await handleGenerate();
+          }}
+        />
+      ) : (
+        <>
       
       {/* Parameter Controls Toolbar Block */}
       <div className="flex flex-wrap items-stretch gap-4">
@@ -953,6 +1048,8 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
         isGenerating={props.isGenerating}
         handleGenerate={props.handleGenerate}
       />
+      </>
+      )}
 
       {/* Soft Warning Modal */}
       <SoftWarningModal 

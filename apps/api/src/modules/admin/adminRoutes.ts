@@ -148,6 +148,28 @@ adminRouter.get("/activity", async (req: Request, res: Response): Promise<void> 
       }
     }
 
+    if (supabase && (category === "all" || category === "security")) {
+      const { data: secRows } = await supabase
+        .from("security_audit_logs")
+        .select("id, event_type, severity, route, method, ip, reason, created_at, profiles:user_id(email)")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (secRows) {
+        for (const row of secRows) {
+          events.push({
+            id: `sec_${row.id}`,
+            category: "system",
+            actor: (row.profiles as any)?.email || row.ip || "Unknown",
+            action: `[SECURITY ${row.severity.toUpperCase()}] ${row.event_type} (${row.method || ""} ${row.route || ""}) — ${row.reason || "Security violation"}`,
+            resourceId: row.id,
+            status: row.severity,
+            timestamp: row.created_at,
+          });
+        }
+      }
+    }
+
     // Sort combined events descending by timestamp
     events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 

@@ -82,7 +82,8 @@ export class VideoJobService {
   async getJobWithFallback(jobId: string, workspaceId: string): Promise<VideoJob | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return this.activeJobs.get(jobId) || null;
+      const memJob = this.activeJobs.get(jobId);
+      return memJob && memJob.workspaceId === workspaceId ? memJob : null;
     }
 
     // Retrieve authoritative state directly from PostgreSQL ai_generation_jobs
@@ -94,7 +95,8 @@ export class VideoJobService {
       .maybeSingle();
 
     if (error || !data) {
-      return this.activeJobs.get(jobId) || null;
+      const memJob = this.activeJobs.get(jobId);
+      return memJob && memJob.workspaceId === workspaceId ? memJob : null;
     }
 
     // Fetch signed output URL if job is completed

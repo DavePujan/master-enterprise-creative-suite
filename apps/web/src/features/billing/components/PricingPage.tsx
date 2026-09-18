@@ -14,6 +14,15 @@ import { motion, AnimatePresence } from 'motion/react';
 import { WritopediaLogo } from '@web/features/marketing/components/LandingPage.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
 import type { PlanId } from '@shared-types/billing.js';
+import { z } from 'zod';
+import { safeGetValidatedItem } from '@web/lib/storage.js';
+
+const PendingPricingPlanSchema = z.object({
+  name: z.string().max(100),
+  billingPeriod: z.enum(['monthly', 'yearly']).optional(),
+  currency: z.enum(['USD', 'INR']).optional(),
+  timestamp: z.number().optional(),
+}).passthrough();
 
 interface PricingPageProps {
   onOpenWorkspace: () => void;
@@ -273,23 +282,20 @@ export default function PricingPage({
   // Check for pending pricing plan on mount / login
   useEffect(() => {
     if (user) {
-      const pendingStr = localStorage.getItem('pending_pricing_plan');
-      if (pendingStr) {
-        try {
-          const pending = JSON.parse(pendingStr);
-          if (pending && pending.name) {
-            if (pending.billingPeriod) setBillingPeriod(pending.billingPeriod);
-            if (pending.currency) {
-              setCurrency(pending.currency);
-              setCurrencySource('manual');
-            }
-            localStorage.removeItem('pending_pricing_plan');
-            handleCheckout(pending.name, pending.billingPeriod || billingPeriod, pending.currency || currency);
+      try {
+        const pending = safeGetValidatedItem('pending_pricing_plan', PendingPricingPlanSchema, null);
+        if (pending && pending.name) {
+          if (pending.billingPeriod) setBillingPeriod(pending.billingPeriod);
+          if (pending.currency) {
+            setCurrency(pending.currency);
+            setCurrencySource('manual');
           }
-        } catch (e) {
-          console.error("Error parsed pending plan:", e);
           localStorage.removeItem('pending_pricing_plan');
+          handleCheckout(pending.name, pending.billingPeriod || billingPeriod, pending.currency || currency);
         }
+      } catch (e) {
+        console.warn("Failed to restore pending plan:", e);
+        try { localStorage.removeItem('pending_pricing_plan'); } catch {}
       }
     }
   }, [user]);

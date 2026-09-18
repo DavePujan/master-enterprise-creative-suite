@@ -5,18 +5,12 @@
 
 import { getSupabaseAdmin } from "./supabaseClient.js";
 
-const ADMIN_EMAILS = new Set([
-  "hardeep.pathak@gmail.com",
-  "avdhesh.babaria@gmail.com",
-  "business@writopedia.com",
-  "writopedia.platform@gmail.com",
-  "pujan.work1@gmail.com",
-]);
-
 export interface AuthenticatedUser {
   uid: string;
+  id?: string;
   email?: string;
   admin?: boolean;
+  role?: string;
 }
 
 export interface AuthContextUser extends AuthenticatedUser {
@@ -36,19 +30,15 @@ export async function verifySupabaseToken(token: string): Promise<AuthContextUse
       return null;
     }
 
-    const email = user.email?.toLowerCase();
-    
-    // Check admin role from user_roles or admin emails
-    let isAdmin = Boolean(email && ADMIN_EMAILS.has(email));
-    
-    // Check user_roles table
-    const { data: roleRow } = await supabase
+    // Authoritative Admin role check strictly from database RBAC (public.user_roles)
+    let isAdmin = false;
+    const { data: roleRow, error: roleError } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (roleRow?.role === "admin" || roleRow?.role === "superadmin") {
+    if (!roleError && (roleRow?.role === "admin" || roleRow?.role === "superadmin")) {
       isAdmin = true;
     }
 
@@ -67,8 +57,10 @@ export async function verifySupabaseToken(token: string): Promise<AuthContextUse
 
     return {
       uid: user.id,
+      id: user.id,
       email: user.email,
       admin: isAdmin,
+      role: roleRow?.role || (isAdmin ? "admin" : "user"),
       workspaceId,
     };
   } catch (err) {

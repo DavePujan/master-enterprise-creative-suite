@@ -5,7 +5,9 @@
  */
 
 import { getSupabaseAdmin } from '../../infrastructure/supabase/supabaseClient.js';
+import { workspaceRepository } from '../../repositories/workspaceRepository.js';
 import { PresentationDocument, PresentationAsset } from '@presentation-engine/index.js';
+import { logSecurityEvent } from '../../services/securityAuditService.js';
 
 export class VersionConflictError extends Error {
   public status = 409;
@@ -305,9 +307,13 @@ export class PresentationRepository {
   }
 
   /**
-   * Retrieves an export job and provides a fresh signed download URL if ready.
+   * Retrieves an export job and provides a fresh signed download URL if ready,
+   * strictly enforcing presentation ownership and workspace authorization.
    */
-  async getExportJob(exportId: string): Promise<ExportJobRecord | null> {
+  async getExportJob(
+    exportId: string,
+    authContext?: { userId: string; workspaceId?: string }
+  ): Promise<ExportJobRecord | null> {
     const supabase = getSupabaseAdmin();
     if (!supabase) return null;
 
@@ -315,10 +321,53 @@ export class PresentationRepository {
       .from('presentation_exports')
       .select('*')
       .eq('id', exportId)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
 
+    // Authorize against the underlying presentation if authContext is provided
+    if (authContext && authContext.userId) {
+      const { data: presentation, error: presError } = await supabase
+        .from('presentations')
+        .select('workspace_id, created_by')
+        .eq('id', data.presentation_id)
+        .maybeSingle();
+
+      if (presError || !presentation) {
+        return null;
+      }
+
+      // Check 1: User created the presentation directly
+      const isCreator = presentation.created_by === authContext.userId;
+
+      // Check 2: User matches workspace or is an authorized member of presentation's workspace
+      const isDirectWorkspaceMatch =
+        Boolean(authContext.workspaceId && presentation.workspace_id === authContext.workspaceId);
+
+      let isWorkspaceMember = false;
+      if (!isCreator && !isDirectWorkspaceMatch && presentation.workspace_id) {
+        isWorkspaceMember = await workspaceRepository.isUserMemberOfWorkspace(
+          authContext.userId,
+          presentation.workspace_id
+        );
+      }
+
+      if (!isCreator && !isDirectWorkspaceMatch && !isWorkspaceMember) {
+        // Unauthorized access attempt — record security audit event and return null to prevent IDOR and resource disclosure
+        await logSecurityEvent(null, {
+          eventType: "EXPORT_ACCESS_DENIED",
+          severity: "high",
+          userId: authContext.userId,
+          workspaceId: presentation.workspace_id,
+          resourceType: "presentation_export",
+          resourceId: exportId,
+          reason: `User is not creator or member of workspace for presentation export ${exportId}`,
+        });
+        return null;
+      }
+    }
+
+    // ONLY generate signed download URL if caller is authorized
     let downloadUrl: string | undefined = undefined;
     if (data.status === 'ready' && data.storage_path) {
       const { data: signed } = await supabase.storage

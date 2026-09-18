@@ -16,6 +16,7 @@ export default defineConfig(() => {
         '@errors': path.resolve(__dirname, 'packages/errors'),
         '@utils': path.resolve(__dirname, 'packages/utils'),
         '@presentation-engine': path.resolve(__dirname, 'packages/presentation-engine'),
+        '@ad-director': path.resolve(__dirname, 'packages/ad-director'),
       },
     },
     build: {
