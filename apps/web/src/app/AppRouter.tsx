@@ -66,8 +66,20 @@ export const AppRouter: React.FC<AppRouterProps> = ({
 }) => {
   // Canonical Destination Handler for all "Enter the Product" actions
   const handleEnterProduct = () => {
-    const destination = getAppDestination(user, brandSetupComplete);
-    navigateTo(destination);
+    const returnUrl = sessionStorage.getItem('writopedia_return_url');
+    sessionStorage.removeItem('writopedia_return_url');
+    if (
+      returnUrl &&
+      !returnUrl.startsWith('/login') &&
+      !returnUrl.startsWith('/verify-email') &&
+      !returnUrl.startsWith('/auth/callback') &&
+      brandSetupComplete
+    ) {
+      navigateTo(returnUrl, { replace: true });
+      return;
+    }
+    const destination = getAppDestination(user || { emailConfirmed: true }, brandSetupComplete);
+    navigateTo(destination, { replace: true });
   };
 
   // Centralized Authentication, Email Verification, and Onboarding Routing Guard Authority
@@ -85,7 +97,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
       rawSearch.includes('code=');
 
     // 0. If Supabase redirected an error or auth token to any path, let AuthCallbackView process it without redirection
-    if (pathname === '/auth/callback' || hasAuthErrorOrToken) {
+    if (hasAuthErrorOrToken) {
       return;
     }
 
@@ -121,8 +133,25 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         return;
       }
 
-      // Callback route processes itself without external interception
+      // Visiting /auth/callback when authenticated and verified -> Forward to workspace or stored returnUrl
       if (pathname === '/auth/callback') {
+        if (hasAuthErrorOrToken) {
+          return;
+        }
+        const returnUrl = sessionStorage.getItem('writopedia_return_url');
+        sessionStorage.removeItem('writopedia_return_url');
+        if (
+          returnUrl &&
+          !returnUrl.startsWith('/login') &&
+          !returnUrl.startsWith('/verify-email') &&
+          !returnUrl.startsWith('/auth/callback') &&
+          brandSetupComplete
+        ) {
+          navigateTo(returnUrl, { replace: true });
+          return;
+        }
+        const destination = getAppDestination(user, brandSetupComplete);
+        navigateTo(destination, { replace: true });
         return;
       }
 

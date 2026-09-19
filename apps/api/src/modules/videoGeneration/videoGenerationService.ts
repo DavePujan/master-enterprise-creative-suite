@@ -64,26 +64,40 @@ export class VideoGenerationService {
 
     // 3. Atomically Reserve Credits (Hold) via PostgreSQL RPC
     const requiredCredits = capability.creditCost;
+    const jobId = randomUUID();
+    const clientKey = request.idempotencyKey || `vid_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     let reservationId = '';
 
-    try {
-      reservationId = await creditService.holdCredits(
-        workspaceId,
-        userId,
+    const engineKey = resolution.engineKey;
+
+    const holdResult = await creditService.reserveCredits({
+      workspaceId,
+      userId,
+      amount: requiredCredits,
+      idempotencyKey: request.idempotencyKey ? `hold_${request.idempotencyKey}` : `hold_${jobId}`,
+      referenceId: jobId,
+      description: `Video Generation (${capability.displayName})`
+    });
+
+    if (!holdResult.success || !holdResult.holdId) {
+      const available = await creditService.getAvailableBalance(workspaceId).catch(() => 0);
+      throw new InsufficientCreditsError({
+        service: 'Video Generation',
         requiredCredits,
-        `video_generation_${resolution.engine}`
-      );
-    } catch (holdErr: any) {
-      const available = await creditService.getBalance(workspaceId).catch(() => 0);
-      throw new InsufficientCreditsError('Video Generation', requiredCredits, available);
+        availableCredits: holdResult.available ?? available,
+        model: engineKey
+      });
     }
+
+    reservationId = holdResult.holdId;
 
     // 4. Create Active Job in Domain Service and DB
     const job = await videoJobService.createJob({
+      jobId,
       workspaceId,
       userId,
       mode: request.mode || 'text_to_video',
-      engine: resolution.engine,
+      engine: engineKey,
       productTier: capability.productTier,
       provider: capability.provider,
       reservationId,
@@ -93,24 +107,23 @@ export class VideoGenerationService {
 
     // 5. Dispatch Asynchronously to Underlying Engine Provider
     try {
-      let dispatchPromise: Promise<string>;
+      let dispatchPromise: Promise<{ providerJobId: string; interactionId?: string }>;
 
-      if (resolution.engine === 'google_veo_3_1_fast' || resolution.engine === 'google_veo_3_1_director') {
-        dispatchPromise = googleVeoProvider.generate(request, resolution.engine);
-      } else if (resolution.engine === 'google_omni_motion') {
-        dispatchPromise = googleOmniProvider.generate(request);
-      } else if (resolution.engine === 'fal_kling_2_1_master') {
-        dispatchPromise = falKlingProvider.generate(request);
-      } else if (resolution.engine === 'fal_seedance_2_pro') {
-        dispatchPromise = falSeedanceProvider.generate(request);
+      if (engineKey === 'google-omni') {
+        dispatchPromise = googleOmniProvider.submit(request, workspaceId);
+      } else if (engineKey === 'kling-v3') {
+        dispatchPromise = falKlingProvider.submit(request, workspaceId);
+      } else if (engineKey === 'seedance-2') {
+        dispatchPromise = falSeedanceProvider.submit(request, workspaceId);
       } else {
-        dispatchPromise = googleVeoProvider.generate(request, 'google_veo_3_1_fast');
+        // 'veo-pro' | 'veo-fast' | 'veo-lite'
+        dispatchPromise = googleVeoProvider.submit(request, workspaceId);
       }
 
       // Track provider request ID once accepted
-      dispatchPromise.then((providerRequestId) => {
+      dispatchPromise.then((submitResult) => {
         videoJobService.updateJob(job.jobId, {
-          providerJobId: providerRequestId,
+          providerJobId: submitResult.providerJobId,
           status: 'generating_motion',
           progress: 25
         });
@@ -167,10 +180,10 @@ export class VideoGenerationService {
 
     const editRequest: VideoGenerationRequest = {
       prompt: `${parentJob.prompt || ''} Edit: ${input.instruction}`,
-      mode: 'edit',
+      mode: 'edit_video',
       selectedEngine: parentJob.engine,
-      referenceAssetId: parentJob.outputAssetId,
-      aspectRatio: parentJob.aspectRatio,
+      references: parentJob.outputAssetId ? [{ assetId: parentJob.outputAssetId, type: 'motion_video', label: 'source_video' }] : undefined,
+      aspectRatio: parentJob.aspectRatio as any,
       durationSeconds: input.extendSeconds || parentJob.durationSeconds,
     };
 
@@ -191,11 +204,11 @@ export class VideoGenerationService {
     }
 
     const extendRequest: VideoGenerationRequest = {
-      prompt: input.promptAddition ? `${parentJob.prompt || ''} ${input.promptAddition}` : parentJob.prompt,
-      mode: 'extend',
+      prompt: input.promptAddition ? `${parentJob.prompt || ''} ${input.promptAddition}` : (parentJob.prompt || 'Extend video'),
+      mode: 'extend_video',
       selectedEngine: parentJob.engine,
-      referenceAssetId: parentJob.outputAssetId,
-      aspectRatio: parentJob.aspectRatio,
+      references: parentJob.outputAssetId ? [{ assetId: parentJob.outputAssetId, type: 'motion_video', label: 'source_video' }] : undefined,
+      aspectRatio: parentJob.aspectRatio as any,
       durationSeconds: (parentJob.durationSeconds || 5) + input.extendSeconds,
     };
 

@@ -18,7 +18,8 @@ export interface KlingPayload {
     end_image_url?: string;
     generate_audio?: boolean;
     elements?: Array<{
-      image_url: string;
+      frontal_image_url: string;
+      reference_image_urls: string[];
     }>;
     shots?: Array<{
       prompt: string;
@@ -62,14 +63,30 @@ export class KlingPayloadBuilder {
       duration = '10';
     }
 
-    // Elements mapping
-    const elements: Array<{ image_url: string }> = [];
+    // Elements mapping (Kling V3 enforces a hard maximum of 3 elements)
+    const elements: Array<{ frontal_image_url: string; reference_image_urls: string[] }> = [];
     if (request.references && request.references.length > 0) {
       const imageRefs = request.references.filter(r => r.type !== 'motion_video' && r.type !== 'audio');
-      for (const ref of imageRefs.slice(0, 4)) {
+      for (const ref of imageRefs.slice(0, 3)) {
         const resolved = await videoAssetResolver.resolve(ref.assetId, workspaceId);
         if (resolved?.url) {
-          elements.push({ image_url: resolved.url });
+          elements.push({
+            frontal_image_url: resolved.url,
+            reference_image_urls: [resolved.url]
+          });
+        }
+      }
+    } else if ((request as any).klingElements && Array.isArray((request as any).klingElements)) {
+      for (const el of (request as any).klingElements.slice(0, 3)) {
+        const assetTarget = el.data || el.id;
+        if (assetTarget) {
+          const resolved = await videoAssetResolver.resolve(assetTarget, workspaceId);
+          if (resolved?.url) {
+            elements.push({
+              frontal_image_url: resolved.url,
+              reference_image_urls: [resolved.url]
+            });
+          }
         }
       }
     }
@@ -83,8 +100,14 @@ export class KlingPayloadBuilder {
       }));
     }
 
+    // Kling V3 enforces max 2500 characters on prompt
+    let prompt = request.prompt.trim();
+    if (prompt.length > 2450) {
+      prompt = prompt.slice(0, 2450).trim();
+    }
+
     const input: KlingPayload['input'] = {
-      prompt: request.prompt.trim(),
+      prompt,
       duration,
       aspect_ratio: aspectRatio,
       generate_audio: request.generateAudio ?? (request.audioIntent !== 'none')

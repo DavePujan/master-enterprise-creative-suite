@@ -110,6 +110,11 @@ export class GoogleOmniProvider {
     }
   }
 
+  async generate(request: VideoGenerationRequest, workspaceId?: string): Promise<string> {
+    const res = await this.submit(request, workspaceId || 'default');
+    return res.providerJobId;
+  }
+
   async cancel(providerJobId: string): Promise<boolean> {
     const ai = this.getClient();
     try {

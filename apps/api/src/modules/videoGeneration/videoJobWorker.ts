@@ -17,7 +17,9 @@ import { googleOmniProvider } from './providers/googleOmniProvider.js';
 import { googleVeoProvider } from './providers/googleVeoProvider.js';
 import { falKlingProvider } from './providers/falKlingProvider.js';
 import { falSeedanceProvider } from './providers/falSeedanceProvider.js';
+import { normalizeEngineKey } from './videoModelResolver.js';
 import { assetRepository } from '../../repositories/assetRepository.js';
+import { historyRepository } from '../../repositories/historyRepository.js';
 import { aiJobRepository } from '../../repositories/aiJobRepository.js';
 import { adDirectorRepository } from '../adDirector/adDirectorRepository.js';
 import { providerAdapterRegistry } from '../adDirector/adapters/providerAdapterRegistry.js';
@@ -232,7 +234,8 @@ export class VideoJobWorker {
 
     try {
       let checkRes;
-      const engine = job.model_requested || '';
+      const rawEngine = job.model_requested || '';
+      const engine = normalizeEngineKey(rawEngine) || rawEngine;
       const providerRequestId = job.provider_request_id;
 
       if (!providerRequestId) return;
@@ -330,6 +333,24 @@ export class VideoJobWorker {
       });
 
       const outputAssetId = asset ? asset.id : `asset_${job.id}`;
+
+      // Authoritative Creative History persistence (visible in /history/creative even after reload/logout)
+      if (job.requested_by && job.workspace_id) {
+        await historyRepository.addHistory({
+          workspaceId: job.workspace_id,
+          userId: job.requested_by,
+          jobId: job.id,
+          gemId: 'cinematic-video',
+          title: `Video: ${(job.prompt || 'Creative Render').slice(0, 30)}`,
+          prompt: job.prompt || '',
+          resultSummary: {
+            type: 'video',
+            data: upstreamUrl,
+            jobId: job.id,
+            assetId: outputAssetId
+          }
+        }).catch(err => console.warn('[VideoJobWorker] Failed to write history log:', err));
+      }
 
       // 4. Capture held credits atomically from database credit_holds
       if (supabase) {
@@ -459,17 +480,24 @@ export class VideoJobWorker {
 
     // Non-retryable OR max retries exhausted: Release held credits atomically
     if (supabase) {
-      const { data: hold } = await supabase
-        .from('credit_holds')
-        .select('id')
-        .eq('reference_id', job.id)
-        .eq('status', 'pending')
-        .maybeSingle();
+      let holdId = job.credit_hold_id || job.reservation_id || job.reservationId;
+      if (!holdId) {
+        const { data: hold } = await supabase
+          .from('credit_holds')
+          .select('id')
+          .or(`reference_id.eq.${job.id},idempotency_key.eq.hold_${job.id}`)
+          .eq('status', 'pending')
+          .maybeSingle();
 
-      if (hold) {
-        await creditService.releaseCredits(hold.id, `Job failed: ${error}`);
-      } else {
-        await creditService.releaseCredits(job.credit_hold_id || job.id, `Job failed: ${error}`).catch(() => {});
+        if (hold) {
+          holdId = hold.id;
+        }
+      }
+
+      if (holdId) {
+        await creditService.releaseCredits(holdId, `Job failed: ${error}`).catch((err) =>
+          console.error(`[VideoJobWorker] Failed to release hold ${holdId}:`, err)
+        );
       }
     }
 

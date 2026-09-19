@@ -23,6 +23,10 @@ export class VideoClient {
     return apiClient.get<{ job: VideoJob }>(`/api/video/jobs/${jobId}`);
   }
 
+  async getRecentJobs(limit = 5): Promise<{ jobs: VideoJob[] }> {
+    return apiClient.get<{ jobs: VideoJob[] }>(`/api/video/jobs/recent?limit=${limit}`);
+  }
+
   async cancelJob(jobId: string): Promise<{ success: boolean; status: string; message: string }> {
     return apiClient.post<{ success: boolean; status: string; message: string }>(
       `/api/video/jobs/${jobId}/cancel`

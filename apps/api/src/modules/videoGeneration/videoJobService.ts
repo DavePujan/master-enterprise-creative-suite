@@ -21,6 +21,7 @@ import { googleOmniProvider } from './providers/googleOmniProvider.js';
 import { googleVeoProvider } from './providers/googleVeoProvider.js';
 import { falKlingProvider } from './providers/falKlingProvider.js';
 import { falSeedanceProvider } from './providers/falSeedanceProvider.js';
+import { normalizeEngineKey } from './videoModelResolver.js';
 
 export interface CreateVideoJobInput {
   jobId?: string;
@@ -151,7 +152,7 @@ export class VideoJobService {
       workspaceId: data.workspace_id,
       userId: data.requested_by,
       mode: 'text_to_video',
-      engine: (data.model_requested as VideoEngineKey) || 'google-omni',
+      engine: (normalizeEngineKey(data.model_requested) as VideoEngineKey) || (data.model_requested as VideoEngineKey) || 'google-omni',
       productTier: 'pro',
       provider: (data.provider as any) || 'google',
       providerJobId: data.provider_request_id,
@@ -210,13 +211,14 @@ export class VideoJobService {
     // Case 2: In-flight job submitted to provider
     let upstreamCancelled = false;
     try {
-      if (job.engine === 'google-omni') {
+      const normalizedEngine = normalizeEngineKey(job.engine) || job.engine;
+      if (normalizedEngine === 'google-omni') {
         upstreamCancelled = await googleOmniProvider.cancel(job.providerJobId);
-      } else if (job.engine.startsWith('veo')) {
+      } else if (normalizedEngine.startsWith('veo')) {
         upstreamCancelled = await googleVeoProvider.cancel(job.providerJobId);
-      } else if (job.engine === 'kling-v3') {
+      } else if (normalizedEngine === 'kling-v3') {
         upstreamCancelled = await falKlingProvider.cancel(job.providerJobId);
-      } else if (job.engine === 'seedance-2') {
+      } else if (normalizedEngine === 'seedance-2') {
         upstreamCancelled = await falSeedanceProvider.cancel(job.providerJobId);
       }
     } catch (err) {

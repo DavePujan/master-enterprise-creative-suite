@@ -52,13 +52,28 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       const type = searchParams.get('type') || hashParams.get('type');
       const code = searchParams.get('code');
 
+      const handleSuccessRedirect = () => {
+        // If not an explicit signup confirmation link (e.g. OAuth login or existing session),
+        // immediately forward straight to product without waiting for a click.
+        if (type !== 'signup') {
+          onSuccess();
+          return;
+        }
+        setPhase('verified_success');
+        setTimeout(() => {
+          if (isMounted) {
+            onSuccess();
+          }
+        }, 1200);
+      };
+
       // Check for Supabase Auth Error / Expired Link
       if (error || errorCode) {
         if (!isMounted) return;
         try {
           const isVerified = await checkVerification();
           if (isVerified) {
-            setPhase('verified_success');
+            handleSuccessRedirect();
             return;
           }
         } catch {}
@@ -99,14 +114,14 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
         if (!isMounted) return;
 
         if (isVerified) {
-          setPhase('verified_success');
+          handleSuccessRedirect();
         } else {
           // Retry verification once in case of network propagation delay
           setTimeout(async () => {
             if (!isMounted) return;
             const secondTry = await checkVerification();
             if (secondTry) {
-              setPhase('verified_success');
+              handleSuccessRedirect();
             } else {
               setPhase('expired_link');
               setErrorMessage("Could not verify session from confirmation link. It may have expired.");

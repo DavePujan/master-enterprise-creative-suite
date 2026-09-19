@@ -134,7 +134,7 @@ export const VIDEO_CAPABILITIES: Record<VideoEngineKey, VideoEngineCapability> =
     supportsFirstFrame: true,
     supportsLastFrame: true,
     supportsReferenceImages: true,
-    maxReferenceImages: 4,
+    maxReferenceImages: 3,
     supportsReferenceVideos: false,
     maxReferenceVideos: 0,
     supportsReferenceAudios: false,

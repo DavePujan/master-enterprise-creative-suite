@@ -92,6 +92,11 @@ export class GoogleVeoProvider {
     }
   }
 
+  async generate(request: VideoGenerationRequest, workspaceId?: string): Promise<string> {
+    const res = await this.submit(request, workspaceId || 'default');
+    return res.providerJobId;
+  }
+
   async cancel(providerJobId: string): Promise<boolean> {
     // Veo long-running operations do not expose a public cancel endpoint.
     console.log(`[GoogleVeoProvider] Upstream cancel not supported for Veo operation ${providerJobId}.`);

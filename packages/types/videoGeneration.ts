@@ -116,6 +116,7 @@ export interface VideoGenerationRequest {
   previousInteractionId?: string;
   editInstruction?: string;
   seed?: number;
+  idempotencyKey?: string;
 }
 
 export type VideoJobStatus =
@@ -150,6 +151,9 @@ export interface VideoJob {
   outputUrl?: string;
   resultUrl?: string;
   interactionId?: string;
+  prompt?: string;
+  aspectRatio?: string;
+  durationSeconds?: number;
   error?: string;
   createdAt: string;
   updatedAt: string;

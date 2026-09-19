@@ -1183,14 +1183,14 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                       <AppIcon name="element-tag" size={12} strokeWidth={2} className="text-rose-500" />
-                      Kling Elements Injection ({activeKlingElements.length}/4)
+                      Kling Elements Injection ({activeKlingElements.length}/3)
                     </span>
                     <span className="text-[9px] text-slate-400">
                       Click a tag to insert into prompt
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     {activeKlingElements.map((el) => (
                       <div key={el.id} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-sm relative group overflow-hidden">
                         <img 
@@ -1226,7 +1226,7 @@ export const CreativeCommandBar: React.FC<CreativeCommandBarProps> = ({
                       </div>
                     ))}
 
-                    {activeKlingElements.length < 4 && (
+                    {activeKlingElements.length < 3 && (
                       <label className="flex flex-col items-center justify-center h-12 border border-dashed border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-sm cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/40 group">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">
                           <Plus size={12} />

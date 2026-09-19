@@ -466,6 +466,11 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
         } else if (res?.job?.status === 'failed') {
           clearInterval(interval);
           pollIntervalsRef.current.delete(gemId);
+          apiClient.get<{ success: boolean; availableBalance: number }>('/api/payment/balance')
+            .then(bal => {
+              if (bal?.availableBalance !== undefined) setCredits(bal.availableBalance);
+            })
+            .catch(() => {});
           updateGemState(gemId, {
             videoStatus: '',
             isGenerating: false,
@@ -490,6 +495,58 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
 
     pollIntervalsRef.current.set(gemId, interval);
   }, [addToHistory, saveAsset, updateGemState]);
+
+  // Re-hydrate active/recent video generation on mount or reload
+  useEffect(() => {
+    let isCancelled = false;
+
+    videoClient.getRecentJobs(3)
+      .then(res => {
+        if (isCancelled || !res?.jobs || res.jobs.length === 0) return;
+
+        const activeJob = res.jobs.find(j => ['pending', 'running', 'generating_motion'].includes(j.status));
+        if (activeJob) {
+          const resolvedJobId = activeJob.jobId || (activeJob as any).id;
+          updateGemState('cinematic-video', {
+            isGenerating: true,
+            videoStatus: 'Generating video with AI... Resuming render monitor.',
+            prompt: activeJob.prompt || ''
+          });
+          startVideoJobPolling(resolvedJobId, 'cinematic-video', activeJob.prompt);
+          return;
+        }
+
+        // If not active, check if the latest job completed recently (within 30 mins) and has an outputUrl
+        const latestJob = res.jobs[0];
+        if (latestJob?.status === 'completed' && (latestJob.outputUrl || (latestJob as any).resultUrl)) {
+          const createdAt = new Date(latestJob.createdAt || latestJob.updatedAt || 0).getTime();
+          const ageMinutes = (Date.now() - createdAt) / (1000 * 60);
+          if (ageMinutes < 30) {
+            const videoUrl = latestJob.outputUrl || (latestJob as any).resultUrl;
+            updateGemState('cinematic-video', prev => {
+              if (prev?.result) return prev;
+              return {
+                ...prev,
+                result: {
+                  type: 'video',
+                  data: videoUrl,
+                  jobId: latestJob.jobId || (latestJob as any).id,
+                  interactionId: latestJob.interactionId
+                },
+                prompt: prev?.prompt || latestJob.prompt || ''
+              };
+            });
+          }
+        }
+      })
+      .catch(() => {
+        // Quiet fallback
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [startVideoJobPolling, updateGemState]);
 
   // Main Execution Routine: Isolated per Target Gem
   const executeGenerate = async (targetGemOverride?: Gem) => {

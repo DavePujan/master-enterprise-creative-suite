@@ -21,13 +21,14 @@ export interface ModelResolutionResult {
 
 export function normalizeEngineKey(raw?: string): VideoEngineKey | undefined {
   if (!raw) return undefined;
-  if (raw in VIDEO_CAPABILITIES) return raw as VideoEngineKey;
-  if (raw === 'gemini-omni-1.1-flash') return 'google-omni';
-  if (raw === 'veo-3.1-generate-preview') return 'veo-pro';
-  if (raw === 'veo-3.1-fast-generate-preview') return 'veo-fast';
-  if (raw === 'veo-3.1-lite-generate-preview') return 'veo-lite';
-  if (raw === 'kling-video' || raw.includes('kling')) return 'kling-v3';
-  if (raw === 'bytedance/seedance-2.0' || raw.includes('seedance')) return 'seedance-2';
+  const lower = raw.toLowerCase().trim();
+  if (lower in VIDEO_CAPABILITIES) return lower as VideoEngineKey;
+  if (lower === 'gemini-omni-1.1-flash' || lower.includes('omni')) return 'google-omni';
+  if (lower === 'veo-3.1-generate-preview' || (lower.includes('veo') && (lower.includes('pro') || lower.includes('director')))) return 'veo-pro';
+  if (lower === 'veo-3.1-fast-generate-preview' || (lower.includes('veo') && lower.includes('fast'))) return 'veo-fast';
+  if (lower === 'veo-3.1-lite-generate-preview' || (lower.includes('veo') && lower.includes('lite'))) return 'veo-lite';
+  if (lower.includes('kling')) return 'kling-v3';
+  if (lower.includes('seedance')) return 'seedance-2';
   return undefined;
 }
 

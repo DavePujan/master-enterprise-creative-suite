@@ -105,6 +105,18 @@ export class VideoRequestValidator {
       }
     }
 
+    // 7b. Kling Elements injection limit
+    if ((request as any).klingElements && Array.isArray((request as any).klingElements)) {
+      const elCount = (request as any).klingElements.length;
+      if (elCount > capability.maxReferenceImages) {
+        return {
+          valid: false,
+          error: `Engine '${capability.displayName}' supports up to ${capability.maxReferenceImages} element injections, but ${elCount} were provided.`,
+          field: 'klingElements'
+        };
+      }
+    }
+
     // 8. Conversational Editing
     if (request.mode === 'edit_video' && !capability.supportsConversationalEditing) {
       return {
