@@ -70,7 +70,7 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
 
   // Validation & Continuity Cache
   const [validationStatus, setValidationStatus] = useState<ValidateAdSpecResponse | null>(null);
-  const [continuityReport, setContinuityReport] = useState<ContinuityReport | null>(null);
+  const [continuityReport, setContinuityReport] = useState<ContinuityStatusReport | any | null>(null);
 
   // Phase 6: Model Capability & Execution Plan State
   const [availableModels, setAvailableModels] = useState<ModelCapability[]>([]);
@@ -140,7 +140,9 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
             productReferenceLocked: true,
             locationContinuity: true,
             wardrobeConsistent: true,
-            conflicts: []
+            links: [],
+            issues: [],
+            summary: 'All continuous parameters locked.'
           });
         } else {
           adDirectorClient.getContinuityReport(adSpec.identity.adId)
@@ -269,11 +271,14 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
         newValue: op.after
       }));
 
-      const syntheticDiff: AdSpecDiff = {
+      const syntheticDiff: any = {
         diffId: `diff_${Date.now()}`,
         fromVersion: adSpec.identity.specVersion,
         toVersion: adSpec.identity.specVersion + 1,
+        specVersionBefore: adSpec.identity.specVersion,
+        specVersionAfter: adSpec.identity.specVersion + 1,
         explanation: `${proposal.summary} (${proposal.operations.length} operation(s) proposed)`,
+        humanExplanation: `${proposal.summary} (${proposal.operations.length} operation(s) proposed)`,
         modifiedPaths,
         addedPaths: [],
         removedPaths: []
@@ -283,7 +288,8 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
       setActiveImpact({
         directlyAffected: proposal.affectedShots,
         indirectlyAffected: [],
-        unaffected: proposal.unaffectedCriticalEntities
+        unaffected: proposal.unaffectedCriticalEntities,
+        summary: proposal.summary || 'Revision change impact analysis'
       });
     } catch (err: any) {
       console.error('[DirectorsPlanWorkspace] Revision proposal failed:', err);
@@ -452,12 +458,12 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
     <div className="flex-1 flex flex-col w-full h-full bg-slate-50/40 dark:bg-slate-950/40 text-slate-900 dark:text-slate-100 overflow-y-auto">
       {/* 1. Header with Metadata, Lineage & Approval Gate */}
       <DirectorsPlanHeader
-        title={adSpec.creative?.alternativeConcepts?.[0]?.title || 'Commercial Campaign'}
+        title={adSpec.creative?.concepts?.find(c => c.conceptId === adSpec.creative?.selectedConceptId)?.title || adSpec.creative?.concepts?.[0]?.title || (adSpec.creative as any)?.alternativeConcepts?.[0]?.title || 'Commercial Campaign'}
         identity={adSpec.identity}
         brief={adSpec.brief}
         shotCount={shots.length}
         totalDuration={totalDurationSeconds}
-        validationStatus={validationStatus || undefined}
+        validationStatus={(validationStatus as any) || undefined}
         onApprove={handleApprove}
         onOpenBibles={() => setIsBiblesDrawerOpen(true)}
         onOpenVersionHistory={() => setIsCompareOpen(true)}
@@ -538,7 +544,9 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
               const isSelected = shot.shotId === selectedShotId;
 
               // Check if shot has a continuity conflict
-              const hasConflict = continuityReport?.conflicts?.find(c => c.involvedShotIds.includes(shot.shotId));
+              const hasConflict = (continuityReport as any)?.conflicts?.find((c: any) =>
+                (c.shotsInvolved || c.involvedShotIds || []).includes(shot.shotId)
+              );
 
               return (
                 <ShotCard
@@ -555,7 +563,7 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
                   products={adSpec.products}
                   locations={adSpec.locations}
                   assets={adSpec.assets}
-                  continuityConflict={hasConflict?.aspect}
+                  continuityConflict={hasConflict?.conflictingAspect || hasConflict?.aspect}
                 />
               );
             })}

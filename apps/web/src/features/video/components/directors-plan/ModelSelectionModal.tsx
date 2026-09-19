@@ -17,6 +17,7 @@ import {
   Camera 
 } from 'lucide-react';
 import { cn } from '@web/lib/utils.js';
+import { extractCleanValue } from './planFormatters.js';
 
 export interface ModelSelectionModalProps {
   isOpen: boolean;
@@ -43,7 +44,7 @@ export const ModelSelectionModal: React.FC<ModelSelectionModalProps> = ({
     firstFrameRequired: false,
     lastFrameRequired: false,
     minimumReferenceCount: (adSpec.assets?.assets?.length || 0),
-    nativeAudioRequired: true,
+    audioRequired: true,
     supportedAspectRatios: ['9:16', '16:9']
   };
 
@@ -61,7 +62,7 @@ export const ModelSelectionModal: React.FC<ModelSelectionModalProps> = ({
     },
     {
       label: 'Native Audio Synchronization',
-      passed: !requirements.nativeAudioRequired || modelCaps.supportsAudio,
+      passed: !requirements.audioRequired || modelCaps.supportsAudio,
       desc: modelCaps.supportsAudio ? 'Full audio & lip-sync capability' : 'Audio must be generated downstream'
     },
     {
@@ -120,7 +121,7 @@ export const ModelSelectionModal: React.FC<ModelSelectionModalProps> = ({
               </div>
               <div>
                 <span className="text-slate-400">Duration:</span>{' '}
-                <span className="font-bold text-slate-800 dark:text-slate-200">{adSpec.brief?.desiredDurationSeconds || 15}s</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{extractCleanValue(adSpec.brief?.desiredDurationSeconds, 15)}s</span>
               </div>
               <div>
                 <span className="text-slate-400">References:</span>{' '}
@@ -128,7 +129,7 @@ export const ModelSelectionModal: React.FC<ModelSelectionModalProps> = ({
               </div>
               <div>
                 <span className="text-slate-400">Audio:</span>{' '}
-                <span className="font-bold text-slate-800 dark:text-slate-200">{requirements.nativeAudioRequired ? 'Native' : 'Post'}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{requirements.audioRequired ? 'Native' : 'Post'}</span>
               </div>
             </div>
           </div>

@@ -579,6 +579,8 @@ export interface AdShot {
   qaExpectations: AdSpecShotQaExpectations;
 }
 
+export type AdSpecShot = AdShot;
+
 // =============================================================================
 // 13. CONTINUITY GRAPH
 // =============================================================================
