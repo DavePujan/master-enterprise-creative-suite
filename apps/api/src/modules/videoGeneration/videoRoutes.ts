@@ -37,7 +37,7 @@ import { providerAdapterRegistry, adapterReferenceResolver } from '../adDirector
 import { executionOrchestratorService } from '../adDirector/services/executionOrchestratorService.js';
 import { videoQaService } from '../adDirector/services/videoQaService.js';
 import { videoAssemblyService } from '../adDirector/services/videoAssemblyService.js';
-import { LaunchExecutionRequestZodSchema } from '@contracts/executionQueueContracts.js';
+import { LaunchExecutionRequestZodSchema, type LaunchExecutionRequest } from '@contracts/executionQueueContracts.js';
 import {
   CreateAssemblyRequestZodSchema,
   EnqueueRenderRequestZodSchema,
@@ -415,7 +415,7 @@ videoRouter.post('/ad-projects/:id/discovery/answer', async (req, res) => {
     const result = await briefReconciliationService.answerQuestions({
       projectId: id,
       workspaceId: authContext.workspaceId,
-      answers: parsed.data.answers
+      answers: parsed.data.answers as Array<{ questionId: string; answer: string | string[] }>
     });
 
     return res.json(result);
@@ -954,7 +954,7 @@ videoRouter.post('/ad-projects/:id/generate', async (req, res) => {
 
     const response = await executionOrchestratorService.launchExecution(
       id,
-      parsed.data,
+      parsed.data as LaunchExecutionRequest,
       authContext
     );
 
