@@ -116,11 +116,11 @@ export const ModelSelectionModal: React.FC<ModelSelectionModalProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
               <div>
                 <span className="text-slate-400">Shots:</span>{' '}
-                <span className="font-bold text-slate-800 dark:text-slate-200">{adSpec.shots.length}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{adSpec.shots?.length || 0}</span>
               </div>
               <div>
                 <span className="text-slate-400">Duration:</span>{' '}
-                <span className="font-bold text-slate-800 dark:text-slate-200">{adSpec.brief.desiredDurationSeconds}s</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{adSpec.brief?.desiredDurationSeconds || 15}s</span>
               </div>
               <div>
                 <span className="text-slate-400">References:</span>{' '}
