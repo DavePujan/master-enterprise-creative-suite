@@ -174,21 +174,18 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
     if (!projectId || !adSpec) return;
 
     if (projectId === 'ad_prod_18s_launch') {
+      const shotCount = adSpec.shots?.length || 5;
       setEngineCompatibilityReport({
         projectId: 'ad_prod_18s_launch',
+        specVersion: adSpec.identity?.specVersion || 1,
         modelId: selectedEngineModelId,
-        overallStatus: 'compatible',
-        shots: (adSpec.shots || []).map(s => ({
-          shotId: s.shotId,
-          status: 'compatible' as const,
-          issues: []
-        })),
-        summary: {
-          totalShots: adSpec.shots?.length || 5,
-          compatibleShots: adSpec.shots?.length || 5,
-          warningShots: 0,
-          blockerShots: 0
-        }
+        provider: 'kling',
+        compatible: true,
+        totalShots: shotCount,
+        compatibleShotsCount: shotCount,
+        blockers: [],
+        warnings: [],
+        shotReports: {}
       });
       return;
     }

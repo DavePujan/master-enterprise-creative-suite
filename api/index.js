@@ -32256,10 +32256,15 @@ videoRouter.post("/ad-projects/:id/compatibility", async (req, res) => {
     if (id === "ad_prod_18s_launch") {
       return res.json({
         projectId: id,
+        specVersion: 1,
         modelId: parsed.data.modelId,
-        overallStatus: "compatible",
-        shots: [],
-        summary: { totalShots: 5, compatibleShots: 5, warningShots: 0, blockerShots: 0 }
+        provider: "kling",
+        compatible: true,
+        totalShots: 5,
+        compatibleShotsCount: 5,
+        blockers: [],
+        warnings: [],
+        shotReports: {}
       });
     }
     const result = await promptCompilerService.validateProjectCompatibility(

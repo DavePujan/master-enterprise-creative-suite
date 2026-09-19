@@ -57,10 +57,10 @@ export const ModelCapabilitySelector: React.FC<ModelCapabilitySelectorProps> = (
                 {selectedModel.provider}
               </span>
               <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                Durations: {selectedModel.supported_durations.join(', ')}s
+                Durations: {(selectedModel.supported_durations || []).join(', ')}s
               </span>
               <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                Max Refs: {selectedModel.max_references}
+                Max Refs: {selectedModel.max_references ?? 0}
               </span>
               {selectedModel.audio && (
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
@@ -85,19 +85,19 @@ export const ModelCapabilitySelector: React.FC<ModelCapabilitySelectorProps> = (
             </div>
           ) : compatibilityReport ? (
             <div className="flex items-center gap-2">
-              {compatibilityReport.compatible ? (
+              {compatibilityReport.compatible || (compatibilityReport as any).overallStatus === 'compatible' ? (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                   </svg>
-                  <span>100% Compatible ({compatibilityReport.compatibleShotsCount}/{compatibilityReport.totalShots} shots)</span>
+                  <span>100% Compatible ({compatibilityReport.compatibleShotsCount ?? (compatibilityReport as any).summary?.compatibleShots ?? compatibilityReport.totalShots ?? 0}/{compatibilityReport.totalShots ?? (compatibilityReport as any).summary?.totalShots ?? 0} shots)</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
-                  <span>{compatibilityReport.blockers.length} Compatibility Blocker(s)</span>
+                  <span>{(compatibilityReport.blockers || []).length} Compatibility Blocker(s)</span>
                 </div>
               )}
             </div>
