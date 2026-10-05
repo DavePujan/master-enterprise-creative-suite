@@ -36,6 +36,13 @@ export class AdDirectorRepository {
   private memoryAssemblies = new Map<string, AssemblyRecord>();
   private memoryRenders = new Map<string, RenderJobRecord>();
   private memoryExports = new Map<string, ExportVariantRecord[]>();
+  /**
+   * Retrieves the current live AdSpec for a project, delegating to videoAdProjectRepository.
+   */
+  async getCurrentAdSpec(projectId: string, workspaceId: string): Promise<AdSpec | null> {
+    const { videoAdProjectRepository } = await import('./repositories/videoAdProjectRepository.js');
+    return videoAdProjectRepository.getCurrentAdSpec(projectId, workspaceId);
+  }
 
   /**
    * Persists a newly initiated Director Plan and its initial v1 snapshot.

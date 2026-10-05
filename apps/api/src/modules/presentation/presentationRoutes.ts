@@ -31,7 +31,7 @@ presentationRouter.get('/health', (_req, res) => {
 /**
  * POST /api/presentation/generate
  */
-presentationRouter.post('/generate', async (req, res) => {
+presentationRouter.post('/generate', async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({
       error: 'Unauthorized: Authenticated user session required.',

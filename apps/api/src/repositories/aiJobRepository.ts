@@ -155,6 +155,27 @@ export class AiJobRepository {
     return true;
   }
 
+  async cancelJob(jobId: string, reason = "cancelled"): Promise<boolean> {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return true;
+
+    const { error } = await supabase
+      .from("ai_generation_jobs")
+      .update({
+        status: "cancelled",
+        error_message: reason,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+
+    if (error) {
+      console.error("AiJobRepository.cancelJob error:", error);
+      return false;
+    }
+
+    return true;
+  }
+
   async recordUsage(params: RecordUsageParams): Promise<boolean> {
     const supabase = getSupabaseAdmin();
     if (!supabase) return true;

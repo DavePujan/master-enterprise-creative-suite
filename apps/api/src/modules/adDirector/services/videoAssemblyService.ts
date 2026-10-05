@@ -24,22 +24,24 @@ import type {
 export interface CreateAssemblyParams {
   executionId: string;
   workspaceId: string;
-  userId: string;
+  userId?: string;
+  projectId?: string;
   options?: {
     outputAspectRatio?: '9:16' | '16:9' | '1:1' | '4:5';
     resolution?: '720p' | '1080p';
     customShotOrder?: string[];
     includeLogo?: boolean;
     includeCta?: boolean;
-    requestedVariants?: Array<'vertical_720p' | 'square_1x1' | 'landscape_16x9'>;
+    requestedVariants?: Array<'vertical_720p' | 'square_1x1' | 'square_1_1' | 'landscape_16x9' | 'landscape_16_9'>;
   };
 }
 
 export interface EnqueueRenderParams {
   assemblyId: string;
   workspaceId: string;
-  userId: string;
-  requestedVariants?: Array<'vertical_720p' | 'square_1x1' | 'landscape_16x9'>;
+  userId?: string;
+  projectId?: string;
+  requestedVariants?: Array<'vertical_720p' | 'square_1x1' | 'square_1_1' | 'landscape_16x9' | 'landscape_16_9'>;
   forceRerender?: boolean;
 }
 
@@ -51,7 +53,7 @@ export class VideoAssemblyService {
     assembly: AssemblyRecord;
     validation: AssemblyValidationReport;
   }> {
-    const { executionId, workspaceId, userId, options } = params;
+    const { executionId, workspaceId, userId = 'system', options } = params;
 
     // 1. Authorize & Load Immutable Execution Snapshot
     let snapshot = await adDirectorRepository.getExecutionSnapshot(executionId, workspaceId);
@@ -229,8 +231,8 @@ export class VideoAssemblyService {
   /**
    * Enqueues a durable render job for the AssemblySpec.
    */
-  async enqueueRender(params: EnqueueRenderParams): Promise<RenderJobRecord> {
-    const { assemblyId, workspaceId, userId, requestedVariants, forceRerender } = params;
+  async enqueueRender(params: EnqueueRenderParams): Promise<RenderJobRecord & { job: RenderJobRecord }> {
+    const { assemblyId, workspaceId, userId = 'system', requestedVariants, forceRerender } = params;
 
     const assembly = await adDirectorRepository.getAssembly(assemblyId, workspaceId);
     if (!assembly) {
@@ -290,6 +292,7 @@ export class VideoAssemblyService {
     const renderRecord: RenderJobRecord = {
       id: renderId,
       assemblyId,
+      workspaceId,
       renderType: 'master',
       status: 'queued',
       durationSeconds: assembly.assemblySpec.output.targetDurationSeconds,

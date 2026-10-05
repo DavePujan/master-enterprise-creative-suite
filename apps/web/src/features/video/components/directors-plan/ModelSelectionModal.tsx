@@ -40,12 +40,17 @@ export const ModelSelectionModal: React.FC<ModelSelectionModalProps> = ({
 
   if (!isOpen) return null;
 
-  const requirements: GenerationRequirements = adSpec.generationRequirements || {
+  const requirements: GenerationRequirements = {
+    durationSeconds: 15,
+    aspectRatio: '9:16',
+    continuityPriority: 'strict',
+    qualityPriority: 'cinematic_pro',
     firstFrameRequired: false,
     lastFrameRequired: false,
     minimumReferenceCount: (adSpec.assets?.assets?.length || 0),
     audioRequired: true,
-    supportedAspectRatios: ['9:16', '16:9']
+    supportedAspectRatios: ['9:16', '16:9'],
+    ...(adSpec.generationRequirements || {})
   };
 
   const selectedModel = VIDEO_MODELS.find(m => m.id === selectedModelId) || VIDEO_MODELS[0];

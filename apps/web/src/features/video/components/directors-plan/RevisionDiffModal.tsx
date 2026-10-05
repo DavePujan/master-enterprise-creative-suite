@@ -163,7 +163,7 @@ export const RevisionDiffModal: React.FC<RevisionDiffModalProps> = ({
                   unaffected.map((item, i) => (
                     <li key={i} className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span>{item.type}: {item.id}</span>
+                      <span>{typeof item === 'string' ? item : `${(item as any).type}: ${(item as any).id}`}</span>
                     </li>
                   ))
                 ) : (

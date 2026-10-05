@@ -113,7 +113,8 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const sfxSummary = sfxList.length > 0 ? sfxList.slice(0, 2).join(', ') : null;
 
   // Reference Assets for this shot
-  const matchedAssets = (assets?.assets || []).filter(a => {
+  const assetItems = Array.isArray(assets) ? assets : (assets?.assets || []);
+  const matchedAssets = assetItems.filter(a => {
     if (a.targetEntityId && (featuredCharIds.includes(a.targetEntityId) || featuredProdIds.includes(a.targetEntityId))) {
       return true;
     }
@@ -179,7 +180,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           Visual Action
         </span>
         <p className="text-sm text-slate-800 dark:text-slate-200 font-normal leading-relaxed">
-          {shot.action?.visualDescription || 'Cinematic shot action progressing the commercial narrative.'}
+          {(shot.action as any)?.visualDescription || shot.action?.action || 'Cinematic shot action progressing the commercial narrative.'}
         </p>
       </div>
 
@@ -206,7 +207,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
             {locationName}
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-            {shot.lighting?.mood || shot.lighting?.source || 'Natural diffused daylight'}
+            {(shot.lighting as any)?.mood || shot.lighting?.source || 'Natural diffused daylight'}
           </p>
         </div>
 

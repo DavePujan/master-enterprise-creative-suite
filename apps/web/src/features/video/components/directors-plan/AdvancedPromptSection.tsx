@@ -20,9 +20,9 @@ export const AdvancedPromptSection: React.FC<AdvancedPromptSectionProps> = ({
   // Synthesize compiled prompt for transparency
   const compiledPrompt = activeShot
     ? `[Cinematic Commercial Shot ${activeShot.sequence || 1}]\n` +
-      `Action: ${activeShot.action?.visualDescription || 'Dynamic visual sequence'}.\n` +
+      `Action: ${(activeShot.action as any)?.visualDescription || activeShot.action?.action || 'Dynamic visual sequence'}.\n` +
       `Cinematography: ${activeShot.camera?.cameraMovement || 'slow_push_in'}, ${activeShot.camera?.framing || 'medium_shot'}, ${activeShot.camera?.angle || 'eye_level'}.\n` +
-      `Lighting: ${activeShot.lighting?.mood || 'high contrast studio'}, ${activeShot.lighting?.quality || 'volumetric'}.\n` +
+      `Lighting: ${(activeShot.lighting as any)?.mood || activeShot.lighting?.source || 'high contrast studio'}, ${activeShot.lighting?.quality || 'volumetric'}.\n` +
       `Atmosphere: Photorealistic 4K commercial cinematography, sharp focus on product features.`
     : 'No active shot selected.';
 

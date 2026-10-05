@@ -147,7 +147,7 @@ export class RepairPlanner {
           targetScope: 'shot',
           targetShotId: shotId,
           path: 'action.visualDescription',
-          value: `${shot.action?.visualDescription || ''} [Ensuring wardrobe: ${failure.requirement}]`,
+          value: `${(shot.action as any)?.visualDescription || shot.action?.action || ''} [Ensuring wardrobe: ${failure.requirement}]`,
           actor: { id: 'ai_qa_repair', role: 'ai_shot_director' },
           reason: {
             type: 'continuity_repair',
@@ -162,7 +162,7 @@ export class RepairPlanner {
           targetScope: 'shot',
           targetShotId: shotId,
           path: 'action.visualDescription',
-          value: `${shot.action?.visualDescription || ''} [Enforce action sequence: ${failure.requirement}]`,
+          value: `${(shot.action as any)?.visualDescription || shot.action?.action || ''} [Enforce action sequence: ${failure.requirement}]`,
           actor: { id: 'ai_qa_repair', role: 'ai_shot_director' },
           reason: {
             type: 'system_repair',
@@ -177,7 +177,7 @@ export class RepairPlanner {
           targetScope: 'shot',
           targetShotId: shotId,
           path: 'qaExpectations.mustShow',
-          value: Array.from(new Set([...(shot.qaExpectations?.mustShow || []), failure.requirement])),
+          value: Array.from(new Set([...((shot.qaExpectations as any)?.mustShow || []), failure.requirement])),
           actor: { id: 'ai_qa_repair', role: 'ai_shot_director' },
           reason: {
             type: 'system_repair',

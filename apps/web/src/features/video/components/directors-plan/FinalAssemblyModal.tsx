@@ -276,7 +276,7 @@ export const FinalAssemblyModal: React.FC<FinalAssemblyModalProps> = ({
                           </span>
                           <div>
                             <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                              <span>{shot.shotName || shot.shotId}</span>
+                              <span>{(shot as any).shotName || shot.shotId}</span>
                               <span className="text-[10px] text-slate-400 font-mono">
                                 ({shot.playbackDuration.toFixed(1)}s)
                               </span>
@@ -590,8 +590,8 @@ export const FinalAssemblyModal: React.FC<FinalAssemblyModalProps> = ({
                     </h3>
 
                     <div className="space-y-2">
-                      {(['vertical_720p', 'square_1_1', 'landscape_16_9'] as ExportPreset[]).map((preset) => {
-                        const existing = exportVariants.find((v) => v.preset === preset);
+                      {(['vertical_720p', 'square_1x1', 'landscape_16x9'] as ExportPreset[]).map((preset) => {
+                        const existing = exportVariants.find((v) => v.preset === preset || (v as any).presetName === preset);
                         const isGenerating = isRequestingVariant === preset;
 
                         return (
@@ -602,8 +602,8 @@ export const FinalAssemblyModal: React.FC<FinalAssemblyModalProps> = ({
                             <div className="font-mono">
                               <span className="font-semibold text-slate-800 dark:text-slate-200 block">
                                 {preset === 'vertical_720p' && 'Vertical 720p (720×1280)'}
-                                {preset === 'square_1_1' && 'Square 1:1 (1080×1080)'}
-                                {preset === 'landscape_16_9' && 'Landscape 16:9 (1920×1080)'}
+                                {(preset === 'square_1x1' || (preset as any) === 'square_1_1') && 'Square 1:1 (1080×1080)'}
+                                {(preset === 'landscape_16x9' || (preset as any) === 'landscape_16_9') && 'Landscape 16:9 (1920×1080)'}
                               </span>
                               <span className="text-[10px] text-slate-400">
                                 {existing ? `Status: ${existing.status}` : 'Derived from master'}

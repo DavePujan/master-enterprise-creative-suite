@@ -4,6 +4,8 @@
  * capability registry, and asynchronous job tracking.
  */
 
+export type VideoAspectRatio = '16:9' | '9:16' | '1:1' | '4:5' | '21:9';
+
 export type VideoCreationMode =
   | 'text_to_video'
   | 'image_to_video'
@@ -99,12 +101,14 @@ export interface VideoEngineCapability {
   status: 'AVAILABLE' | 'CONFIGURED' | 'UNAVAILABLE';
 }
 
+export type VideoAspectRatio = '16:9' | '9:16' | '1:1' | '21:9' | '4:3' | '3:4' | 'auto';
+
 export interface VideoGenerationRequest {
   mode: VideoCreationMode;
   prompt: string;
   productTier?: VideoProductTier;
   selectedEngine?: VideoEngineKey;
-  aspectRatio?: '16:9' | '9:16' | '1:1' | '21:9' | '4:3' | '3:4' | 'auto';
+  aspectRatio?: VideoAspectRatio;
   durationSeconds?: number | 'auto';
   resolution?: '720p' | '1080p' | '4k';
   startFrameAssetId?: string;

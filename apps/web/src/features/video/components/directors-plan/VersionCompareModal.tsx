@@ -26,13 +26,15 @@ export const VersionCompareModal: React.FC<VersionCompareModalProps> = ({
     const prevShot = prevShots.find(s => s.shotId === curShot.shotId) || prevShots[idx];
     const isNew = !prevShot;
     const isDurationChanged = prevShot && prevShot.durationSeconds !== curShot.durationSeconds;
-    const isActionChanged = prevShot && prevShot.action?.visualDescription !== curShot.action?.visualDescription;
+    const getActionDesc = (shot?: any) => shot?.action?.visualDescription || shot?.action?.action || '';
+    const getLightingMood = (shot?: any) => shot?.lighting?.mood || shot?.lighting?.source || '';
+    const isActionChanged = prevShot && getActionDesc(prevShot) !== getActionDesc(curShot);
     const isCameraChanged = prevShot && (
       (prevShot.camera?.cameraMovement !== curShot.camera?.cameraMovement) ||
       (prevShot.camera?.framing !== curShot.camera?.framing) ||
       (prevShot.camera?.angle !== curShot.camera?.angle)
     );
-    const isLightingChanged = prevShot && prevShot.lighting?.mood !== curShot.lighting?.mood;
+    const isLightingChanged = prevShot && getLightingMood(prevShot) !== getLightingMood(curShot);
 
     const hasChanges = isNew || isDurationChanged || isActionChanged || isCameraChanged || isLightingChanged;
 
@@ -118,13 +120,13 @@ export const VersionCompareModal: React.FC<VersionCompareModalProps> = ({
                       v{previousSpec.identity.specVersion} Previous
                     </span>
                     <p className="text-slate-600 dark:text-slate-400">
-                      <span className="font-semibold">Action:</span> {comp.prevShot?.action?.visualDescription || 'None'}
+                      <span className="font-semibold">Action:</span> {(comp.prevShot?.action as any)?.visualDescription || comp.prevShot?.action?.action || 'None'}
                     </p>
                     <p className="text-slate-600 dark:text-slate-400">
                       <span className="font-semibold">Camera:</span> {formatCameraMovement(comp.prevShot?.camera?.cameraMovement)} ({formatShotFraming(comp.prevShot?.camera?.framing)})
                     </p>
                     <p className="text-slate-600 dark:text-slate-400">
-                      <span className="font-semibold">Lighting:</span> {comp.prevShot?.lighting?.mood || 'Standard'}
+                      <span className="font-semibold">Lighting:</span> {(comp.prevShot?.lighting as any)?.mood || comp.prevShot?.lighting?.source || 'Standard'}
                     </p>
                   </div>
 
@@ -134,13 +136,13 @@ export const VersionCompareModal: React.FC<VersionCompareModalProps> = ({
                       v{currentSpec.identity.specVersion} Current
                     </span>
                     <p className="text-slate-900 dark:text-white font-medium">
-                      <span className="font-semibold">Action:</span> {comp.curShot.action?.visualDescription}
+                      <span className="font-semibold">Action:</span> {(comp.curShot.action as any)?.visualDescription || comp.curShot.action?.action || 'None'}
                     </p>
                     <p className="text-slate-900 dark:text-white font-medium">
                       <span className="font-semibold">Camera:</span> {formatCameraMovement(comp.curShot.camera?.cameraMovement)} ({formatShotFraming(comp.curShot.camera?.framing)})
                     </p>
                     <p className="text-slate-900 dark:text-white font-medium">
-                      <span className="font-semibold">Lighting:</span> {comp.curShot.lighting?.mood || 'Standard'}
+                      <span className="font-semibold">Lighting:</span> {(comp.curShot.lighting as any)?.mood || comp.curShot.lighting?.source || 'Standard'}
                     </p>
                   </div>
                 </div>

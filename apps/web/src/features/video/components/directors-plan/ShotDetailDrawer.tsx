@@ -61,46 +61,51 @@ export const ShotDetailDrawer: React.FC<ShotDetailDrawerProps> = ({
   const purpose = formatShotPurpose(undefined, sequence, totalShots);
 
   // Resolved Location Name
+  const locList = (locations as any)?.locations || (Array.isArray(locations) ? locations : []);
   const locationId = (shot.action as any)?.locationRef || (shot as any).environment?.locationId;
-  const matchedLocation = locations?.locations?.find(l => l.locationId === locationId);
+  const matchedLocation = locList.find((l: any) => (l.locationId || l.id) === locationId);
   const locationName = matchedLocation ? matchedLocation.name : (locationId || 'Studio Stage');
 
   // Resolved Characters with Locks
+  const charList = (characters as any)?.characters || (Array.isArray(characters) ? characters : []);
   const featuredCharIds: string[] = (shot.action as any)?.featuredCharacters || [];
   const resolvedCharacters = featuredCharIds.map(charId => {
-    const found = characters?.characters?.find(c => c.characterId === charId);
+    const found = charList.find((c: any) => (c.characterId || c.id) === charId);
     return {
       id: charId,
       name: found ? found.name : charId,
-      role: found?.role || 'Actor',
-      appearance: found?.physicalAppearance?.face || 'Clean production look',
-      wardrobe: found?.wardrobe?.defaultOutfit || 'Standard wardrobe',
-      locks: found?.locks || []
+      role: found?.narrativeRole || (found as any)?.role || 'Actor',
+      appearance: (found as any)?.appearance?.distinguishingFeatures?.join(', ') || (found as any)?.physicalAppearance?.face || 'Clean production look',
+      wardrobe: (found as any)?.wardrobe?.outfit || (found as any)?.wardrobe?.defaultOutfit || 'Standard wardrobe',
+      locks: (found as any)?.locks || []
     };
   });
 
   // Resolved Products with Locks
+  const prodList = (products as any)?.products || (Array.isArray(products) ? products : []);
   const featuredProdIds: string[] = (shot.action as any)?.featuredProducts || [];
   const resolvedProducts = featuredProdIds.map(prodId => {
-    const found = products?.products?.find(p => p.productId === prodId);
+    const found = prodList.find((p: any) => (p.productId || p.id) === prodId);
     return {
       id: prodId,
       name: found ? found.name : prodId,
-      category: found?.category || 'Commercial Product',
-      branding: found?.branding?.logoPlacement || 'Centered',
-      locks: found?.locks || []
+      category: (found as any)?.category || 'Commercial Product',
+      branding: (found as any)?.branding?.logoPlacement || 'Centered',
+      locks: (found as any)?.locks || []
     };
   });
 
   // Choreography Beats
-  const choreographyBeats = shot.action?.choreography || [];
+  const choreographyBeats: any[] = Array.isArray((shot.action as any)?.choreography)
+    ? (shot.action as any).choreography
+    : (shot.action?.beats || ((shot.action as any)?.choreography ? [{ action: (shot.action as any).choreography }] : []));
 
   // Continuity Inherited & Produced States
   const inheritedStates = (shot.continuity as any)?.inheritedStates || [];
   const producedStates = (shot.continuity as any)?.producedStates || [];
 
   // QA Expectations
-  const qa = shot.qaExpectations || {};
+  const qa: any = shot.qaExpectations || {};
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
@@ -157,7 +162,7 @@ export const ShotDetailDrawer: React.FC<ShotDetailDrawerProps> = ({
             
             <div className="p-4 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-sm space-y-3">
               <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
-                {shot.action?.visualDescription || 'Visual action description progressing the commercial story.'}
+                {(shot.action as any)?.visualDescription || shot.action?.action || 'Visual action description progressing the commercial story.'}
               </p>
 
               {choreographyBeats.length > 0 && (

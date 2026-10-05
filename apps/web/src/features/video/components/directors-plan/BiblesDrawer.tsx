@@ -39,10 +39,12 @@ export const BiblesDrawer: React.FC<BiblesDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const charList = characters?.characters || [];
-  const prodList = products?.products || [];
-  const locList = locations?.locations || [];
-  const deterministicRules = brand?.deterministicRules || [];
+  const charList: any[] = Array.isArray(characters) ? characters : (characters?.characters || []);
+  const prodList: any[] = Array.isArray(products) ? products : (products?.products || []);
+  const locList: any[] = Array.isArray(locations) ? locations : (locations?.locations || []);
+  const deterministicRules: any[] = Array.isArray(brand)
+    ? brand
+    : (brand?.adSpecificOverrides?.mandatoryClaims || (brand as any)?.deterministicRules || []);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">

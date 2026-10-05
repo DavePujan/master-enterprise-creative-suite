@@ -45,7 +45,7 @@ export const DirectorsPlanHeader: React.FC<DirectorsPlanHeaderProps> = ({
   isApproving
 }) => {
   const aspectRatio = extractCleanValue(brief.aspectRatio, '9:16');
-  const targetPlatform = extractCleanValue(brief.targetPlatform, 'instagram_reels');
+  const targetPlatform = extractCleanValue(brief.targetPlatform || brief.platform, 'instagram_reels');
   const creativeState = identity.creativeState || 'director_plan_draft';
   const isApproved = creativeState === 'approved';
 
@@ -53,8 +53,8 @@ export const DirectorsPlanHeader: React.FC<DirectorsPlanHeaderProps> = ({
   const platformLabel = String(targetPlatform).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
   // Validation readiness
-  const isValid = validationStatus ? validationStatus.isValid : true;
-  const blockingIssues = validationStatus?.issues?.filter(i => i.severity === 'error') || [];
+  const isValid = validationStatus ? (validationStatus.valid ?? validationStatus.isValid ?? true) : true;
+  const blockingIssues = validationStatus?.errors || validationStatus?.issues?.filter(i => i.severity === 'error') || [];
 
   return (
     <div className="w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-5 shrink-0 text-left">

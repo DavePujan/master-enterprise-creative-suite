@@ -62,6 +62,7 @@ export interface DecisionRecord<T> {
 }
 
 export type ProvenanceValue<T> = DecisionRecord<T>;
+export type CleanOrProvenance<T> = T | ProvenanceValue<T>;
 
 export function extractCleanValue<T>(field: T | ProvenanceValue<T>): T {
   if (field && typeof field === 'object' && 'value' in field) {
@@ -206,6 +207,8 @@ export interface AdSpecBrief {
   mustAvoid: string[];
   referencesAndInspiration: string[];
   userConstraints: string[];
+  targetPlatform?: AdTargetPlatform;
+  avoid?: string[];
 }
 
 // =============================================================================
@@ -229,10 +232,12 @@ export interface CreativeConceptItem {
   noveltyRationale: string;
   complexityEstimate: 'low' | 'medium' | 'high';
   feasibilityNotes?: string;
+  title?: string;
 }
 
 export interface CreativeDirectionSpec {
   concepts: CreativeConceptItem[];
+  alternativeConcepts?: any[];
   selectedConceptId?: string;
   selectionProvenance?: {
     selectedBy: 'user' | 'ai_default';
@@ -261,6 +266,15 @@ export interface BrandRulesSpec {
     'creative_direction',
     'shot_preference'
   ];
+  brandName?: string;
+  industry?: string;
+  colors?: any;
+  fonts?: any;
+  visualStyle?: {
+    aestheticMood?: string;
+    palette?: string[];
+    [key: string]: any;
+  };
 }
 
 // =============================================================================
@@ -305,6 +319,14 @@ export interface SemanticAssetItem {
 export interface AssetBible {
   assets: SemanticAssetItem[];
 }
+
+export type AdSpecCharacterBible = AdSpecCharacterEntity[] | { characters: AdSpecCharacterEntity[] };
+export type AdSpecProductBible = AdSpecProductEntity[] | { products: AdSpecProductEntity[] };
+export type AdSpecLocationBible = AdSpecLocationEntity[] | { locations: AdSpecLocationEntity[] };
+export type AdSpecAssetBible = AssetBible | SemanticAssetItem[];
+export type AdSpecBrand = BrandRulesSpec;
+export type AdSpecCreative = CreativeDirectionSpec;
+export type AdSpecStory = StoryModel;
 
 // =============================================================================
 // 8. CHARACTER BIBLE
@@ -466,20 +488,27 @@ export interface ShotActionState {
   startingState: string;
   action: string;
   choreography: string;
+  visualDescription?: string;
   beats?: TemporalActionBeat[];
   endingState: string;
   emotionalState?: string;
+  locationRef?: string;
+  featuredCharacters?: string[];
+  featuredProducts?: string[];
 }
 
 export interface AdSpecShotCameraSpec {
   shotSize: string;
   framing: CameraFraming;
   angle: CameraAngle;
+  cameraAngle?: CameraAngle;
   lensCharacteristics: LensCharacteristics;
+  lensFocalLength?: string;
   cameraPosition: string;
   cameraMovement: CameraMovement;
   composition: string;
   depthIntent: string;
+  depthOfField?: string;
 }
 export type AdShotCameraSpec = AdSpecShotCameraSpec;
 
@@ -491,6 +520,7 @@ export interface ShotLightingSpec {
   contrast: 'high' | 'medium' | 'soft_diffuse';
   colorTemperature: string;
   atmosphere: string;
+  mood?: string;
 }
 
 export interface ShotVisualDirection {
@@ -511,6 +541,7 @@ export interface AdSpecShotAudioSpec {
   ambience?: string;
   ambient?: string;
   music?: string;
+  musicCue?: string;
   timingCues?: string[];
   audioPriority: 'high' | 'medium' | 'silent';
 }
@@ -545,6 +576,9 @@ export interface AdSpecShotQaExpectations {
   productVisibility: 'prominent_front' | 'in_use' | 'background' | 'none';
   characterIdentityRules: string[];
   brandRules: string[];
+  mustShow?: string[];
+  mustNotShow?: string[];
+  subjectProminence?: string;
 }
 export type AdShotQaExpectations = AdSpecShotQaExpectations;
 
@@ -640,6 +674,7 @@ export interface GenerationRequirements {
   qualityPriority: 'draft' | 'cinematic_pro' | 'broadcast_master';
   preferredProvider?: string; // Execution request/preference (NOT canonical creative truth)
   preferredModel?: string; // Execution request/preference (NOT canonical creative truth)
+  supportedAspectRatios?: string[];
 }
 
 export interface GenerationIntent {
@@ -677,8 +712,10 @@ export interface AdSpecValidationStatus {
   evaluatedAtHash?: string;
   isAuthoritative: boolean; // False if AdSpec has been mutated since this evaluation
   valid: boolean;
+  isValid?: boolean;
   errors: AdSpecValidationIssue[];
   warnings: AdSpecValidationIssue[];
+  issues?: AdSpecValidationIssue[];
   metrics: {
     shotCount: number;
     calculatedDuration: number;
@@ -697,6 +734,7 @@ export interface AdSpecValidationStatus {
 
 export interface AdSpec {
   schemaVersion: '1.0.0';
+  adId?: string;
   identity: AdSpecIdentity;
   brief: AdSpecBrief;
   creative: CreativeDirectionSpec;
@@ -719,6 +757,9 @@ export interface AdSpec {
     originatingGem: 'video_generation_gem';
     customNotes?: string;
   };
+  creativeApproach?: any;
+  narrativeStructure?: any;
+  directorsPlan?: any;
 }
 
 // =============================================================================
@@ -729,7 +770,11 @@ export interface ExecutionSnapshot {
   snapshotId: string; // e.g. "snap_ad_lumina_01_v2"
   adId: string;
   specVersion: number;
+  adSpecVersion?: number;
   specHash?: string;
+  adSpecHash?: string;
+  spec?: any;
+  frozenAt?: string;
   approvedAt: string;
   approvedBy: string;
   selectedProvider?: string; // Authoritative chosen provider e.g. "google" | "fal"

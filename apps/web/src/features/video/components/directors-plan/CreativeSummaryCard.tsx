@@ -20,16 +20,18 @@ export const CreativeSummaryCard: React.FC<CreativeSummaryCardProps> = ({
 }) => {
   // Extract clean brief values
   const objective = extractCleanValue(brief.objective, 'conversions');
-  const targetAudience = extractCleanValue(brief.targetAudience, { primarySegment: 'Urban professionals' });
-  const cta = extractCleanValue(brief.cta, { visualText: 'Shop Now', actionIntent: 'shop_now' });
+  const targetAudience = extractCleanValue(brief.targetAudience, { persona: 'Urban professionals', painPoints: [] });
+  const cta = extractCleanValue(brief.cta, { visualText: 'Shop Now', actionIntent: 'buy_now' });
   const keyMessage = extractCleanValue(brief.keyMessage, 'Premium performance for your everyday lifestyle.');
 
   // Find selected concept
-  const selectedConcept = creative.alternativeConcepts?.find(c => c.conceptId === creative.selectedConceptId) 
-    || creative.alternativeConcepts?.[0]
+  const conceptList: any[] = (creative as any).concepts || (creative as any).alternativeConcepts || [];
+  const selectedConcept: any = conceptList.find((c: any) => c.conceptId === creative.selectedConceptId) 
+    || conceptList[0]
     || {
       conceptId: 'concept_01',
       title: 'Cinematic Commercial',
+      name: 'Cinematic Commercial',
       creativeMechanism: 'kinetic_action',
       premise: 'High-impact visual journey showcasing the product in dynamic real-world motion.',
       hookDescription: 'Immediate sensory stimulation capturing viewer attention in first 2 seconds.',
@@ -50,7 +52,7 @@ export const CreativeSummaryCard: React.FC<CreativeSummaryCardProps> = ({
             Commercial Creative Summary
           </h2>
           <span className="text-[11px] font-mono px-2 py-0.5 rounded-xs bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-900/60">
-            {selectedConcept.title}
+            {selectedConcept.title || selectedConcept.name}
           </span>
           {conceptProvenance?.status === 'confirmed' && (
             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded-xs border border-emerald-200 dark:border-emerald-900/60">
@@ -79,7 +81,7 @@ export const CreativeSummaryCard: React.FC<CreativeSummaryCardProps> = ({
             <span>Premise & Core Idea</span>
           </div>
           <p className="text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
-            {selectedConcept.premise}
+            {selectedConcept.premise || selectedConcept.oneLinePremise || selectedConcept.coreIdea}
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
             Mechanism: <span className="capitalize font-semibold text-slate-700 dark:text-slate-300">{selectedConcept.creativeMechanism?.replace(/_/g, ' ')}</span>
@@ -93,7 +95,7 @@ export const CreativeSummaryCard: React.FC<CreativeSummaryCardProps> = ({
             <span>Opening Hook (First 2.5s)</span>
           </div>
           <p className="text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
-            {selectedConcept.hookDescription || story.hookMechanism || 'Immediate visual escalation capturing attention.'}
+            {selectedConcept.hookDescription || selectedConcept.hook?.description || (story as any).hookMechanism || story.logline || 'Immediate visual escalation capturing attention.'}
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
             Objective: <span className="capitalize font-semibold text-slate-700 dark:text-slate-300">{String(objective).replace(/_/g, ' ')}</span>
@@ -107,7 +109,7 @@ export const CreativeSummaryCard: React.FC<CreativeSummaryCardProps> = ({
             <span>Emotional Progression</span>
           </div>
           <p className="text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
-            {selectedConcept.emotionalArc || story.narrativeArc || 'Problem -> Discovery -> Relief -> Call to Action'}
+            {selectedConcept.emotionalArc || (story as any).narrativeArc || story.structureType || 'Problem -> Discovery -> Relief -> Call to Action'}
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate" title={keyMessage}>
             Key Message: <span className="font-semibold text-slate-700 dark:text-slate-300">{keyMessage}</span>

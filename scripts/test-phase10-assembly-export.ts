@@ -91,7 +91,7 @@ const PROJECT_ID = 'project-ad-999';
 const EXECUTION_ID = 'exec-' + crypto.randomUUID();
 const SNAPSHOT_ID = 'snap-' + crypto.randomUUID();
 
-const mockAdSpec: AdSpec = {
+const mockAdSpec: any = {
   schemaVersion: '1.0.0',
   adId: PROJECT_ID,
   brand: {
@@ -155,7 +155,7 @@ const mockAdSpec: AdSpec = {
   }
 };
 
-const mockSnapshot: ExecutionSnapshot = {
+const mockSnapshot: any = {
   snapshotId: SNAPSHOT_ID,
   adId: PROJECT_ID,
   adSpecVersion: 1,
@@ -207,7 +207,7 @@ async function runPhase10Tests() {
   console.log('================================================================\n');
 
   // Seed repository with mock execution
-  await adDirectorRepository.saveExecutionSnapshot(mockSnapshot);
+  await adDirectorRepository.saveExecutionSnapshot(mockSnapshot, WORKSPACE_A);
   await adDirectorRepository.saveExecution({
     executionId: EXECUTION_ID,
     projectId: PROJECT_ID,
@@ -655,12 +655,21 @@ async function runPhase10Tests() {
     workspaceId: WORKSPACE_A,
     version: 2,
     spec: v2SpecResult.spec,
+    assemblySpec: v2SpecResult.spec,
     assemblyHash: v2SpecResult.assemblyHash,
     status: 'draft' as const,
+    validationReport: {
+      valid: true,
+      totalChecks: 1,
+      passedChecks: 1,
+      blockers: [],
+      warnings: [],
+      validatedAt: new Date().toISOString()
+    },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
-  await adDirectorRepository.saveAssembly(v2AssemblyRecord);
+  await adDirectorRepository.saveAssembly(v2AssemblyRecord as any);
 
   const v1Record = await adDirectorRepository.getAssembly(savedAssembly.id);
   assert(

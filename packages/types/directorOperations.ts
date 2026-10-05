@@ -128,10 +128,14 @@ export interface ChangeImpactSummary {
 }
 
 export interface DirectorOperation {
-  operationId: string; // Unique string, e.g. "op_01J..."
+  operationId?: string; // Unique string, e.g. "op_01J..."
   type: DirectorOperationType;
-  target: DirectorOperationTarget;
-  changes: Record<string, any>;
+  target?: DirectorOperationTarget;
+  targetScope?: AdSpecPatchScope | 'root';
+  targetShotId?: string;
+  path?: string;
+  value?: any;
+  changes?: Record<string, any>;
   reason: DirectorOperationReason;
   actor: DirectorOperationActor;
   confidence?: number; // 0.0 - 1.0
@@ -139,7 +143,7 @@ export interface DirectorOperation {
   approvalLevel?: ApprovalLevel;
   expectedImpact?: ChangeImpactSummary;
   impact?: ChangeImpactSummary;
-  parentSpecVersion: number;
+  parentSpecVersion?: number;
 }
 
 // =============================================================================
@@ -205,6 +209,9 @@ export interface AdSpecDiff {
   specVersionBefore: number;
   specVersionAfter: number;
   modifiedPaths: string[];
+  addedPaths?: string[];
+  removedPaths?: string[];
+  explanation?: string;
   previousValues: Record<string, any>;
   newValues: Record<string, any>;
   affectedShots: string[];

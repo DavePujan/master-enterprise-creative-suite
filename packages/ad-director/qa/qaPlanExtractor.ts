@@ -86,13 +86,13 @@ export class QAPlanExtractor {
         });
       }
 
-      if (shot.camera.cameraAngle || (shot.camera as any).angle) {
-        const angle = shot.camera.cameraAngle || (shot.camera as any).angle;
+      const angle = (shot.camera as any).cameraAngle || (shot.camera as any).angle;
+      if (angle) {
         items.push({
           id: `${shotId}_cam_angle`,
           category: 'camera',
           dimension: 'cameraAngle',
-          requirement: `Camera angle should be "${angle.replace(/_/g, ' ')}".`,
+          requirement: `Camera angle should be "${String(angle).replace(/_/g, ' ')}".`,
           sourcePath: 'camera.cameraAngle',
           isMandatory: false,
           expectedValue: angle
@@ -115,8 +115,8 @@ export class QAPlanExtractor {
 
     // 3. Action & Choreography Requirements
     if (shot.action) {
-      if (shot.action.visualDescription || (shot.action as any).action) {
-        const desc = shot.action.visualDescription || (shot.action as any).action;
+      const desc = (shot.action as any).visualDescription || (shot.action as any).action;
+      if (desc) {
         items.push({
           id: `${shotId}_action_core`,
           category: 'action',
@@ -128,9 +128,12 @@ export class QAPlanExtractor {
         });
       }
 
-      if (shot.action.choreography && shot.action.choreography.length > 0) {
-        const beatsDesc = shot.action.choreography
-          .map((b, i) => `Beat ${i + 1} (${b.relativeStart}s-${b.relativeEnd}s): ${b.action}`)
+      const choreographyBeats = Array.isArray((shot.action as any).choreography)
+        ? (shot.action as any).choreography
+        : (shot.action.beats || ((shot.action as any).choreography ? [{ action: (shot.action as any).choreography, relativeStart: 0, relativeEnd: shot.timing?.duration || 3 }] : []));
+      if (choreographyBeats.length > 0) {
+        const beatsDesc = choreographyBeats
+          .map((b: any, i: number) => `Beat ${i + 1} (${b.relativeStart ?? 0}s-${b.relativeEnd ?? 0}s): ${b.action || b.description || b}`)
           .join(' -> ');
         items.push({
           id: `${shotId}_action_temporal_beats`,
@@ -145,29 +148,29 @@ export class QAPlanExtractor {
     }
 
     // 4. Character & Wardrobe Requirements
-    const featuredCharIds = shot.action?.featuredCharacters || [];
-    const charactersList = adSpec.characters?.characters || (adSpec.characters as any) || [];
+    const featuredCharIds = (shot.action as any)?.featuredCharacters || [];
+    const charactersList = (adSpec.characters as any)?.characters || (adSpec.characters as any) || [];
     if (Array.isArray(charactersList)) {
       for (const charId of featuredCharIds) {
-        const char = charactersList.find(c => c.characterId === charId || c.id === charId);
+        const char = charactersList.find((c: any) => c.characterId === charId || c.id === charId);
         if (char) {
           items.push({
             id: `${shotId}_char_${charId}_identity`,
             category: 'character',
             dimension: `character_${charId}`,
-            requirement: `Featured character "${char.name}": ${char.physicalAppearance?.face || ''}, ${char.physicalAppearance?.bodyType || ''}.`,
+            requirement: `Featured character "${char.name || char.displayName}": ${char.physicalAppearance?.face || char.appearance?.gender || ''}, ${char.physicalAppearance?.bodyType || char.appearance?.physique || ''}.`,
             sourcePath: `characters.${charId}`,
             isMandatory: true,
-            expectedValue: char.name
+            expectedValue: char.name || char.displayName
           });
 
-          const wardrobe = char.wardrobe?.defaultOutfit || char.wardrobe?.style;
+          const wardrobe = char.wardrobe?.defaultOutfit || char.wardrobe?.style || char.wardrobe?.outfit;
           if (wardrobe) {
             items.push({
               id: `${shotId}_char_${charId}_wardrobe`,
               category: 'wardrobe',
               dimension: `wardrobe_${charId}`,
-              requirement: `Character "${char.name}" wardrobe: "${wardrobe}".`,
+              requirement: `Character "${char.name || char.displayName}" wardrobe: "${wardrobe}".`,
               sourcePath: `characters.${charId}.wardrobe`,
               isMandatory: true,
               expectedValue: wardrobe
@@ -178,11 +181,11 @@ export class QAPlanExtractor {
     }
 
     // 5. Product Appearance & Visibility Requirements
-    const featuredProductIds = shot.action?.featuredProducts || [];
-    const productsList = adSpec.products?.products || (adSpec.products as any) || [];
+    const featuredProductIds = (shot.action as any)?.featuredProducts || [];
+    const productsList = (adSpec.products as any)?.products || (adSpec.products as any) || [];
     if (Array.isArray(productsList)) {
       for (const prodId of featuredProductIds) {
-        const prod = productsList.find(p => p.productId === prodId || p.id === prodId);
+        const prod = productsList.find((p: any) => p.productId === prodId || p.id === prodId);
         if (prod) {
           items.push({
             id: `${shotId}_prod_${prodId}_appearance`,
@@ -200,8 +203,8 @@ export class QAPlanExtractor {
     // 6. Environment & Lighting Requirements
     if (shot.environment?.locationId || (shot.action as any)?.locationRef) {
       const locId = shot.environment?.locationId || (shot.action as any)?.locationRef;
-      const locationsList = adSpec.locations?.locations || (adSpec.locations as any) || [];
-      const loc = Array.isArray(locationsList) ? locationsList.find(l => l.locationId === locId || l.id === locId) : null;
+      const locationsList = (adSpec.locations as any)?.locations || (adSpec.locations as any) || [];
+      const loc = Array.isArray(locationsList) ? locationsList.find((l: any) => l.locationId === locId || l.id === locId) : null;
       const locName = loc?.name || locId;
       items.push({
         id: `${shotId}_env_location`,
@@ -215,7 +218,7 @@ export class QAPlanExtractor {
     }
 
     if (shot.lighting) {
-      const mood = shot.lighting.mood || (shot.lighting as any).atmosphere || (shot.lighting as any).lightingStyle;
+      const mood = (shot.lighting as any).mood || (shot.lighting as any).atmosphere || (shot.lighting as any).lightingStyle || shot.lighting.source;
       if (mood) {
         items.push({
           id: `${shotId}_light_mood`,
@@ -233,7 +236,7 @@ export class QAPlanExtractor {
     if (shot.continuity) {
       const inherited = shot.continuity.inheritedStates || [];
       if (inherited.length > 0) {
-        const rules = inherited.map(s => `${s.entityId} [${s.aspect}]: ${s.description}`).join('; ');
+        const rules = inherited.map(s => `${s.entityId} [${s.aspect}]: ${s.requirement || (s as any).description || (s as any).stateDescription || ''}`).join('; ');
         items.push({
           id: `${shotId}_continuity_inherited`,
           category: 'continuity',
@@ -273,7 +276,7 @@ export class QAPlanExtractor {
       });
     }
 
-    const mustAvoid = adSpec.brief?.avoid || adSpec.brief?.mustAvoid || [];
+    const mustAvoid = (adSpec.brief as any)?.avoid || (adSpec.brief as any)?.mustAvoid || [];
     if (mustAvoid.length > 0) {
       items.push({
         id: `${shotId}_brand_must_avoid`,

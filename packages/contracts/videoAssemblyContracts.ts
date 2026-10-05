@@ -8,14 +8,16 @@ import { z } from 'zod';
 export type AssemblyTransitionType = 'cut' | 'fade' | 'dissolve' | 'wipe';
 export type AssemblyAudioType = 'voiceover' | 'music' | 'sfx';
 export type OriginalAudioMode = 'keep' | 'mute' | 'mix';
-export type LogoPosition = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right' | 'center';
+export type LogoPosition = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right' | 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type CtaType = 'text' | 'end_card_asset' | 'composite';
 export type RenderJobStatus = 'queued' | 'claimed' | 'rendering' | 'validating' | 'completed' | 'failed' | 'cancelled';
 export type AssemblyStatus = 'draft' | 'validated' | 'rendering' | 'completed' | 'failed' | 'cancelled';
-export type ExportPresetName = 'master_1080x1920' | 'master_1920x1080' | 'vertical_720p' | 'square_1x1' | 'landscape_16x9';
+export type ExportPresetName = 'master_1080x1920' | 'master_1920x1080' | 'vertical_720p' | 'square_1x1' | 'square_1_1' | 'landscape_16x9' | 'landscape_16_9';
+export type ExportPreset = ExportPresetName;
 
 export interface AssemblyShotItem {
   shotId: string;
+  shotName?: string;
   sequence: number;
   order: number;
   acceptedResultId: string;
@@ -38,7 +40,7 @@ export interface AssemblyTransitionItem {
   fromShotId: string;
   toShotId: string;
   type: AssemblyTransitionType;
-  durationSeconds: number; // e.g. 0.5s (0 for cut)
+  durationSeconds?: number; // e.g. 0.5s (0 for cut)
   duration?: number;
 }
 
@@ -114,7 +116,7 @@ export interface AssemblyLogoOverlay {
 
 export interface AssemblyCtaCard {
   enabled: boolean;
-  type: CtaType;
+  type?: CtaType;
   text?: string;
   headline?: string; // alias
   subheadline?: string;
@@ -188,12 +190,12 @@ export interface AssemblyRecord {
   version: number;
   assemblyHash: string;
   status: AssemblyStatus;
-  assemblySpec: AssemblySpec;
+  assemblySpec?: AssemblySpec;
   spec?: AssemblySpec;
   sourceExecutionSnapshotId?: string;
   adSpecVersion?: number;
   adSpecHash?: string;
-  validationReport: AssemblyValidationReport;
+  validationReport?: AssemblyValidationReport;
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
@@ -207,6 +209,7 @@ export interface RenderJobRecord {
   workspaceId: string;
   renderType: 'master' | 'variant';
   status: RenderJobStatus;
+  job?: RenderJobRecord; // alias for self
   outputAssetId?: string;
   outputUrl?: string;
   durationSeconds?: number;
