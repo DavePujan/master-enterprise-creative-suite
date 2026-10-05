@@ -473,6 +473,11 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
         }));
       }
 
+      if (downstreamBriefs.canonicalAdSpec) {
+        localStorage.setItem('staged_canonical_adspec', JSON.stringify(downstreamBriefs.canonicalAdSpec));
+        sessionStorage.setItem('writopedia_active_adspec', JSON.stringify(downstreamBriefs.canonicalAdSpec));
+      }
+
       setIsBriefsExported(true);
       setTimeout(() => setIsBriefsExported(false), 3000);
       return true;
@@ -498,10 +503,18 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
         setAspectRatio(downstreamBriefs.imageBrief.aspectRatios[0]);
       }
     } else if (gemId === 'cinematic-video' && downstreamBriefs?.videoBrief) {
+      if (downstreamBriefs.canonicalAdSpec) {
+        try {
+          sessionStorage.setItem('writopedia_active_adspec', JSON.stringify(downstreamBriefs.canonicalAdSpec));
+          localStorage.setItem('staged_canonical_adspec', JSON.stringify(downstreamBriefs.canonicalAdSpec));
+        } catch (_) {}
+      }
       if (setPrompt) setPrompt(downstreamBriefs.videoBrief.textlessPrompt);
       if (setAspectRatio && downstreamBriefs.videoBrief.aspectRatio) {
         setAspectRatio(downstreamBriefs.videoBrief.aspectRatio);
       }
+      onSelectGem({ ...targetGem, initialAdSpec: downstreamBriefs.canonicalAdSpec });
+      return;
     } else if (gemId === 'audio-studio' && downstreamBriefs?.audioBrief) {
       if (setPrompt) {
         setPrompt(downstreamBriefs.audioBrief.spokenScriptText || downstreamBriefs.audioBrief.scriptIntent || '');
@@ -2465,6 +2478,7 @@ export const CampaignStrategistWorkspace: React.FC<CampaignStrategistWorkspacePr
                         </label>
                         <div className="flex flex-wrap gap-2">
                           {([
+                            { id: 'live_web', label: 'Live Web Grounding (Google Search)', desc: 'Grounds competitive analysis in real-time Google Search with source citations' },
                             { id: 'provided_by_client', label: 'Client-Supplied Competitors', desc: 'Strategy explicitly grounded in competitor names and patterns you supply below' },
                             { id: 'imported_from_workspace', label: 'Workspace Brand Documents', desc: 'Grounds analysis in brand guidelines and stored workspace assets' },
                             { id: 'no_research_supplied', label: 'No Competitor Research Supplied', desc: 'Applies universal category defense invariants without claiming competitor intel' }

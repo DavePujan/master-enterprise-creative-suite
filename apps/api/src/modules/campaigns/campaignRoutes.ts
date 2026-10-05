@@ -12,6 +12,7 @@ import { CreditService } from "../../services/creditService.js";
 import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import { campaignStrategyService } from "./campaignStrategyService.js";
 import { campaignRepository } from "./campaignRepository.js";
+import { campaignDownstreamOrchestrator } from "./campaignDownstreamOrchestrator.js";
 import { sendInsufficientCreditsResponse, InsufficientCreditsError } from "../billing/billingErrorUtils.js";
 
 const creditService = new CreditService();
@@ -278,6 +279,26 @@ campaignRouter.post("/strategy/stress-test", async (req, res) => {
   } catch (err: any) {
     console.error("Error in /strategy/stress-test:", err);
     return res.status(500).json({ error: err?.message || "Failed to stress-test strategy" });
+  }
+});
+
+// 7. Canonical AdSpec Compilation for Video Gem / Downstream Multimodal Pipeline
+campaignRouter.post("/strategy/adspec", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+
+    const { strategy, territory, options } = req.body;
+    if (!strategy || !territory) {
+      return res.status(400).json({ error: "Missing required strategy or territory" });
+    }
+
+    const adSpec = campaignDownstreamOrchestrator.compileAdSpec(strategy, territory, options);
+    return res.json({ adSpec });
+  } catch (err: any) {
+    console.error("Error in /strategy/adspec:", err);
+    return res.status(500).json({ error: err?.message || "Failed to compile canonical AdSpec" });
   }
 });
 

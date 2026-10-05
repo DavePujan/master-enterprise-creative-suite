@@ -21,6 +21,7 @@ export interface CampaignLLMParams<T> {
   semanticValidator?: (parsed: any) => { isValid: boolean; errors?: string[] };
   temperature?: number;
   timeoutMs?: number;
+  enableGoogleSearchGrounding?: boolean;
 }
 
 export interface CampaignLLMResult<T> {
@@ -29,13 +30,15 @@ export interface CampaignLLMResult<T> {
   modelUsed: string;
   latencyMs: number;
   fallbackUsed: boolean;
+  citations?: Array<{ title: string; url: string }>;
 }
 
 export class CampaignLLMGateway {
   private readonly GOOGLE_MODELS = [
     'gemini-3.8-flash',
     'gemini-3.7-flash',
-    'gemini-2.5-flash'
+    'gemini-3.5-flash',
+    'gemini-2.5-flash' // Resilient legacy fallback
   ];
   private readonly DEFAULT_TIMEOUT_MS = 120000; // 120s budget
   private readonly PER_ATTEMPT_TIMEOUT_MS = 60000;
@@ -49,7 +52,8 @@ export class CampaignLLMGateway {
       responseSchema,
       semanticValidator,
       temperature = 0.7,
-      timeoutMs = this.DEFAULT_TIMEOUT_MS
+      timeoutMs = this.DEFAULT_TIMEOUT_MS,
+      enableGoogleSearchGrounding = false
     } = params;
 
     const startTime = Date.now();
@@ -57,78 +61,123 @@ export class CampaignLLMGateway {
     const globalDeadline = startTime + timeoutMs;
 
     console.log(
-      `[CampaignLLMGateway] [gen:${generationId.slice(0, 8)}] Starting stage: ${stage} (Billing Tier: ${billing.tier}, Key: ${billing.keySource})`
+      `[CampaignLLMGateway] [gen:${generationId.slice(0, 8)}] Starting stage: ${stage} (Billing Tier: ${billing.tier}, Grounding: ${enableGoogleSearchGrounding})`
     );
 
     let lastError: any = null;
 
-    // 1. Primary Chain: Google Gemini with model fallbacks
+    // 1. Primary Chain: Google Gemini with model fallbacks and intelligent error classification
     for (let i = 0; i < this.GOOGLE_MODELS.length; i++) {
       if (Date.now() >= globalDeadline) break;
 
       const model = this.GOOGLE_MODELS[i];
       const isFallback = i > 0;
-      const attemptStart = Date.now();
+      let modelAttempt = 0;
+      const maxRetriesForModel = 2;
 
-      try {
-        console.log(
-          `[CampaignLLMGateway] Trying Google model: ${model}${isFallback ? ' (FALLBACK)' : ''}`
-        );
+      while (modelAttempt < maxRetriesForModel && Date.now() < globalDeadline) {
+        modelAttempt++;
+        const attemptStart = Date.now();
 
-        const ai = getServerAI();
-        const abortController = new AbortController();
-        const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
+        try {
+          console.log(
+            `[CampaignLLMGateway] Trying Google model: ${model} (attempt ${modelAttempt})${isFallback ? ' (FALLBACK)' : ''}`
+          );
 
-        const config: any = {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          temperature,
-          abortSignal: abortController.signal
-        };
-        if (responseSchema) {
-          config.responseSchema = responseSchema;
-        }
+          const ai = getServerAI();
+          const abortController = new AbortController();
+          const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
 
-        const response = await ai.models.generateContent({
-          model,
-          contents: userInput,
-          config
-        });
-
-        clearTimeout(timeoutHandle);
-        const text = response.text;
-        if (!text || !text.trim()) {
-          throw new Error(`Empty response returned from Google model ${model}`);
-        }
-
-        const parsed = this.cleanAndParseJSON(text);
-
-        if (semanticValidator) {
-          const validation = semanticValidator(parsed);
-          if (!validation.isValid) {
-            throw new Error(`Semantic validation failed: ${(validation.errors || []).join('; ')}`);
+          const config: any = {
+            systemInstruction,
+            responseMimeType: 'application/json',
+            temperature,
+            abortSignal: abortController.signal
+          };
+          if (responseSchema) {
+            config.responseSchema = responseSchema;
           }
-        }
+          if (enableGoogleSearchGrounding) {
+            config.tools = [{ googleSearch: {} }];
+          }
 
-        const latencyMs = Date.now() - attemptStart;
-        console.log(`[CampaignLLMGateway] Success with Google model ${model} (${latencyMs}ms)`);
+          const response = await ai.models.generateContent({
+            model,
+            contents: userInput,
+            config
+          });
 
-        return {
-          data: parsed as T,
-          provider: 'google',
-          modelUsed: model,
-          latencyMs,
-          fallbackUsed: isFallback
-        };
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = err?.message || String(err);
-        console.warn(`[CampaignLLMGateway] Google model ${model} failed: ${errMsg}`);
+          clearTimeout(timeoutHandle);
+          const text = response.text;
+          if (!text || !text.trim()) {
+            throw new Error(`Empty response returned from Google model ${model}`);
+          }
 
-        // Rotate key if quota or rate limit
-        if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-          console.log('[CampaignLLMGateway] Rate limit detected, rotating Gemini client...');
-          rotateGeminiClient();
+          const parsed = this.cleanAndParseJSON(text);
+
+          if (semanticValidator) {
+            const validation = semanticValidator(parsed);
+            if (!validation.isValid) {
+              throw new Error(`Semantic validation failed: ${(validation.errors || []).join('; ')}`);
+            }
+          }
+
+          // Extract optional Google Search grounding citations
+          let citations: Array<{ title: string; url: string }> | undefined = undefined;
+          const candidate = (response as any).candidates?.[0];
+          const chunks = candidate?.groundingMetadata?.groundingChunks;
+          if (Array.isArray(chunks) && chunks.length > 0) {
+            citations = chunks
+              .map((chunk: any) => ({
+                title: chunk.web?.title || 'Web Citation',
+                url: chunk.web?.uri || chunk.web?.url || ''
+              }))
+              .filter((c: any) => Boolean(c.url));
+          }
+
+          const latencyMs = Date.now() - attemptStart;
+          console.log(`[CampaignLLMGateway] Success with Google model ${model} (${latencyMs}ms)`);
+
+          return {
+            data: parsed as T,
+            provider: 'google',
+            modelUsed: model,
+            latencyMs,
+            fallbackUsed: isFallback,
+            citations
+          };
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = err?.message || String(err);
+          const errCode = err?.status || err?.code || '';
+          console.warn(`[CampaignLLMGateway] Google model ${model} (attempt ${modelAttempt}) failed [code: ${errCode}]: ${errMsg}`);
+
+          // Intelligent Error Classification
+          const isRateLimit = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errCode === 429;
+          const isTransient = errMsg.includes('503') || errMsg.includes('500') || errMsg.includes('UNAVAILABLE') || errMsg.includes('OVERLOADED');
+          const isNotFound = errMsg.includes('404') || errMsg.includes('not found') || errMsg.includes('NOT_FOUND');
+          const isBadRequest = errMsg.includes('400') || errMsg.includes('INVALID_ARGUMENT');
+
+          if (isRateLimit) {
+            console.log('[CampaignLLMGateway] 429 rate limit encountered. Rotating Gemini client and backing off...');
+            rotateGeminiClient();
+            await new Promise(r => setTimeout(r, 800 * modelAttempt));
+            // Will retry this model on next iteration of while loop
+            continue;
+          } else if (isTransient && modelAttempt < maxRetriesForModel) {
+            console.log(`[CampaignLLMGateway] ${errCode || '503/500'} transient server error. Backing off 600ms before retry...`);
+            await new Promise(r => setTimeout(r, 600));
+            continue;
+          } else if (isNotFound) {
+            console.log(`[CampaignLLMGateway] Model ${model} returned 404/not available. Advancing to next model in chain immediately.`);
+            break; // Break while loop to move to next model in for loop
+          } else if (isBadRequest) {
+            console.warn(`[CampaignLLMGateway] 400 Invalid Argument. Schema or input violation: ${errMsg}. Advancing to next fallback.`);
+            break;
+          } else {
+            // General or exhausted error for this model, break while loop to try next model
+            break;
+          }
         }
       }
     }
