@@ -24,6 +24,7 @@ import {
 import { campaignLLMGateway } from './campaignLLMGateway.js';
 import { campaignStrategyCritic, CriticEvaluationResult } from './campaignStrategyCritic.js';
 import { campaignDownstreamOrchestrator } from './campaignDownstreamOrchestrator.js';
+import { normalizeDiscoveryAnswers } from './campaignTerritoryEngine.js';
 
 export interface StrategySynthesisRequest {
   generationId: string;
@@ -69,6 +70,8 @@ export class CampaignStrategyCompiler {
       changeReason
     } = request;
 
+    const safeAnswers = normalizeDiscoveryAnswers(discoveryAnswers);
+
     const basePrompt = `
 You are the Chief Strategy Officer at an internationally renowned creative agency.
 Compile the authoritative Master Campaign Strategy based on the following approved Strategic Route.
@@ -104,7 +107,7 @@ APPROVED STRATEGIC ROUTE (TERRITORY):
 - Target Fit: Best for: ${selectedTerritory.targetFit?.bestFor?.join(', ') || 'General'}, Less suitable for: ${selectedTerritory.targetFit?.lessSuitableFor?.join(', ') || 'None'}
 
 DISCOVERY CONTEXT:
-${discoveryAnswers.map(a => `- ${a.questionText}: ${a.answer}`).join('\n') || 'None'}
+${safeAnswers.length > 0 ? safeAnswers.map(a => `- ${a.questionText}: ${a.answer}`).join('\n') : 'None'}
 
 EPISTEMIC HONESTY & PROVENANCE RULES:
 1. Every claim must have an explicit epistemic status and basis:

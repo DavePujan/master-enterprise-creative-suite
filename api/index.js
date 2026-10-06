@@ -714,6 +714,20 @@ var init_aiJobRepository = __esm({
         }
         return true;
       }
+      async cancelJob(jobId, reason = "cancelled") {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) return true;
+        const { error } = await supabase.from("ai_generation_jobs").update({
+          status: "cancelled",
+          error_message: reason,
+          completed_at: (/* @__PURE__ */ new Date()).toISOString()
+        }).eq("id", jobId);
+        if (error) {
+          console.error("AiJobRepository.cancelJob error:", error);
+          return false;
+        }
+        return true;
+      }
       async recordUsage(params) {
         const supabase = getSupabaseAdmin();
         if (!supabase) return true;
@@ -737,6 +751,1706 @@ var init_aiJobRepository = __esm({
       }
     };
     aiJobRepository = new AiJobRepository();
+  }
+});
+
+// apps/api/src/modules/adDirector/services/videoAdHashService.ts
+import crypto3 from "crypto";
+function calculateAdSpecHash(spec) {
+  const normalized = {
+    schemaVersion: spec.schemaVersion || "1.0.0",
+    brief: {
+      brandRef: spec.brief?.brandRef || "",
+      product: spec.brief?.product || "",
+      objective: typeof spec.brief?.objective === "object" && spec.brief.objective !== null && "value" in spec.brief.objective ? spec.brief.objective.value : spec.brief?.objective,
+      targetAudience: spec.brief?.targetAudience,
+      platform: spec.brief?.platform,
+      placement: spec.brief?.placement || "",
+      desiredDurationSeconds: typeof spec.brief?.desiredDurationSeconds === "object" && spec.brief.desiredDurationSeconds !== null && "value" in spec.brief.desiredDurationSeconds ? spec.brief.desiredDurationSeconds.value : spec.brief?.desiredDurationSeconds,
+      aspectRatio: spec.brief?.aspectRatio,
+      language: spec.brief?.language || "en",
+      cta: spec.brief?.cta,
+      offer: spec.brief?.offer || "",
+      keyMessage: typeof spec.brief?.keyMessage === "object" && spec.brief.keyMessage !== null && "value" in spec.brief.keyMessage ? spec.brief.keyMessage.value : spec.brief?.keyMessage,
+      tone: typeof spec.brief?.tone === "object" && spec.brief.tone !== null && "value" in spec.brief.tone ? spec.brief.tone.value : spec.brief?.tone,
+      mustInclude: [...spec.brief?.mustInclude || []].sort(),
+      mustAvoid: [...spec.brief?.mustAvoid || []].sort(),
+      userConstraints: [...spec.brief?.userConstraints || []].sort()
+    },
+    creative: spec.creative ? {
+      concepts: (spec.creative.concepts || []).map((c) => ({
+        conceptId: c.conceptId,
+        name: c.name,
+        oneLinePremise: c.oneLinePremise,
+        coreIdea: c.coreIdea,
+        narrativeMechanism: c.narrativeMechanism,
+        visualMechanism: c.visualMechanism
+      })).sort((a, b) => a.conceptId.localeCompare(b.conceptId)),
+      selectedConceptId: spec.creative.selectedConceptId || null
+    } : null,
+    brand: spec.brand ? {
+      adSpecificOverrides: spec.brand.adSpecificOverrides || {},
+      priorityHierarchy: spec.brand.priorityHierarchy || []
+    } : null,
+    assets: (spec.assets?.assets || []).map((a) => ({
+      assetId: a.assetId,
+      semanticRole: a.semanticRole,
+      targetEntityId: a.targetEntityId || "",
+      priority: a.priority || 1
+    })).sort((a, b) => a.assetId.localeCompare(b.assetId)),
+    characters: (Array.isArray(spec.characters) ? spec.characters : spec.characters?.characters || []).map((c) => ({
+      id: c.characterId || c.id || "",
+      displayName: c.name || c.displayName || "",
+      narrativeRole: c.role || c.narrativeRole || "",
+      appearance: c.appearance || c.visualDescription || {},
+      wardrobe: c.wardrobe || {},
+      referenceAssetIds: [...c.referenceAssetIds || []].sort(),
+      behaviorPersonality: c.behaviorPersonality || "",
+      locks: [...c.locks || []].sort()
+    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")),
+    products: (Array.isArray(spec.products) ? spec.products : spec.products?.products || []).map((p) => ({
+      id: p.productId || p.id || "",
+      name: p.name || "",
+      visualDescription: p.visualDescription || "",
+      shapeForm: p.shapeForm || "",
+      materials: [...p.materials || []].sort(),
+      colorPalette: [...p.colorPalette || []].sort(),
+      packaging: p.packaging || {},
+      branding: p.branding || {},
+      referenceAssetIds: [...p.referenceAssetIds || []].sort(),
+      locks: [...p.locks || []].sort()
+    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")),
+    locations: (Array.isArray(spec.locations) ? spec.locations : spec.locations?.locations || []).map((l) => ({
+      id: l.locationId || l.id || "",
+      name: l.name || "",
+      description: l.description || l.visualDescription || "",
+      architecture: l.architecture || "",
+      spatialCharacteristics: l.spatialCharacteristics || {},
+      lightingCharacteristics: l.lightingCharacteristics || {},
+      palette: [...l.palette || []].sort(),
+      referenceAssetIds: [...l.referenceAssetIds || []].sort(),
+      locks: [...l.locks || []].sort()
+    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")),
+    shots: (spec.shots || []).map((s) => ({
+      shotId: s.shotId,
+      sequence: s.sequence,
+      purpose: s.purpose || "",
+      narrativeRole: s.narrativeRole || "",
+      duration: s.timing?.duration || 0,
+      locationId: s.environment?.locationId || "",
+      subjects: (s.subjects || []).map((sub) => ({
+        entityId: sub.entityId,
+        entityType: sub.entityType,
+        roleInShot: sub.roleInShot
+      })).sort((a, b) => a.entityId.localeCompare(b.entityId)),
+      camera: s.camera || {},
+      lighting: s.lighting || {},
+      visualDirection: s.visualDirection || {},
+      audio: s.audio || {},
+      referencedAssetIds: [...s.referencedAssetIds || []].sort(),
+      continuity: s.continuity || {},
+      constraints: s.constraints || {},
+      qaExpectations: s.qaExpectations || {}
+    })).sort((a, b) => a.sequence - b.sequence),
+    constraints: Array.isArray(spec.constraints) ? spec.constraints.map((c) => ({
+      id: c.id,
+      category: c.category,
+      severity: c.severity,
+      rule: c.rule,
+      targetEntityId: c.targetEntityId || "",
+      targetShotId: c.targetShotId || ""
+    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")) : [],
+    generationRequirements: spec.generationRequirements ? {
+      durationSeconds: spec.generationRequirements.durationSeconds,
+      aspectRatio: spec.generationRequirements.aspectRatio,
+      audioRequired: spec.generationRequirements.audioRequired,
+      firstFrameRequired: spec.generationRequirements.firstFrameRequired,
+      lastFrameRequired: spec.generationRequirements.lastFrameRequired,
+      minimumReferenceCount: spec.generationRequirements.minimumReferenceCount
+    } : null
+  };
+  const canonicalJson = JSON.stringify(normalized);
+  return crypto3.createHash("sha256").update(canonicalJson).digest("hex");
+}
+var init_videoAdHashService = __esm({
+  "apps/api/src/modules/adDirector/services/videoAdHashService.ts"() {
+  }
+});
+
+// packages/contracts/modelCapabilityContracts.ts
+import { z } from "zod";
+var ModelCapabilityZodSchema, ValidateCompatibilityRequestZodSchema, CompileExecutionPlanRequestZodSchema;
+var init_modelCapabilityContracts = __esm({
+  "packages/contracts/modelCapabilityContracts.ts"() {
+    ModelCapabilityZodSchema = z.object({
+      provider: z.enum(["google", "fal", "runway", "kling", "luma", "seedance", "minimax"]),
+      model: z.string().min(1),
+      displayName: z.string().min(1),
+      supported_durations: z.array(z.number().positive()),
+      aspect_ratios: z.array(z.enum(["16:9", "9:16", "1:1", "4:5", "21:9"])),
+      resolutions: z.array(z.enum(["720p", "1080p", "4k"])),
+      max_references: z.number().int().nonnegative(),
+      image_to_video: z.boolean(),
+      first_frame: z.boolean(),
+      last_frame: z.boolean(),
+      character_reference: z.boolean(),
+      audio: z.boolean(),
+      camera_control: z.boolean(),
+      motion_strength: z.boolean(),
+      negative_prompt: z.boolean(),
+      max_prompt_length: z.number().int().positive(),
+      credit_cost: z.number().nonnegative(),
+      status: z.enum(["AVAILABLE", "CONFIGURED", "DEPRECATED"]),
+      other_capabilities: z.record(z.any()).optional()
+    });
+    ValidateCompatibilityRequestZodSchema = z.object({
+      modelId: z.string().min(1)
+    });
+    CompileExecutionPlanRequestZodSchema = z.object({
+      modelId: z.string().min(1),
+      resolution: z.enum(["720p", "1080p", "4k"]).optional().default("1080p"),
+      userPromptOverrides: z.record(z.string()).optional()
+    });
+  }
+});
+
+// packages/contracts/providerAdapterContracts.ts
+import { z as z2 } from "zod";
+var NormalizedErrorCodeZodSchema, NormalizedProviderErrorZodSchema, ProviderExecutionRequestZodSchema, ProviderGenerationResultZodSchema;
+var init_providerAdapterContracts = __esm({
+  "packages/contracts/providerAdapterContracts.ts"() {
+    NormalizedErrorCodeZodSchema = z2.enum([
+      "INVALID_REQUEST",
+      "UNSUPPORTED_CONFIGURATION",
+      "AUTHENTICATION_ERROR",
+      "RATE_LIMITED",
+      "PROVIDER_UNAVAILABLE",
+      "TIMEOUT",
+      "CONTENT_REJECTED",
+      "UNKNOWN_PROVIDER_ERROR"
+    ]);
+    NormalizedProviderErrorZodSchema = z2.object({
+      code: NormalizedErrorCodeZodSchema,
+      message: z2.string(),
+      rawError: z2.string().optional(),
+      retryable: z2.boolean(),
+      provider: z2.enum(["google", "fal", "seedance"]),
+      model: z2.string(),
+      retryAfterSeconds: z2.number().optional()
+    });
+    ProviderExecutionRequestZodSchema = z2.object({
+      projectId: z2.string(),
+      adId: z2.string().optional(),
+      shotId: z2.string(),
+      sequence: z2.number().int().positive(),
+      provider: z2.enum(["google", "fal", "seedance"]),
+      model: z2.string(),
+      prompt: z2.string(),
+      negativePrompt: z2.string().optional(),
+      duration: z2.number().positive(),
+      aspectRatio: z2.enum(["16:9", "9:16", "1:1", "4:5", "21:9"]),
+      resolution: z2.enum(["720p", "1080p", "4k"]),
+      references: z2.array(
+        z2.object({
+          assetId: z2.string(),
+          url: z2.string(),
+          role: z2.enum(["first_frame", "last_frame", "character_ref", "product_ref", "location_ref", "style_ref"]),
+          type: z2.enum(["character", "product", "location", "prop", "style"]),
+          label: z2.string(),
+          targetEntityId: z2.string().optional()
+        })
+      ),
+      settings: z2.record(z2.any()).optional(),
+      workspaceId: z2.string(),
+      idempotencyKey: z2.string().optional()
+    });
+    ProviderGenerationResultZodSchema = z2.object({
+      provider: z2.enum(["google", "fal", "seedance"]),
+      model: z2.string(),
+      providerRequestId: z2.string(),
+      status: z2.enum(["queued", "processing", "completed", "failed", "cancelled"]),
+      outputUrl: z2.string().optional(),
+      outputAssetId: z2.string().optional(),
+      error: NormalizedProviderErrorZodSchema.optional(),
+      progress: z2.number().min(0).max(100).optional(),
+      metadata: z2.record(z2.any()).optional()
+    });
+  }
+});
+
+// packages/contracts/executionQueueContracts.ts
+import { z as z3 } from "zod";
+var LaunchExecutionRequestZodSchema, ExecutionStatusZodSchema, ShotJobExecutionStateZodSchema;
+var init_executionQueueContracts = __esm({
+  "packages/contracts/executionQueueContracts.ts"() {
+    LaunchExecutionRequestZodSchema = z3.object({
+      modelId: z3.string().min(1, "modelId is required"),
+      options: z3.object({
+        resolution: z3.enum(["720p", "1080p", "4k"]).optional(),
+        userPromptOverrides: z3.record(z3.string()).optional(),
+        idempotencyKey: z3.string().optional()
+      }).optional()
+    });
+    ExecutionStatusZodSchema = z3.enum([
+      "queued",
+      "processing",
+      "completed",
+      "failed",
+      "partial_failure",
+      "cancelled"
+    ]);
+    ShotJobExecutionStateZodSchema = z3.enum([
+      "queued",
+      "submitting",
+      "submitted",
+      "processing",
+      "completed",
+      "failed",
+      "cancelled"
+    ]);
+  }
+});
+
+// packages/contracts/adSpecContracts.ts
+import { z as z4 } from "zod";
+var StableEntityIdRegex, AdBriefZodSchema, SemanticAssetItemZodSchema, AssetBibleZodSchema, CharacterEntityZodSchema, ProductEntityZodSchema, LocationEntityZodSchema, ShotTimingZodSchema, ShotSubjectZodSchema, AdShotZodSchema, AdConstraintZodSchema, GenerationRequirementsZodSchema, DecisionProvenanceZodSchema, AdSpecZodSchema, DiscoveryQuestionOptionZodSchema, DiscoveryQuestionZodSchema, KnownFieldZodSchema, DiscoveryContradictionZodSchema, DiscoveryAnswerZodSchema, DiscoveryStateZodSchema, InitDiscoveryRequestZodSchema, AnswerDiscoveryRequestZodSchema, ConfirmBriefRequestZodSchema, RequiredAssetItemZodSchema, VisualDirectionConceptZodSchema, CreativeConceptZodSchema, GenerateConceptsRequestZodSchema, SelectConceptRequestZodSchema, RegenerateConceptsRequestZodSchema, GenerateDirectorsPlanRequestZodSchema, ConfirmDirectorsPlanRequestZodSchema, ProposeRevisionRequestZodSchema, ApplyRevisionRequestZodSchema;
+var init_adSpecContracts = __esm({
+  "packages/contracts/adSpecContracts.ts"() {
+    init_modelCapabilityContracts();
+    init_providerAdapterContracts();
+    init_executionQueueContracts();
+    StableEntityIdRegex = {
+      character: /^char_[a-zA-Z0-9_-]+$/,
+      product: /^(product|prod)_[a-zA-Z0-9_-]+$/,
+      location: /^(location|loc)_[a-zA-Z0-9_-]+$/,
+      shot: /^shot_[a-zA-Z0-9_-]+$/,
+      asset: /^asset_[a-zA-Z0-9_-]+$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    };
+    AdBriefZodSchema = z4.object({
+      brandRef: z4.string().min(1),
+      product: z4.string().min(1),
+      objective: z4.any(),
+      targetAudience: z4.any(),
+      platform: z4.enum(["instagram_reels", "tiktok_in_feed", "youtube_shorts", "linkedin_video", "connected_tv", "generic"]),
+      placement: z4.string().optional(),
+      desiredDurationSeconds: z4.any(),
+      aspectRatio: z4.enum(["16:9", "9:16", "1:1", "4:5"]),
+      language: z4.string().default("en"),
+      cta: z4.any(),
+      offer: z4.string().optional(),
+      keyMessage: z4.any(),
+      desiredResponse: z4.string().default(""),
+      tone: z4.any(),
+      emotionalGoal: z4.object({
+        primaryEmotion: z4.string().default(""),
+        finalImpression: z4.string().default("")
+      }).optional(),
+      mustInclude: z4.array(z4.string()).default([]),
+      mustAvoid: z4.array(z4.string()).default([]),
+      referencesAndInspiration: z4.array(z4.string()).default([]),
+      userConstraints: z4.array(z4.string()).default([])
+    });
+    SemanticAssetItemZodSchema = z4.object({
+      assetId: z4.string().min(1),
+      semanticRole: z4.string(),
+      targetEntityId: z4.string().optional(),
+      label: z4.string(),
+      url: z4.string().optional(),
+      mimeType: z4.string().optional(),
+      priority: z4.union([z4.literal(1), z4.literal(2), z4.literal(3)]).default(1),
+      usageConstraints: z4.array(z4.string()).default([]),
+      provenance: z4.string().default("user_provided")
+    });
+    AssetBibleZodSchema = z4.object({
+      assets: z4.array(SemanticAssetItemZodSchema).default([])
+    });
+    CharacterEntityZodSchema = z4.object({
+      id: z4.string().regex(StableEntityIdRegex.character, "Character ID must follow format char_*"),
+      name: z4.string().optional(),
+      displayName: z4.string().min(1),
+      narrativeRole: z4.string().default("protagonist"),
+      referenceAssetIds: z4.array(z4.string()).default([]),
+      appearance: z4.record(z4.any()).default({}),
+      wardrobe: z4.record(z4.any()).default({}),
+      behaviorPersonality: z4.string().default(""),
+      identityLockStrength: z4.enum(["strict", "normal", "flexible"]).optional(),
+      locks: z4.array(z4.string()).default([]),
+      continuityConstraints: z4.array(z4.string()).default([]),
+      forbiddenChanges: z4.array(z4.string()).default([])
+    });
+    ProductEntityZodSchema = z4.object({
+      id: z4.string().regex(StableEntityIdRegex.product, "Product ID must follow format product_* or prod_*"),
+      name: z4.string().min(1),
+      referenceAssetIds: z4.array(z4.string()).default([]),
+      visualDescription: z4.string().default(""),
+      shapeForm: z4.string().default(""),
+      materials: z4.array(z4.string()).default([]),
+      colorPalette: z4.array(z4.string()).default([]),
+      packaging: z4.record(z4.any()).default({}),
+      branding: z4.record(z4.any()).default({}),
+      labelLogoConstraints: z4.array(z4.string()).default([]),
+      orientationConstraints: z4.array(z4.string()).default([]),
+      allowedTransformations: z4.array(z4.string()).default([]),
+      forbiddenTransformations: z4.array(z4.string()).default([]),
+      continuityRequirements: z4.array(z4.string()).default([]),
+      locks: z4.array(z4.string()).default([])
+    });
+    LocationEntityZodSchema = z4.object({
+      id: z4.string().regex(StableEntityIdRegex.location, "Location ID must follow format location_* or loc_*"),
+      name: z4.string().min(1),
+      description: z4.string().default(""),
+      referenceAssetIds: z4.array(z4.string()).default([]),
+      architecture: z4.string().default(""),
+      spatialCharacteristics: z4.record(z4.any()).default({}),
+      lightingCharacteristics: z4.record(z4.any()).default({}),
+      weather: z4.string().optional(),
+      palette: z4.array(z4.string()).default([]),
+      atmosphere: z4.string().default(""),
+      continuityConstraints: z4.array(z4.string()).default([]),
+      locks: z4.array(z4.string()).default([])
+    });
+    ShotTimingZodSchema = z4.object({
+      startTime: z4.number().nonnegative(),
+      endTime: z4.number().positive(),
+      duration: z4.number().positive()
+    }).refine((data) => data.endTime >= data.startTime, {
+      message: "endTime must be greater than or equal to startTime"
+    });
+    ShotSubjectZodSchema = z4.object({
+      entityId: z4.string().min(1),
+      entityType: z4.enum(["character", "product", "prop"]),
+      roleInShot: z4.string().default("subject"),
+      focalPriority: z4.union([z4.literal(1), z4.literal(2), z4.literal(3)]).default(1)
+    });
+    AdShotZodSchema = z4.object({
+      shotId: z4.string().regex(StableEntityIdRegex.shot, "Shot ID must follow format shot_*"),
+      sequence: z4.number().int().positive(),
+      purpose: z4.string().default(""),
+      narrativeRole: z4.string().default(""),
+      timing: ShotTimingZodSchema,
+      subjects: z4.array(ShotSubjectZodSchema).default([]),
+      action: z4.record(z4.any()).default({}),
+      environment: z4.object({
+        locationId: z4.string(),
+        environmentState: z4.string().optional()
+      }),
+      camera: z4.record(z4.any()).default({}),
+      lighting: z4.record(z4.any()).default({}),
+      visualDirection: z4.record(z4.any()).default({}),
+      audio: z4.record(z4.any()).default({}),
+      transitions: z4.record(z4.any()).default({}),
+      referencedAssetIds: z4.array(z4.string()).default([]),
+      continuity: z4.record(z4.any()).default({}),
+      constraints: z4.record(z4.any()).default({}),
+      qaExpectations: z4.record(z4.any()).default({})
+    });
+    AdConstraintZodSchema = z4.object({
+      id: z4.string().min(1),
+      category: z4.string(),
+      severity: z4.enum(["must", "should", "must_not"]),
+      rule: z4.string().min(1),
+      targetEntityId: z4.string().optional(),
+      targetShotId: z4.string().optional()
+    });
+    GenerationRequirementsZodSchema = z4.object({
+      durationSeconds: z4.number().positive(),
+      aspectRatio: z4.enum(["16:9", "9:16", "1:1", "4:5"]),
+      audioRequired: z4.boolean().default(false),
+      firstFrameRequired: z4.boolean().default(false),
+      lastFrameRequired: z4.boolean().default(false),
+      minimumReferenceCount: z4.number().int().nonnegative().default(0),
+      videoInputRequired: z4.boolean().optional(),
+      multiShotRequired: z4.boolean().optional(),
+      continuityPriority: z4.enum(["strict", "relaxed"]).default("strict"),
+      qualityPriority: z4.enum(["draft", "cinematic_pro", "broadcast_master"]).default("cinematic_pro"),
+      preferredProvider: z4.string().optional(),
+      preferredModel: z4.string().optional()
+    });
+    DecisionProvenanceZodSchema = z4.object({
+      source: z4.enum([
+        "user",
+        "user_provided",
+        "user_selected",
+        "user_requested",
+        "ai_inferred",
+        "ai_proposed",
+        "ai_optimized",
+        "system",
+        "system_derived",
+        "system_repaired",
+        "model_constraint"
+      ]),
+      confidence: z4.number().min(0).max(1).default(1),
+      status: z4.enum(["unconfirmed", "confirmed", "approved", "user_confirmed"]).default("unconfirmed"),
+      locked: z4.boolean().default(false),
+      confirmedAt: z4.string().optional(),
+      confirmedBy: z4.string().optional(),
+      reason: z4.string().optional()
+    });
+    AdSpecZodSchema = z4.object({
+      schemaVersion: z4.literal("1.0.0"),
+      identity: z4.object({
+        adId: z4.string().min(1),
+        specVersion: z4.number().int().positive(),
+        revisionId: z4.string(),
+        parentVersionId: z4.string().optional(),
+        creativeState: z4.string(),
+        executionState: z4.string(),
+        title: z4.string().min(1),
+        workspaceId: z4.string().min(1),
+        projectId: z4.string().optional(),
+        createdBy: z4.string().optional(),
+        createdAt: z4.string(),
+        updatedAt: z4.string()
+      }),
+      brief: AdBriefZodSchema,
+      creative: z4.record(z4.any()).default({}),
+      brand: z4.record(z4.any()).default({}),
+      assets: AssetBibleZodSchema,
+      characters: z4.array(CharacterEntityZodSchema).default([]),
+      products: z4.array(ProductEntityZodSchema).default([]),
+      locations: z4.array(LocationEntityZodSchema).default([]),
+      story: z4.record(z4.any()).default({}),
+      shots: z4.array(AdShotZodSchema).min(1, "AdSpec must contain at least one shot"),
+      continuity: z4.record(z4.any()).default({}),
+      constraints: z4.array(AdConstraintZodSchema).default([]),
+      generationIntent: z4.record(z4.any()).default({}),
+      generationRequirements: GenerationRequirementsZodSchema.optional(),
+      decisionMetadata: z4.record(DecisionProvenanceZodSchema).default({}),
+      provenanceRegistry: z4.record(DecisionProvenanceZodSchema).optional(),
+      validationStatus: z4.record(z4.any()).optional(),
+      metadata: z4.record(z4.any()).default({})
+    });
+    DiscoveryQuestionOptionZodSchema = z4.object({
+      label: z4.string(),
+      value: z4.string(),
+      description: z4.string().optional()
+    });
+    DiscoveryQuestionZodSchema = z4.object({
+      id: z4.string().min(1),
+      field: z4.string().min(1),
+      question: z4.string().min(1),
+      reason: z4.string().min(1),
+      priority: z4.enum(["BLOCKING", "IMPORTANT", "OPTIONAL"]),
+      inputType: z4.enum([
+        "text",
+        "textarea",
+        "single_choice",
+        "multi_choice",
+        "number",
+        "url",
+        "asset_selection",
+        "boolean"
+      ]),
+      options: z4.array(DiscoveryQuestionOptionZodSchema).optional(),
+      required: z4.boolean().default(true),
+      allowCustom: z4.boolean().default(true),
+      dependsOn: z4.string().optional(),
+      status: z4.enum(["PENDING", "ANSWERED", "SKIPPED"]).default("PENDING")
+    });
+    KnownFieldZodSchema = z4.object({
+      field: z4.string().min(1),
+      value: z4.any(),
+      source: z4.enum(["USER", "INFERRED", "ASSET", "SYSTEM"]),
+      confidence: z4.number().min(0).max(1).optional()
+    });
+    DiscoveryContradictionZodSchema = z4.object({
+      type: z4.literal("CONTRADICTION"),
+      fields: z4.array(z4.string()).min(1),
+      explanation: z4.string().min(1),
+      resolutionQuestion: z4.string().min(1)
+    });
+    DiscoveryAnswerZodSchema = z4.object({
+      questionId: z4.string().min(1),
+      rawAnswer: z4.union([z4.string(), z4.array(z4.string())]),
+      parsedValue: z4.any().optional(),
+      answeredAt: z4.string()
+    });
+    DiscoveryStateZodSchema = z4.object({
+      projectId: z4.string().min(1),
+      workspaceId: z4.string().min(1),
+      status: z4.enum(["DISCOVERY", "WAITING_FOR_USER", "READY_FOR_CREATIVE", "BLOCKED"]),
+      brief: z4.record(z4.any()),
+      knownFields: z4.array(KnownFieldZodSchema).default([]),
+      unknownFields: z4.array(z4.string()).default([]),
+      ambiguities: z4.array(z4.string()).default([]),
+      questions: z4.array(DiscoveryQuestionZodSchema).default([]),
+      answers: z4.array(DiscoveryAnswerZodSchema).default([]),
+      contradictions: z4.array(DiscoveryContradictionZodSchema).default([]),
+      completeness: z4.number().min(0).max(1).default(0),
+      blockingIssues: z4.array(z4.string()).default([]),
+      isBriefConfirmed: z4.boolean().default(false),
+      confirmedAt: z4.string().optional(),
+      updatedAt: z4.string()
+    });
+    InitDiscoveryRequestZodSchema = z4.object({
+      initialPrompt: z4.string().min(1, "Initial prompt cannot be empty"),
+      assetIds: z4.array(z4.string()).optional()
+    });
+    AnswerDiscoveryRequestZodSchema = z4.object({
+      answers: z4.array(z4.object({
+        questionId: z4.string().min(1),
+        answer: z4.union([z4.string(), z4.array(z4.string())])
+      })).min(1, "At least one answer is required")
+    });
+    ConfirmBriefRequestZodSchema = z4.object({
+      briefOverrides: z4.record(z4.any()).optional()
+    });
+    RequiredAssetItemZodSchema = z4.object({
+      role: z4.string(),
+      description: z4.string(),
+      exists: z4.boolean(),
+      assetId: z4.string().optional()
+    });
+    VisualDirectionConceptZodSchema = z4.object({
+      visualLanguage: z4.string(),
+      environment: z4.string(),
+      colorDirection: z4.string(),
+      energy: z4.string(),
+      realismLevel: z4.string()
+    });
+    CreativeConceptZodSchema = z4.object({
+      id: z4.string().min(1),
+      projectId: z4.string().min(1),
+      workspaceId: z4.string().min(1),
+      briefVersion: z4.number().int().positive(),
+      name: z4.string().min(1),
+      oneLineIdea: z4.string().min(1),
+      strategicFoundation: z4.string().min(1),
+      creativeMechanism: z4.string().min(1),
+      hook: z4.object({
+        type: z4.string().min(1),
+        description: z4.string().min(1)
+      }),
+      premise: z4.string().min(1),
+      emotionalArc: z4.string().min(1),
+      visualDirection: VisualDirectionConceptZodSchema,
+      narrativeStructure: z4.string().min(1),
+      productRole: z4.enum([
+        "protagonist",
+        "enabler",
+        "solution",
+        "transformation_trigger",
+        "visual_centerpiece",
+        "supporting_element",
+        "proof_mechanism"
+      ]),
+      messageDelivery: z4.enum([
+        "visual_demonstration",
+        "dialogue",
+        "voiceover",
+        "on_screen_text",
+        "behavior",
+        "transformation",
+        "comparison",
+        "narrative_consequence",
+        "product_interaction"
+      ]),
+      differentiation: z4.string().min(1),
+      risks: z4.array(z4.string()).default([]),
+      strengths: z4.array(z4.string()).default([]),
+      estimatedComplexity: z4.enum(["low", "medium", "high"]).default("medium"),
+      requiredAssets: z4.array(RequiredAssetItemZodSchema).default([]),
+      conceptStatus: z4.enum(["DRAFT", "READY_FOR_REVIEW", "SELECTED", "REJECTED", "ARCHIVED"]).default("READY_FOR_REVIEW"),
+      provenance: z4.object({
+        generatedBy: z4.enum(["ai_director", "user"]).default("ai_director"),
+        modelUsed: z4.string().optional(),
+        generatedAt: z4.string(),
+        selectedAt: z4.string().optional(),
+        selectedBy: z4.string().optional()
+      }),
+      createdAt: z4.string(),
+      updatedAt: z4.string()
+    });
+    GenerateConceptsRequestZodSchema = z4.object({
+      targetCount: z4.number().int().min(1).max(10).optional().default(3),
+      creativeNotes: z4.string().optional()
+    });
+    SelectConceptRequestZodSchema = z4.object({
+      userRationale: z4.string().optional()
+    });
+    RegenerateConceptsRequestZodSchema = z4.object({
+      targetCount: z4.number().int().min(1).max(10).optional().default(3),
+      creativeNotes: z4.string().optional(),
+      archivePrevious: z4.boolean().optional().default(true)
+    });
+    GenerateDirectorsPlanRequestZodSchema = z4.object({
+      targetDurationSeconds: z4.number().positive().optional(),
+      cinematographyStyle: z4.string().optional(),
+      pacingPreference: z4.string().optional()
+    });
+    ConfirmDirectorsPlanRequestZodSchema = z4.object({
+      userNotes: z4.string().optional()
+    });
+    ProposeRevisionRequestZodSchema = z4.object({
+      instruction: z4.string().min(1, "Revision instruction cannot be empty"),
+      targetScope: z4.string().optional(),
+      targetEntityId: z4.string().optional()
+    });
+    ApplyRevisionRequestZodSchema = z4.object({
+      instruction: z4.string().min(1, "Revision instruction cannot be empty"),
+      confirmedOperations: z4.array(z4.any()).optional(),
+      userRationale: z4.string().optional()
+    });
+  }
+});
+
+// apps/api/src/modules/adDirector/services/videoAdValidationService.ts
+var VideoAdValidationService, videoAdValidationService;
+var init_videoAdValidationService = __esm({
+  "apps/api/src/modules/adDirector/services/videoAdValidationService.ts"() {
+    init_adSpecContracts();
+    VideoAdValidationService = class {
+      /**
+       * Deterministic multi-stage validation for AdSpec v1.
+       * 1. Structural Schema Validation (Zod)
+       * 2. Referential Integrity (Characters, Products, Locations, Assets)
+       * 3. Temporal & Duration Consistency
+       * 4. Continuity & Dependency Sanity
+       * 5. Decision Lock Protection
+       */
+      validateAdSpec(spec, previousVersionSpec) {
+        const errors = [];
+        const warnings = [];
+        const parseResult = AdSpecZodSchema.safeParse(spec);
+        if (!parseResult.success) {
+          for (const issue of parseResult.error.issues) {
+            errors.push({
+              code: "SCHEMA_VALIDATION_ERROR",
+              message: issue.message,
+              path: issue.path.join("."),
+              severity: "error"
+            });
+          }
+          return { valid: false, errors, warnings };
+        }
+        const declaredCharacters = new Set((spec.characters || []).map((c) => c.id));
+        const declaredProducts = new Set((spec.products || []).map((p) => p.id));
+        const declaredLocations = new Set((spec.locations || []).map((l) => l.id));
+        const declaredAssets = new Set((spec.assets?.assets || []).map((a) => a.assetId));
+        for (const char of spec.characters || []) {
+          if (!StableEntityIdRegex.character.test(char.id)) {
+            errors.push({
+              code: "INVALID_CHARACTER_ID_FORMAT",
+              message: `Character ID '${char.id}' must follow format char_*`,
+              path: `characters.${char.id}`,
+              severity: "error",
+              targetEntityId: char.id
+            });
+          }
+          for (const assetId of char.referenceAssetIds || []) {
+            if (!declaredAssets.has(assetId)) {
+              warnings.push({
+                code: "UNDECLARED_ASSET_REFERENCE",
+                message: `Character '${char.id}' references undeclared assetId '${assetId}'`,
+                path: `characters.${char.id}.referenceAssetIds`,
+                severity: "warning",
+                targetEntityId: char.id
+              });
+            }
+          }
+        }
+        for (const prod of spec.products || []) {
+          if (!StableEntityIdRegex.product.test(prod.id)) {
+            errors.push({
+              code: "INVALID_PRODUCT_ID_FORMAT",
+              message: `Product ID '${prod.id}' must follow format product_* or prod_*`,
+              path: `products.${prod.id}`,
+              severity: "error",
+              targetEntityId: prod.id
+            });
+          }
+          for (const assetId of prod.referenceAssetIds || []) {
+            if (!declaredAssets.has(assetId)) {
+              warnings.push({
+                code: "UNDECLARED_ASSET_REFERENCE",
+                message: `Product '${prod.id}' references undeclared assetId '${assetId}'`,
+                path: `products.${prod.id}.referenceAssetIds`,
+                severity: "warning",
+                targetEntityId: prod.id
+              });
+            }
+          }
+        }
+        for (const loc of spec.locations || []) {
+          if (!StableEntityIdRegex.location.test(loc.id)) {
+            errors.push({
+              code: "INVALID_LOCATION_ID_FORMAT",
+              message: `Location ID '${loc.id}' must follow format location_* or loc_*`,
+              path: `locations.${loc.id}`,
+              severity: "error",
+              targetEntityId: loc.id
+            });
+          }
+          for (const assetId of loc.referenceAssetIds || []) {
+            if (!declaredAssets.has(assetId)) {
+              warnings.push({
+                code: "UNDECLARED_ASSET_REFERENCE",
+                message: `Location '${loc.id}' references undeclared assetId '${assetId}'`,
+                path: `locations.${loc.id}.referenceAssetIds`,
+                severity: "warning",
+                targetEntityId: loc.id
+              });
+            }
+          }
+        }
+        let calculatedDuration = 0;
+        const shotSequences = /* @__PURE__ */ new Set();
+        const shotIdMap = /* @__PURE__ */ new Map();
+        for (const shot of spec.shots || []) {
+          if (!StableEntityIdRegex.shot.test(shot.shotId)) {
+            errors.push({
+              code: "INVALID_SHOT_ID_FORMAT",
+              message: `Shot ID '${shot.shotId}' must follow format shot_*`,
+              path: `shots.${shot.shotId}`,
+              severity: "error",
+              targetShotId: shot.shotId
+            });
+          }
+          if (shotSequences.has(shot.sequence)) {
+            errors.push({
+              code: "DUPLICATE_SHOT_SEQUENCE",
+              message: `Duplicate sequence number ${shot.sequence} found for shot '${shot.shotId}'`,
+              path: `shots.${shot.shotId}.sequence`,
+              severity: "error",
+              targetShotId: shot.shotId
+            });
+          }
+          shotSequences.add(shot.sequence);
+          shotIdMap.set(shot.shotId, shot.sequence);
+          calculatedDuration += shot.timing?.duration || 0;
+          if (shot.environment?.locationId && !declaredLocations.has(shot.environment.locationId)) {
+            errors.push({
+              code: "LOCATION_NOT_FOUND",
+              message: `Shot '${shot.shotId}' references undeclared location '${shot.environment.locationId}'`,
+              path: `shots.${shot.shotId}.environment.locationId`,
+              severity: "error",
+              targetShotId: shot.shotId,
+              targetEntityId: shot.environment.locationId
+            });
+          }
+          for (const subject of shot.subjects || []) {
+            if (subject.entityType === "character" && !declaredCharacters.has(subject.entityId)) {
+              errors.push({
+                code: "CHARACTER_NOT_FOUND",
+                message: `Shot '${shot.shotId}' references undeclared character '${subject.entityId}'`,
+                path: `shots.${shot.shotId}.subjects`,
+                severity: "error",
+                targetShotId: shot.shotId,
+                targetEntityId: subject.entityId
+              });
+            } else if (subject.entityType === "product" && !declaredProducts.has(subject.entityId)) {
+              errors.push({
+                code: "PRODUCT_NOT_FOUND",
+                message: `Shot '${shot.shotId}' references undeclared product '${subject.entityId}'`,
+                path: `shots.${shot.shotId}.subjects`,
+                severity: "error",
+                targetShotId: shot.shotId,
+                targetEntityId: subject.entityId
+              });
+            }
+          }
+          for (const assetId of shot.referencedAssetIds || []) {
+            if (!declaredAssets.has(assetId)) {
+              warnings.push({
+                code: "UNDECLARED_ASSET_REFERENCE",
+                message: `Shot '${shot.shotId}' references undeclared assetId '${assetId}'`,
+                path: `shots.${shot.shotId}.referencedAssetIds`,
+                severity: "warning",
+                targetShotId: shot.shotId
+              });
+            }
+          }
+        }
+        const desiredDuration = typeof spec.brief?.desiredDurationSeconds === "object" && spec.brief.desiredDurationSeconds !== null && "value" in spec.brief.desiredDurationSeconds ? Number(spec.brief.desiredDurationSeconds.value) : Number(spec.brief?.desiredDurationSeconds || 0);
+        if (desiredDuration > 0 && Math.abs(calculatedDuration - desiredDuration) > 0.5) {
+          errors.push({
+            code: "TOTAL_DURATION_MISMATCH",
+            message: `Sum of shot durations (${calculatedDuration.toFixed(1)}s) does not match brief desired duration (${desiredDuration.toFixed(1)}s)`,
+            path: "brief.desiredDurationSeconds",
+            severity: "error"
+          });
+        }
+        for (const shot of spec.shots || []) {
+          const currentSeq = shot.sequence;
+          const inheritedStates = shot.continuity?.inheritedStates || [];
+          for (const inherited of inheritedStates) {
+            const sourceSeq = shotIdMap.get(inherited.sourceShotId);
+            if (sourceSeq === void 0) {
+              errors.push({
+                code: "CONTINUITY_SOURCE_NOT_FOUND",
+                message: `Shot '${shot.shotId}' inherits from nonexistent shot '${inherited.sourceShotId}'`,
+                path: `shots.${shot.shotId}.continuity`,
+                severity: "error",
+                targetShotId: shot.shotId
+              });
+            } else if (sourceSeq >= currentSeq) {
+              errors.push({
+                code: "CONTINUITY_CYCLE_OR_FORWARD_DEP",
+                message: `Shot '${shot.shotId}' (seq ${currentSeq}) has invalid forward/circular dependency on shot '${inherited.sourceShotId}' (seq ${sourceSeq})`,
+                path: `shots.${shot.shotId}.continuity`,
+                severity: "error",
+                targetShotId: shot.shotId
+              });
+            }
+          }
+        }
+        if (previousVersionSpec) {
+          const lockedDecisions = previousVersionSpec.decisionMetadata || {};
+          for (const [fieldPath, decision] of Object.entries(lockedDecisions)) {
+            if (decision.locked) {
+              const prevVal = this.getValueAtPath(previousVersionSpec, fieldPath);
+              const currentVal = this.getValueAtPath(spec, fieldPath);
+              if (prevVal !== void 0 && currentVal !== void 0 && JSON.stringify(prevVal) !== JSON.stringify(currentVal)) {
+                errors.push({
+                  code: "LOCKED_DECISION_MUTATION",
+                  message: `Field '${fieldPath}' is locked by decision '${decision.reason || "user_confirmed"}' and cannot be mutated without explicit unlock`,
+                  path: fieldPath,
+                  severity: "error"
+                });
+              }
+            }
+          }
+          for (const prevProd of previousVersionSpec.products || []) {
+            const currProd = (spec.products || []).find((p) => p.id === prevProd.id);
+            if (currProd) {
+              const prodLocks = prevProd.locks || [];
+              if (prodLocks.includes("geometry") && prevProd.shapeForm !== currProd.shapeForm) {
+                errors.push({
+                  code: "LOCKED_DECISION_MUTATION",
+                  message: `Product '${prevProd.id}' geometry is locked and cannot be mutated without explicit unlock`,
+                  path: `products.${prevProd.id}.geometry`,
+                  severity: "error",
+                  targetEntityId: prevProd.id
+                });
+              }
+              if (prodLocks.includes("packaging") && JSON.stringify(prevProd.packaging) !== JSON.stringify(currProd.packaging)) {
+                errors.push({
+                  code: "LOCKED_DECISION_MUTATION",
+                  message: `Product '${prevProd.id}' packaging is locked and cannot be mutated without explicit unlock`,
+                  path: `products.${prevProd.id}.packaging`,
+                  severity: "error",
+                  targetEntityId: prevProd.id
+                });
+              }
+            }
+          }
+          for (const prevChar of previousVersionSpec.characters || []) {
+            const currChar = (spec.characters || []).find((c) => c.id === prevChar.id);
+            if (currChar) {
+              const charLocks = prevChar.locks || [];
+              if (charLocks.includes("wardrobe") && JSON.stringify(prevChar.wardrobe) !== JSON.stringify(currChar.wardrobe)) {
+                errors.push({
+                  code: "LOCKED_DECISION_MUTATION",
+                  message: `Character '${prevChar.id}' wardrobe is locked and cannot be mutated without explicit unlock`,
+                  path: `characters.${prevChar.id}.wardrobe`,
+                  severity: "error",
+                  targetEntityId: prevChar.id
+                });
+              }
+            }
+          }
+        }
+        return {
+          valid: errors.length === 0,
+          errors,
+          warnings
+        };
+      }
+      getValueAtPath(obj, path2) {
+        const parts = path2.split(".");
+        let curr = obj;
+        for (let i = 0; i < parts.length; i++) {
+          if (curr === null || curr === void 0) return void 0;
+          const part = parts[i];
+          if (Array.isArray(curr)) {
+            const item = curr.find((el) => el?.id === part || el?.shotId === part);
+            if (item) {
+              curr = item;
+              continue;
+            }
+          }
+          if (curr && typeof curr === "object" && part === "geometry" && "shapeForm" in curr) {
+            curr = curr.shapeForm;
+            continue;
+          }
+          curr = curr[part];
+        }
+        return curr;
+      }
+    };
+    videoAdValidationService = new VideoAdValidationService();
+  }
+});
+
+// apps/api/src/modules/adDirector/repositories/videoAdProjectRepository.ts
+var videoAdProjectRepository_exports = {};
+__export(videoAdProjectRepository_exports, {
+  VideoAdProjectRepository: () => VideoAdProjectRepository,
+  videoAdProjectRepository: () => videoAdProjectRepository
+});
+var VideoAdProjectRepository, videoAdProjectRepository;
+var init_videoAdProjectRepository = __esm({
+  "apps/api/src/modules/adDirector/repositories/videoAdProjectRepository.ts"() {
+    init_supabaseClient();
+    init_videoAdHashService();
+    init_videoAdValidationService();
+    VideoAdProjectRepository = class {
+      constructor() {
+        // In-memory fallback maps for resilience during local testing and development
+        this.inMemoryProjects = /* @__PURE__ */ new Map();
+        this.inMemoryVersions = /* @__PURE__ */ new Map();
+        this.inMemoryExecutions = /* @__PURE__ */ new Map();
+      }
+      /**
+       * Create a new Video Ad Project with an initial AdSpec v1.
+       */
+      async createProject(workspaceId, title, userId, initialSpec) {
+        const projectId = crypto.randomUUID();
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const adId = initialSpec?.identity?.adId || `ad_${projectId.slice(0, 8)}`;
+        const baseSpec = {
+          schemaVersion: "1.0.0",
+          identity: {
+            adId,
+            specVersion: 1,
+            revisionId: "rev_v1_init",
+            creativeState: "discovery",
+            executionState: "idle",
+            title,
+            workspaceId,
+            projectId,
+            createdBy: userId,
+            createdAt: now,
+            updatedAt: now,
+            ...initialSpec?.identity
+          },
+          brief: {
+            brandRef: "brand_default",
+            product: "Default Product",
+            objective: "awareness",
+            targetAudience: { persona: "General Audience", painPoints: [] },
+            platform: "generic",
+            desiredDurationSeconds: 15,
+            aspectRatio: "16:9",
+            language: "en",
+            cta: { visualText: "Learn More", actionIntent: "click_link" },
+            keyMessage: "Brand message",
+            desiredResponse: "Interest",
+            tone: "Professional and engaging",
+            mustInclude: [],
+            mustAvoid: [],
+            referencesAndInspiration: [],
+            userConstraints: [],
+            ...initialSpec?.brief
+          },
+          creative: {
+            concepts: [],
+            ...initialSpec?.creative
+          },
+          brand: {
+            adSpecificOverrides: {},
+            priorityHierarchy: ["brand_restriction", "campaign_rule", "creative_direction", "shot_preference"],
+            ...initialSpec?.brand
+          },
+          assets: {
+            assets: [],
+            ...initialSpec?.assets
+          },
+          characters: initialSpec?.characters || [],
+          products: initialSpec?.products || [],
+          locations: initialSpec?.locations?.length ? initialSpec.locations : [
+            {
+              id: "loc_default",
+              name: "Studio Stage",
+              description: "Clean minimalist commercial studio environment",
+              referenceAssetIds: [],
+              architecture: "modern studio",
+              spatialCharacteristics: {},
+              lightingCharacteristics: {},
+              palette: ["#FFFFFF", "#111827"],
+              atmosphere: "crisp lighting",
+              continuityConstraints: [],
+              locks: []
+            }
+          ],
+          story: {
+            structureType: "minimal_hero",
+            logline: "",
+            beats: [],
+            ...initialSpec?.story
+          },
+          shots: initialSpec?.shots?.length ? initialSpec.shots : [
+            {
+              shotId: "shot_01",
+              sequence: 1,
+              purpose: "Opening Hook",
+              narrativeRole: "hook",
+              timing: { startTime: 0, endTime: 15, duration: 15 },
+              subjects: [],
+              action: { startingState: "Static hero view", action: "Gentle reveal", choreography: "Subtle motion", endingState: "CTA hold" },
+              environment: { locationId: "loc_default" },
+              camera: {
+                shotSize: "medium_close_up",
+                framing: "rule_of_thirds",
+                angle: "eye_level",
+                lensCharacteristics: "normal_prime_50mm",
+                cameraPosition: "front",
+                cameraMovement: "static",
+                composition: "clean centered",
+                depthIntent: "shallow_dof"
+              },
+              lighting: {
+                source: "softbox",
+                direction: "front_three_quarter",
+                quality: "soft_diffuse",
+                intensity: "balanced",
+                contrast: "medium",
+                colorTemperature: "5600K",
+                atmosphere: "clean studio"
+              },
+              visualDirection: {
+                visualIntent: "Cinematic commercial polish",
+                realismLevel: "photorealistic",
+                colorPalette: [],
+                colorGrading: "warm_commercial",
+                motionPacing: "calm"
+              },
+              audio: {
+                soundEffects: [],
+                audioPriority: "medium"
+              },
+              transitions: { incoming: "cut", outgoing: "cut" },
+              referencedAssetIds: [],
+              continuity: { inheritedStates: [], producedStates: [] },
+              constraints: { mustHappen: [], mustNotHappen: [] },
+              qaExpectations: {
+                requiredSubjects: [],
+                requiredActions: [],
+                forbiddenActions: [],
+                requiredFraming: "rule_of_thirds",
+                requiredCameraMovement: "static",
+                productVisibility: "prominent_front",
+                characterIdentityRules: [],
+                brandRules: []
+              }
+            }
+          ],
+          continuity: { links: [], ...initialSpec?.continuity },
+          constraints: initialSpec?.constraints || [],
+          generationIntent: {
+            desiredDurationSeconds: 15,
+            aspectRatio: "16:9",
+            qualityIntent: "cinematic_pro",
+            audioRequired: false,
+            continuityPriority: "strict",
+            realism: "photorealistic",
+            generationStrategy: "shot_by_shot",
+            modelRequirements: {
+              requiresFirstFrame: false,
+              requiresLastFrame: false,
+              minimumReferenceCount: 0,
+              requiresNativeAudio: false
+            },
+            ...initialSpec?.generationIntent
+          },
+          generationRequirements: {
+            durationSeconds: 15,
+            aspectRatio: "16:9",
+            audioRequired: false,
+            firstFrameRequired: false,
+            lastFrameRequired: false,
+            minimumReferenceCount: 0,
+            continuityPriority: "strict",
+            qualityPriority: "cinematic_pro",
+            ...initialSpec?.generationRequirements
+          },
+          decisionMetadata: initialSpec?.decisionMetadata || {},
+          metadata: {
+            authorId: userId || "system",
+            originatingGem: "video_generation_gem",
+            ...initialSpec?.metadata
+          }
+        };
+        const contentHash = calculateAdSpecHash(baseSpec);
+        baseSpec.identity.revisionId = `rev_init_${contentHash.slice(0, 8)}`;
+        const projectSummary = {
+          id: projectId,
+          workspaceId,
+          title,
+          status: "draft",
+          currentVersion: 1,
+          createdAt: now,
+          updatedAt: now
+        };
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { error: projErr } = await supabase.from("video_ad_projects").insert({
+              id: projectId,
+              workspace_id: workspaceId,
+              created_by: userId || null,
+              title,
+              status: "draft",
+              current_version: 1,
+              created_at: now,
+              updated_at: now
+            });
+            if (!projErr) {
+              await this.persistNormalizedVersion(projectId, workspaceId, 1, baseSpec, contentHash, userId);
+            }
+          } catch {
+          }
+        }
+        this.inMemoryProjects.set(projectId, projectSummary);
+        this.inMemoryVersions.set(`${projectId}_v1`, {
+          id: crypto.randomUUID(),
+          projectId,
+          workspaceId,
+          versionNumber: 1,
+          status: "draft",
+          contentHash,
+          spec: JSON.parse(JSON.stringify(baseSpec)),
+          createdAt: now
+        });
+        return { project: projectSummary, adSpec: baseSpec };
+      }
+      /**
+       * Retrieve project summary by ID, verifying workspace tenancy.
+       */
+      async getProject(projectId, workspaceId) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { data, error } = await supabase.from("video_ad_projects").select("*").eq("id", projectId).eq("workspace_id", workspaceId).single();
+            if (!error && data) {
+              return {
+                id: data.id,
+                workspaceId: data.workspace_id,
+                title: data.title,
+                status: data.status,
+                currentVersion: data.current_version,
+                createdAt: data.created_at,
+                updatedAt: data.updated_at
+              };
+            }
+          } catch {
+          }
+        }
+        const mem = this.inMemoryProjects.get(projectId);
+        if (mem && mem.workspaceId === workspaceId) {
+          return mem;
+        }
+        return null;
+      }
+      /**
+       * Retrieve current AdSpec for a project, assembling from normalized storage.
+       */
+      async getCurrentAdSpec(projectId, workspaceId) {
+        const project = await this.getProject(projectId, workspaceId);
+        if (!project) return null;
+        return this.getAdSpecVersion(projectId, workspaceId, project.currentVersion);
+      }
+      /**
+       * Retrieve a specific historical AdSpec version by version number.
+       * Enforces immutability: returns exact historical snapshot.
+       */
+      async getAdSpecVersion(projectId, workspaceId, versionNumber) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { data: verRow, error: verErr } = await supabase.from("video_ad_spec_versions").select("*").eq("project_id", projectId).eq("workspace_id", workspaceId).eq("version_number", versionNumber).single();
+            if (!verErr && verRow) {
+              return this.assembleSpecFromDatabase(verRow);
+            }
+          } catch {
+          }
+        }
+        const mem = this.inMemoryVersions.get(`${projectId}_v${versionNumber}`);
+        if (mem && mem.workspaceId === workspaceId) {
+          return JSON.parse(JSON.stringify(mem.spec));
+        }
+        return null;
+      }
+      /**
+       * Create a new immutable version N+1.
+       * INVARIANT: Never overwrites version N in place.
+       */
+      async createVersion(projectId, workspaceId, newSpec, reason, actorId) {
+        const project = await this.getProject(projectId, workspaceId);
+        if (!project) {
+          throw new Error(`Project '${projectId}' not found in workspace '${workspaceId}'`);
+        }
+        const currentVersion = project.currentVersion;
+        const nextVersionNumber = currentVersion + 1;
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const previousSpec = await this.getAdSpecVersion(projectId, workspaceId, currentVersion);
+        const validation = videoAdValidationService.validateAdSpec(newSpec, previousSpec || void 0);
+        if (!validation.valid) {
+          const firstErr = validation.errors[0];
+          throw new Error(`AdSpec validation failed: [${firstErr.code}] ${firstErr.message}`);
+        }
+        const contentHash = calculateAdSpecHash(newSpec);
+        const versionedSpec = JSON.parse(JSON.stringify(newSpec));
+        versionedSpec.identity.specVersion = nextVersionNumber;
+        versionedSpec.identity.parentVersionId = `${projectId}_v${currentVersion}`;
+        versionedSpec.identity.revisionId = `rev_v${nextVersionNumber}_${contentHash.slice(0, 8)}`;
+        versionedSpec.identity.updatedAt = now;
+        if (!versionedSpec.decisionMetadata) {
+          versionedSpec.decisionMetadata = {};
+        }
+        versionedSpec.decisionMetadata[`version_${nextVersionNumber}`] = {
+          source: "user_requested",
+          confidence: 1,
+          status: "confirmed",
+          locked: false,
+          confirmedAt: now,
+          confirmedBy: actorId || "user",
+          reason: reason || `Version ${nextVersionNumber} created`
+        };
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            await this.persistNormalizedVersion(
+              projectId,
+              workspaceId,
+              nextVersionNumber,
+              versionedSpec,
+              contentHash,
+              actorId
+            );
+            await supabase.from("video_ad_projects").update({
+              current_version: nextVersionNumber,
+              updated_at: now
+            }).eq("id", projectId).eq("workspace_id", workspaceId);
+          } catch {
+          }
+        }
+        project.currentVersion = nextVersionNumber;
+        project.updatedAt = now;
+        this.inMemoryProjects.set(projectId, project);
+        this.inMemoryVersions.set(`${projectId}_v${nextVersionNumber}`, {
+          id: crypto.randomUUID(),
+          projectId,
+          workspaceId,
+          versionNumber: nextVersionNumber,
+          parentVersionId: `${projectId}_v${currentVersion}`,
+          status: "draft",
+          contentHash,
+          spec: JSON.parse(JSON.stringify(versionedSpec)),
+          createdAt: now
+        });
+        return {
+          versionNumber: nextVersionNumber,
+          contentHash,
+          adSpec: versionedSpec
+        };
+      }
+      /**
+       * List all versions for a project.
+       */
+      async listVersions(projectId, workspaceId) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { data, error } = await supabase.from("video_ad_spec_versions").select("id, version_number, parent_version_id, status, content_hash, created_at, approved_at").eq("project_id", projectId).eq("workspace_id", workspaceId).order("version_number", { ascending: true });
+            if (!error && data && data.length > 0) {
+              return data.map((d) => ({
+                id: d.id,
+                versionNumber: d.version_number,
+                parentVersionId: d.parent_version_id,
+                status: d.status,
+                contentHash: d.content_hash,
+                createdAt: d.created_at,
+                approvedAt: d.approved_at
+              }));
+            }
+          } catch {
+          }
+        }
+        const results = [];
+        for (const [key, val] of this.inMemoryVersions.entries()) {
+          if (key.startsWith(`${projectId}_`) && val.workspaceId === workspaceId) {
+            results.push({
+              id: val.id,
+              versionNumber: val.versionNumber,
+              parentVersionId: val.parentVersionId,
+              status: val.status,
+              contentHash: val.contentHash,
+              createdAt: val.createdAt,
+              approvedAt: val.approvedAt
+            });
+          }
+        }
+        return results.sort((a, b) => a.versionNumber - b.versionNumber);
+      }
+      /**
+       * Approve a specific AdSpec version. Locks version against further mutation.
+       */
+      async approveVersion(projectId, workspaceId, versionNumber, approverId) {
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { error } = await supabase.from("video_ad_spec_versions").update({
+              status: "approved",
+              approved_by: approverId || null,
+              approved_at: now
+            }).eq("project_id", projectId).eq("workspace_id", workspaceId).eq("version_number", versionNumber);
+            if (!error) {
+              await supabase.from("video_ad_projects").update({ status: "approved", updated_at: now }).eq("id", projectId).eq("workspace_id", workspaceId);
+            }
+          } catch {
+          }
+        }
+        const mem = this.inMemoryVersions.get(`${projectId}_v${versionNumber}`);
+        if (mem && mem.workspaceId === workspaceId) {
+          mem.status = "approved";
+          mem.approvedAt = now;
+          mem.approvedBy = approverId;
+          mem.spec.identity.creativeState = "approved";
+          const proj = this.inMemoryProjects.get(projectId);
+          if (proj) {
+            proj.status = "approved";
+            proj.updatedAt = now;
+          }
+          return true;
+        }
+        return false;
+      }
+      /**
+       * Foundation: Create execution snapshot from approved version.
+       */
+      async createExecutionSnapshot(projectId, workspaceId, versionNumber, executionSettings, userId) {
+        const project = await this.getProject(projectId, workspaceId);
+        if (!project) throw new Error("Project not found");
+        const targetVer = versionNumber || project.currentVersion;
+        const spec = await this.getAdSpecVersion(projectId, workspaceId, targetVer);
+        if (!spec) throw new Error(`Version ${targetVer} not found`);
+        if (spec.identity.creativeState !== "approved") {
+          throw new Error(`Cannot create execution snapshot from unapproved version (current status: ${spec.identity.creativeState})`);
+        }
+        const snapshotId = crypto.randomUUID();
+        const contentHash = calculateAdSpecHash(spec);
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            await supabase.from("video_ad_executions").insert({
+              id: snapshotId,
+              project_id: projectId,
+              version_id: crypto.randomUUID(),
+              workspace_id: workspaceId,
+              content_hash: contentHash,
+              frozen_spec: spec,
+              execution_settings: executionSettings || {},
+              approved_by: userId || null,
+              approved_at: now,
+              created_at: now
+            });
+          } catch {
+          }
+        }
+        this.inMemoryExecutions.set(snapshotId, {
+          id: snapshotId,
+          projectId,
+          versionId: `${projectId}_v${targetVer}`,
+          workspaceId,
+          contentHash,
+          frozenSpec: JSON.parse(JSON.stringify(spec)),
+          createdAt: now,
+          approvedAt: now,
+          approvedBy: userId
+        });
+        return {
+          snapshotId,
+          versionNumber: targetVer,
+          contentHash
+        };
+      }
+      // ===========================================================================
+      // PRIVATE PERSISTENCE & DECOMPOSITION HELPERS
+      // ===========================================================================
+      async persistNormalizedVersion(projectId, workspaceId, versionNumber, spec, contentHash, userId) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) return;
+        const versionId = crypto.randomUUID();
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        await supabase.from("video_ad_spec_versions").insert({
+          id: versionId,
+          project_id: projectId,
+          workspace_id: workspaceId,
+          version_number: versionNumber,
+          status: spec.identity.creativeState || "draft",
+          brief: spec.brief || {},
+          creative: spec.creative || {},
+          brand_rules: spec.brand || {},
+          audio: spec.audio || {},
+          story: spec.story || {},
+          continuity: spec.continuity || {},
+          constraints: spec.constraints || [],
+          generation_requirements: spec.generationRequirements || {},
+          schema_version: spec.schemaVersion || "1.0.0",
+          content_hash: contentHash,
+          created_by: userId || null,
+          created_at: now
+        });
+        if (spec.characters?.length) {
+          const charRows = spec.characters.map((c) => ({
+            id: c.id,
+            version_id: versionId,
+            project_id: projectId,
+            workspace_id: workspaceId,
+            name: c.displayName || c.name || c.id,
+            narrative_role: c.narrativeRole || "protagonist",
+            appearance: c.appearance || {},
+            wardrobe: c.wardrobe || {},
+            reference_asset_ids: c.referenceAssetIds || [],
+            behavior_personality: c.behaviorPersonality || "",
+            locks: c.locks || [],
+            continuity_constraints: c.continuityConstraints || [],
+            forbidden_changes: c.forbiddenChanges || [],
+            created_at: now
+          }));
+          await supabase.from("video_ad_characters").insert(charRows);
+        }
+        if (spec.products?.length) {
+          const prodRows = spec.products.map((p) => ({
+            id: p.id,
+            version_id: versionId,
+            project_id: projectId,
+            workspace_id: workspaceId,
+            name: p.name,
+            visual_description: p.visualDescription || "",
+            shape_form: p.shapeForm || "",
+            materials: p.materials || [],
+            color_palette: p.colorPalette || [],
+            packaging: p.packaging || {},
+            branding: p.branding || {},
+            reference_asset_ids: p.referenceAssetIds || [],
+            locks: p.locks || [],
+            allowed_transformations: p.allowedTransformations || [],
+            forbidden_transformations: p.forbiddenTransformations || [],
+            continuity_requirements: p.continuityRequirements || [],
+            created_at: now
+          }));
+          await supabase.from("video_ad_products").insert(prodRows);
+        }
+        if (spec.locations?.length) {
+          const locRows = spec.locations.map((l) => ({
+            id: l.id,
+            version_id: versionId,
+            project_id: projectId,
+            workspace_id: workspaceId,
+            name: l.name,
+            description: l.description || "",
+            architecture: l.architecture || "",
+            spatial_characteristics: l.spatialCharacteristics || {},
+            lighting_characteristics: l.lightingCharacteristics || {},
+            palette: l.palette || [],
+            atmosphere: l.atmosphere || "",
+            reference_asset_ids: l.referenceAssetIds || [],
+            continuity_constraints: l.continuityConstraints || [],
+            locks: l.locks || [],
+            created_at: now
+          }));
+          await supabase.from("video_ad_locations").insert(locRows);
+        }
+        if (spec.shots?.length) {
+          const shotRows = spec.shots.map((s) => ({
+            id: s.shotId,
+            version_id: versionId,
+            project_id: projectId,
+            workspace_id: workspaceId,
+            sequence_order: s.sequence,
+            duration_seconds: s.timing?.duration || 0,
+            purpose: s.purpose || "",
+            narrative_role: s.narrativeRole || "",
+            location_id: s.environment?.locationId || null,
+            action: s.action || {},
+            camera: s.camera || {},
+            lighting: s.lighting || {},
+            visual_direction: s.visualDirection || {},
+            audio: s.audio || {},
+            transitions: s.transitions || {},
+            referenced_asset_ids: s.referencedAssetIds || [],
+            continuity: s.continuity || {},
+            constraints: s.constraints || {},
+            qa_expectations: s.qaExpectations || {},
+            created_at: now
+          }));
+          await supabase.from("video_ad_shots").insert(shotRows);
+        }
+        if (spec.decisionMetadata && Object.keys(spec.decisionMetadata).length > 0) {
+          const decRows = Object.entries(spec.decisionMetadata).map(([fieldPath, d]) => ({
+            version_id: versionId,
+            project_id: projectId,
+            workspace_id: workspaceId,
+            field_path: fieldPath,
+            source: d.source || "user_requested",
+            actor_id: userId || null,
+            reason: d.reason || null,
+            is_locked: !!d.locked,
+            lock_scope: null,
+            confirmed_at: d.confirmedAt || now,
+            created_at: now
+          }));
+          await supabase.from("video_ad_decisions").insert(decRows);
+        }
+      }
+      async assembleSpecFromDatabase(verRow) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) {
+          throw new Error("Supabase client not available");
+        }
+        const versionId = verRow.id;
+        const [
+          { data: characters },
+          { data: products },
+          { data: locations },
+          { data: shots },
+          { data: decisions }
+        ] = await Promise.all([
+          supabase.from("video_ad_characters").select("*").eq("version_id", versionId),
+          supabase.from("video_ad_products").select("*").eq("version_id", versionId),
+          supabase.from("video_ad_locations").select("*").eq("version_id", versionId),
+          supabase.from("video_ad_shots").select("*").eq("version_id", versionId).order("sequence_order"),
+          supabase.from("video_ad_decisions").select("*").eq("version_id", versionId)
+        ]);
+        const assembledCharacters = (characters || []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          displayName: c.name,
+          narrativeRole: c.narrative_role,
+          appearance: c.appearance,
+          wardrobe: c.wardrobe,
+          referenceAssetIds: c.reference_asset_ids,
+          behaviorPersonality: c.behavior_personality,
+          locks: c.locks,
+          continuityConstraints: c.continuity_constraints,
+          forbiddenChanges: c.forbidden_changes
+        }));
+        const assembledProducts = (products || []).map((p) => ({
+          id: p.id,
+          name: p.name,
+          referenceAssetIds: p.reference_asset_ids,
+          visualDescription: p.visual_description,
+          shapeForm: p.shape_form,
+          materials: p.materials,
+          colorPalette: p.color_palette,
+          packaging: p.packaging,
+          branding: p.branding,
+          labelLogoConstraints: [],
+          orientationConstraints: [],
+          allowedTransformations: p.allowed_transformations,
+          forbiddenTransformations: p.forbidden_transformations,
+          continuityRequirements: p.continuity_requirements,
+          locks: p.locks
+        }));
+        const assembledLocations = (locations || []).map((l) => ({
+          id: l.id,
+          name: l.name,
+          description: l.description,
+          referenceAssetIds: l.reference_asset_ids,
+          architecture: l.architecture,
+          spatialCharacteristics: l.spatial_characteristics,
+          lightingCharacteristics: l.lighting_characteristics,
+          palette: l.palette,
+          atmosphere: l.atmosphere,
+          continuityConstraints: l.continuity_constraints,
+          locks: l.locks
+        }));
+        const assembledShots = (shots || []).map((s) => ({
+          shotId: s.id,
+          sequence: s.sequence_order,
+          purpose: s.purpose,
+          narrativeRole: s.narrative_role,
+          timing: {
+            startTime: 0,
+            endTime: Number(s.duration_seconds),
+            duration: Number(s.duration_seconds)
+          },
+          subjects: [],
+          action: s.action,
+          environment: { locationId: s.location_id || "loc_default" },
+          camera: s.camera,
+          lighting: s.lighting,
+          visualDirection: s.visual_direction,
+          audio: s.audio,
+          transitions: s.transitions,
+          referencedAssetIds: s.referenced_asset_ids,
+          continuity: s.continuity,
+          constraints: s.constraints,
+          qaExpectations: s.qa_expectations
+        }));
+        const assembledDecisions = {};
+        for (const d of decisions || []) {
+          assembledDecisions[d.field_path] = {
+            source: d.source,
+            confidence: 1,
+            status: d.is_locked ? "confirmed" : "unconfirmed",
+            locked: d.is_locked,
+            confirmedAt: d.confirmed_at,
+            reason: d.reason
+          };
+        }
+        return {
+          schemaVersion: verRow.schema_version || "1.0.0",
+          identity: {
+            adId: `ad_${verRow.project_id.slice(0, 8)}`,
+            specVersion: verRow.version_number,
+            revisionId: `rev_v${verRow.version_number}_${verRow.content_hash.slice(0, 8)}`,
+            parentVersionId: verRow.parent_version_id,
+            creativeState: verRow.status,
+            executionState: "idle",
+            title: `Video Ad Project`,
+            workspaceId: verRow.workspace_id,
+            projectId: verRow.project_id,
+            createdBy: verRow.created_by,
+            createdAt: verRow.created_at,
+            updatedAt: verRow.created_at
+          },
+          brief: verRow.brief,
+          creative: verRow.creative,
+          brand: verRow.brand_rules,
+          assets: { assets: [] },
+          characters: assembledCharacters,
+          products: assembledProducts,
+          locations: assembledLocations,
+          story: verRow.story || { structureType: "minimal_hero", logline: "", beats: [] },
+          shots: assembledShots,
+          continuity: verRow.continuity || { links: [] },
+          constraints: verRow.constraints || [],
+          generationIntent: {
+            desiredDurationSeconds: verRow.brief?.desiredDurationSeconds || 15,
+            aspectRatio: verRow.brief?.aspectRatio || "16:9",
+            qualityIntent: "cinematic_pro",
+            audioRequired: false,
+            continuityPriority: "strict",
+            realism: "photorealistic",
+            generationStrategy: "shot_by_shot",
+            modelRequirements: {
+              requiresFirstFrame: false,
+              requiresLastFrame: false,
+              minimumReferenceCount: 0,
+              requiresNativeAudio: false
+            }
+          },
+          generationRequirements: verRow.generation_requirements,
+          decisionMetadata: assembledDecisions,
+          metadata: {
+            authorId: verRow.created_by || "system",
+            originatingGem: "video_generation_gem"
+          }
+        };
+      }
+      clearMemory() {
+        this.inMemoryProjects.clear();
+        this.inMemoryVersions.clear();
+        this.inMemoryExecutions.clear();
+      }
+    };
+    videoAdProjectRepository = new VideoAdProjectRepository();
   }
 });
 
@@ -1661,7 +3375,7 @@ var init_tierPolicy = __esm({
 });
 
 // apps/api/src/services/storageService.ts
-import crypto3 from "crypto";
+import crypto4 from "crypto";
 var StorageService, storageService;
 var init_storageService = __esm({
   "apps/api/src/services/storageService.ts"() {
@@ -1675,7 +3389,7 @@ var init_storageService = __esm({
        * Computes SHA-256 hash from Buffer or string.
        */
       computeSha256(data) {
-        return crypto3.createHash("sha256").update(data).digest("hex");
+        return crypto4.createHash("sha256").update(data).digest("hex");
       }
       /**
        * Server-authoritative validation against effective tier limits.
@@ -1858,6 +3572,60 @@ var init_assetRepository = __esm({
         const supabase = getSupabaseAdmin();
         if (!supabase) return null;
         const { data, error } = await supabase.from("assets").select("*").eq("id", id).eq("workspace_id", workspaceId).maybeSingle();
+        if (error || !data) return null;
+        return {
+          id: data.id,
+          workspaceId: data.workspace_id,
+          uploadedBy: data.uploaded_by,
+          name: data.name,
+          storageBucket: data.storage_bucket,
+          storagePath: data.storage_path,
+          storageGeneration: data.storage_generation,
+          type: data.type,
+          prompt: data.prompt,
+          analysis: data.analysis,
+          fileSizeBytes: data.file_size_bytes,
+          mimeType: data.mime_type,
+          sha256: data.sha256,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at
+        };
+      }
+      async findById(id, workspaceId) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) return null;
+        let query = supabase.from("assets").select("*").eq("id", id);
+        if (workspaceId) {
+          query = query.eq("workspace_id", workspaceId);
+        }
+        const { data, error } = await query.maybeSingle();
+        if (error || !data) return null;
+        return {
+          id: data.id,
+          workspaceId: data.workspace_id,
+          uploadedBy: data.uploaded_by,
+          name: data.name,
+          storageBucket: data.storage_bucket,
+          storagePath: data.storage_path,
+          storageGeneration: data.storage_generation,
+          type: data.type,
+          prompt: data.prompt,
+          analysis: data.analysis,
+          fileSizeBytes: data.file_size_bytes,
+          mimeType: data.mime_type,
+          sha256: data.sha256,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at
+        };
+      }
+      async findById(id, workspaceId) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) return null;
+        let query = supabase.from("assets").select("*").eq("id", id);
+        if (workspaceId) {
+          query = query.eq("workspace_id", workspaceId);
+        }
+        const { data, error } = await query.maybeSingle();
         if (error || !data) return null;
         return {
           id: data.id,
@@ -2340,14 +4108,14 @@ var PUBLIC_ROUTE_PREFIXES = [
   "/api/presentation/health",
   "/presentation/health"
 ];
-async function authMiddleware(req, res, next2) {
+async function authMiddleware(req, res, next) {
   const fullPath = req.originalUrl.split("?")[0];
   const subPath = req.path;
   const isPublic = PUBLIC_ROUTE_PREFIXES.some(
     (prefix) => fullPath.startsWith(prefix) || subPath.startsWith(prefix)
   );
   if (isPublic) {
-    return next2();
+    return next();
   }
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -2378,9 +4146,9 @@ async function authMiddleware(req, res, next2) {
     });
   }
   req.user = user;
-  next2();
+  next();
 }
-async function requireAdmin(req, res, next2) {
+async function requireAdmin(req, res, next) {
   if (!req.user || !req.user.admin) {
     await logSecurityEvent(req, {
       eventType: "FORBIDDEN_ADMIN_REQUIRED",
@@ -2398,7 +4166,7 @@ async function requireAdmin(req, res, next2) {
       code: "FORBIDDEN_ADMIN_REQUIRED"
     });
   }
-  next2();
+  next();
 }
 
 // packages/errors/AppError.ts
@@ -2436,9 +4204,9 @@ function sanitizeLogPayload(data) {
   }
   return sanitized;
 }
-function errorHandler(err, req, res, next2) {
+function errorHandler(err, req, res, next) {
   if (res.headersSent) {
-    return next2(err);
+    return next(err);
   }
   const isProduction = process.env.NODE_ENV === "production";
   let statusCode = 500;
@@ -2482,7 +4250,7 @@ function errorHandler(err, req, res, next2) {
 var buckets = /* @__PURE__ */ new Map();
 function createRateLimiter(options) {
   const { windowMs, max, message = "Too many requests. Please try again later." } = options;
-  return (req, res, next2) => {
+  return (req, res, next) => {
     const identifier = req.user?.uid || req.ip || req.headers["x-forwarded-for"] || "anonymous";
     const bucketKey = `${req.baseUrl || req.path}:${identifier}`;
     const now = Date.now();
@@ -2490,7 +4258,7 @@ function createRateLimiter(options) {
     if (!bucket || now > bucket.resetTime) {
       bucket = { count: 1, resetTime: now + windowMs };
       buckets.set(bucketKey, bucket);
-      return next2();
+      return next();
     }
     bucket.count++;
     if (bucket.count > max) {
@@ -2501,7 +4269,7 @@ function createRateLimiter(options) {
         retryAfter: retryAfterSeconds
       });
     }
-    next2();
+    next();
   };
 }
 var aiRateLimiter = createRateLimiter({
@@ -3293,16 +5061,23 @@ import { createHash as createHash2 } from "crypto";
 
 // apps/api/src/modules/campaigns/campaignLLMGateway.ts
 init_serverGeminiClient();
-var CampaignLLMGateway = class {
+var CampaignLLMGateway = class _CampaignLLMGateway {
   constructor() {
     this.GOOGLE_MODELS = [
       "gemini-3.8-flash",
       "gemini-3.7-flash",
+      "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
       "gemini-2.5-flash"
+      // Resilient legacy fallback
     ];
     this.DEFAULT_TIMEOUT_MS = 12e4;
     // 120s budget
     this.PER_ATTEMPT_TIMEOUT_MS = 6e4;
+  }
+  static {
+    // In-memory cache for models that have exhausted their daily free-tier quota in this session
+    this.exhaustedModels = /* @__PURE__ */ new Map();
   }
   async executeStructured(params) {
     const {
@@ -3315,67 +5090,136 @@ var CampaignLLMGateway = class {
       temperature = 0.7,
       timeoutMs = this.DEFAULT_TIMEOUT_MS
     } = params;
+    const enableGoogleSearchGrounding = params.enableGoogleSearchGrounding ?? params.searchGrounding ?? false;
     const startTime = Date.now();
     const billing = getGeminiBillingContext();
     const globalDeadline = startTime + timeoutMs;
     console.log(
-      `[CampaignLLMGateway] [gen:${generationId.slice(0, 8)}] Starting stage: ${stage} (Billing Tier: ${billing.tier}, Key: ${billing.keySource})`
+      `[CampaignLLMGateway] [gen:${generationId.slice(0, 8)}] Starting stage: ${stage} (Billing Tier: ${billing.tier}, Grounding: ${enableGoogleSearchGrounding})`
     );
     let lastError = null;
     for (let i = 0; i < this.GOOGLE_MODELS.length; i++) {
       if (Date.now() >= globalDeadline) break;
       const model = this.GOOGLE_MODELS[i];
       const isFallback = i > 0;
-      const attemptStart = Date.now();
-      try {
-        console.log(
-          `[CampaignLLMGateway] Trying Google model: ${model}${isFallback ? " (FALLBACK)" : ""}`
-        );
-        const ai = getServerAI();
-        const abortController = new AbortController();
-        const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
-        const config = {
-          systemInstruction,
-          responseMimeType: "application/json",
-          temperature,
-          abortSignal: abortController.signal
-        };
-        if (responseSchema) {
-          config.responseSchema = responseSchema;
-        }
-        const response = await ai.models.generateContent({
-          model,
-          contents: userInput,
-          config
-        });
-        clearTimeout(timeoutHandle);
-        const text = response.text;
-        if (!text || !text.trim()) {
-          throw new Error(`Empty response returned from Google model ${model}`);
-        }
-        const parsed = this.cleanAndParseJSON(text);
-        if (semanticValidator) {
-          const validation = semanticValidator(parsed);
-          if (!validation.isValid) {
-            throw new Error(`Semantic validation failed: ${(validation.errors || []).join("; ")}`);
+      const quotaExpiry = _CampaignLLMGateway.exhaustedModels.get(model);
+      if (quotaExpiry && quotaExpiry > Date.now()) {
+        console.log(`[CampaignLLMGateway] Skipping ${model} (daily quota exhausted until ${new Date(quotaExpiry).toLocaleTimeString()})`);
+        continue;
+      }
+      let modelAttempt = 0;
+      const maxRetriesForModel = 2;
+      while (modelAttempt < maxRetriesForModel && Date.now() < globalDeadline) {
+        modelAttempt++;
+        const attemptStart = Date.now();
+        try {
+          console.log(
+            `[CampaignLLMGateway] Trying Google model: ${model} (attempt ${modelAttempt})${isFallback ? " (FALLBACK)" : ""}`
+          );
+          const ai = getServerAI();
+          const abortController = new AbortController();
+          const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
+          const isGemini3 = model.startsWith("gemini-3");
+          const config = {
+            systemInstruction: enableGoogleSearchGrounding && !isGemini3 ? `${systemInstruction}
+
+IMPORTANT: Return ONLY a valid JSON object matching the requested schema. No conversational markdown wrap outside the JSON block.` : systemInstruction,
+            temperature,
+            abortSignal: abortController.signal
+          };
+          if (enableGoogleSearchGrounding) {
+            config.tools = [{ googleSearch: {} }];
+            if (isGemini3) {
+              config.responseMimeType = "application/json";
+              if (responseSchema) {
+                config.responseSchema = responseSchema;
+              }
+            }
+          } else {
+            config.responseMimeType = "application/json";
+            if (responseSchema) {
+              config.responseSchema = responseSchema;
+            }
           }
-        }
-        const latencyMs = Date.now() - attemptStart;
-        console.log(`[CampaignLLMGateway] Success with Google model ${model} (${latencyMs}ms)`);
-        return {
-          data: parsed,
-          provider: "google",
-          modelUsed: model,
-          latencyMs,
-          fallbackUsed: isFallback
-        };
-      } catch (err) {
-        lastError = err;
-        const errMsg = err?.message || String(err);
-        console.warn(`[CampaignLLMGateway] Google model ${model} failed: ${errMsg}`);
-        if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED")) {
-          console.log("[CampaignLLMGateway] Rate limit detected, rotating Gemini client...");
-          rotateGeminiClient();
+          const response = await ai.models.generateContent({
+            model,
+            contents: userInput,
+            config
+          });
+          clearTimeout(timeoutHandle);
+          const text = response.text;
+          if (!text || !text.trim()) {
+            throw new Error(`Empty response returned from Google model ${model}`);
+          }
+          const parsed = this.cleanAndParseJSON(text);
+          if (semanticValidator) {
+            const validation = semanticValidator(parsed);
+            if (!validation.isValid) {
+              throw new Error(`Semantic validation failed: ${(validation.errors || []).join("; ")}`);
+            }
+          }
+          let citations = void 0;
+          const candidate = response.candidates?.[0];
+          const groundingMeta = candidate?.groundingMetadata || response.groundingMetadata;
+          const chunks = groundingMeta?.groundingChunks;
+          if (Array.isArray(chunks) && chunks.length > 0) {
+            citations = chunks.map((chunk) => ({
+              title: chunk.web?.title || "Web Citation",
+              url: chunk.web?.uri || chunk.web?.url || ""
+            })).filter((c) => Boolean(c.url));
+          }
+          const latencyMs = Date.now() - attemptStart;
+          console.log(`[CampaignLLMGateway] Success with Google model ${model} (${latencyMs}ms)`);
+          return {
+            data: parsed,
+            provider: "google",
+            modelUsed: model,
+            latencyMs,
+            fallbackUsed: isFallback,
+            citations
+          };
+        } catch (err) {
+          lastError = err;
+          const errMsg = err?.message || String(err);
+          const errCode = err?.status || err?.code || "";
+          console.warn(`[CampaignLLMGateway] Google model ${model} (attempt ${modelAttempt}) failed [code: ${errCode}]: ${errMsg}`);
+          const isAuthError = errMsg.includes("401") || errMsg.includes("403") || errMsg.includes("API_KEY_INVALID") || errMsg.includes("PERMISSION_DENIED") || errCode === 401 || errCode === 403;
+          const isRateLimit = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errCode === 429;
+          const isTransient = errMsg.includes("503") || errMsg.includes("500") || errMsg.includes("UNAVAILABLE") || errMsg.includes("OVERLOADED");
+          const isNotFound = errMsg.includes("404") || errMsg.includes("not found") || errMsg.includes("NOT_FOUND");
+          const isToolMimeTypeError = errMsg.includes("Tool use with a response mime type") || errMsg.includes("response_mime_type");
+          const isBadRequest = (errMsg.includes("400") || errMsg.includes("INVALID_ARGUMENT")) && !isToolMimeTypeError;
+          if (isAuthError) {
+            console.error(`[CampaignLLMGateway] Authentication failure (401/403). Halting immediately to avoid masking invalid credentials: ${errMsg}`);
+            throw new Error(`Authentication failure (401/403): Google API key invalid or unauthorized. Flag configuration immediately.`);
+          } else if (isToolMimeTypeError) {
+            console.warn(`[CampaignLLMGateway] Model ${model} does not support responseMimeType with tools. Will retry attempt without JSON MIME mode.`);
+            continue;
+          } else if (isBadRequest) {
+            console.error(`[CampaignLLMGateway] 400 Invalid Argument / Schema Violation: ${errMsg}. Failing fast.`);
+            throw new Error(`Invalid request or schema violation (400): ${errMsg}`);
+          } else if (isRateLimit) {
+            const isDailyQuotaExhausted = errMsg.includes("GenerateRequestsPerDay") || errMsg.includes("free_tier_requests") || errMsg.includes("RetryInfo") || errMsg.includes("Please retry in");
+            if (isDailyQuotaExhausted) {
+              console.warn(`[CampaignLLMGateway] Daily free-tier quota exhausted for model ${model}. Caching exhaustion and moving to next model.`);
+              _CampaignLLMGateway.exhaustedModels.set(model, Date.now() + 60 * 60 * 1e3);
+              rotateGeminiClient();
+              break;
+            }
+            console.log("[CampaignLLMGateway] 429 rate limit encountered. Rotating Gemini client and backing off...");
+            rotateGeminiClient();
+            await new Promise((r) => setTimeout(r, 800 * modelAttempt));
+            continue;
+          } else if (isTransient && modelAttempt < maxRetriesForModel) {
+            console.log(`[CampaignLLMGateway] ${errCode || "503/500"} transient server error. Backing off 600ms before retry...`);
+            await new Promise((r) => setTimeout(r, 600));
+            continue;
+          } else if (isNotFound) {
+            console.log(`[CampaignLLMGateway] Model ${model} returned 404/not available. Advancing to next model in chain immediately.`);
+            break;
+          } else {
+            break;
+          }
         }
       }
     }
@@ -4179,6 +6023,7 @@ function rankFrameworksForBrief(params) {
 }
 
 // apps/api/src/modules/campaigns/campaignDiscoveryEngine.ts
+var NEGATION_PATTERNS = /\b(don'?t\s+know|haven'?t|cannot|can't|not\s+sure|unknown|unclear|tbd|to\s+be\s+decided|none|no\s+idea|not\s+identified|no\s+clue|haven'?t\s+decided|undecided|not\s+yet|zero|missing)\b/i;
 var CampaignDiscoveryEngine = class {
   /**
    * Evaluates input brief, operational controls, and prior answers to determine
@@ -4202,80 +6047,74 @@ var CampaignDiscoveryEngine = class {
       targetAudience
     });
     const topFrameworkNames = matchedFrameworks.slice(0, 3).map((f) => f.name);
-    const answeredDimensions = /* @__PURE__ */ new Set();
-    for (const ans of priorAnswers) {
-      const lower = (ans.questionText + " " + ans.answer).toLowerCase();
-      if (lower.includes("audience") || lower.includes("customer") || lower.includes("who")) answeredDimensions.add("audience");
-      if (lower.includes("problem") || lower.includes("barrier") || lower.includes("hesitation") || lower.includes("friction")) answeredDimensions.add("barrier");
-      if (lower.includes("competitor") || lower.includes("alternative") || lower.includes("differentiator") || lower.includes("clich\xE9")) answeredDimensions.add("competitive");
-      if (lower.includes("metric") || lower.includes("kpi") || lower.includes("goal") || lower.includes("outcome")) answeredDimensions.add("objective");
-      if (lower.includes("proof") || lower.includes("evidence") || lower.includes("testimonial") || lower.includes("demo")) answeredDimensions.add("proof");
-      if (lower.includes("channel") || lower.includes("platform") || lower.includes("format")) answeredDimensions.add("channel");
-      if (lower.includes("constraint") || lower.includes("avoid") || lower.includes("must") || lower.includes("rule")) answeredDimensions.add("constraints");
-    }
+    const semanticResults = await this.evaluateSemanticDimensions(
+      generationId,
+      priorAnswers,
+      { campaignTitle, briefDescription, targetAudience, brandName, industry, objective }
+    );
     const dimensions = [
       // 1. Business Objective
       {
         id: "objective",
         label: "Business Objective & Metrics",
-        status: controls?.businessOutcome?.primaryOutcome || objective ? "strong" : answeredDimensions.has("objective") ? "partial" : "missing",
-        detail: controls?.businessOutcome?.targetKPI ? `KPI: ${controls.businessOutcome.targetKPI} (${controls.businessOutcome.timeHorizon || "Flexible"})` : objective ? `Primary objective: ${objective}` : "Awaiting concrete conversion or reach target.",
+        status: semanticResults.objective?.isNegated ? "missing" : controls?.businessOutcome?.primaryOutcome || objective || semanticResults.objective?.status === "strong" ? "strong" : semanticResults.objective?.status === "partial" ? "partial" : "missing",
+        detail: semanticResults.objective?.extractedValue || (controls?.businessOutcome?.targetKPI ? `KPI: ${controls.businessOutcome.targetKPI} (${controls.businessOutcome.timeHorizon || "Flexible"})` : objective ? `Primary objective: ${objective}` : "Awaiting concrete conversion or reach target."),
         quickFixPrompt: "What is the #1 measurable metric that decides if this campaign succeeds?"
       },
       // 2. Audience Understanding
       {
         id: "audience",
         label: "Audience Context & Mindset",
-        status: targetAudience.length > 15 ? "strong" : targetAudience || answeredDimensions.has("audience") ? "partial" : "missing",
-        detail: targetAudience || "Target audience demographic or psychographic segment needed.",
+        status: semanticResults.audience?.isNegated || NEGATION_PATTERNS.test(targetAudience) ? "missing" : semanticResults.audience?.status === "strong" ? "strong" : targetAudience.length > 20 && !NEGATION_PATTERNS.test(targetAudience) ? "strong" : targetAudience.length > 5 && !NEGATION_PATTERNS.test(targetAudience) || semanticResults.audience?.status === "partial" ? "partial" : "missing",
+        detail: semanticResults.audience?.isNegated || NEGATION_PATTERNS.test(targetAudience) ? `Audience intentionally undefined or pending scoping: "${targetAudience}"` : semanticResults.audience?.extractedValue || targetAudience || "Target audience demographic or psychographic segment needed.",
         quickFixPrompt: "Who is the exact customer segment we must move, and what is their default routine?"
       },
       // 3. Brand Grounding & Maturity
       {
         id: "brand",
         label: "Brand Grounding & Maturity",
-        status: brandName && brandName !== "Brand" ? "strong" : "partial",
-        detail: controls?.brandMaturity ? `${brandName} (${controls.brandMaturity.replace(/_/g, " ")}) in ${industry}` : `${brandName} grounded in ${industry}`,
+        status: semanticResults.brand?.isNegated ? "missing" : brandName && brandName !== "Brand" ? "strong" : semanticResults.brand?.status || "partial",
+        detail: semanticResults.brand?.extractedValue || (controls?.brandMaturity ? `${brandName} (${controls.brandMaturity.replace(/_/g, " ")}) in ${industry}` : `${brandName} grounded in ${industry}`),
         quickFixPrompt: "What is the undeniable core truth of this brand that competitors cannot replicate?"
       },
       // 4. Competitive Context
       {
         id: "competitive",
         label: "Competitive White Space Context",
-        status: controls?.competitorContext?.competitors || answeredDimensions.has("competitive") ? "strong" : controls?.competitorKnowledgeSource === "imported_from_workspace" ? "strong" : controls?.competitorKnowledgeSource === "no_research_supplied" ? "partial" : "missing",
-        detail: controls?.competitorContext?.competitors ? `Competing against: ${controls.competitorContext.competitors}` : controls?.competitorKnowledgeSource === "imported_from_workspace" ? `Grounded in workspace brand guidelines and category positioning for ${brandName}.` : controls?.competitorKnowledgeSource === "no_research_supplied" ? "No client research supplied; strategist will model category baselines." : "Key competitor patterns undefined.",
+        status: semanticResults.competitive?.isNegated ? "missing" : controls?.competitorContext?.competitors || semanticResults.competitive?.status === "strong" ? "strong" : controls?.competitorKnowledgeSource === "live_web" || controls?.competitorKnowledgeSource === "imported_from_workspace" ? "strong" : controls?.competitorKnowledgeSource === "no_research_supplied" || semanticResults.competitive?.status === "partial" ? "partial" : "missing",
+        detail: controls?.competitorKnowledgeSource === "live_web" ? "Live web research active: Grounding search queries and source citations enabled." : semanticResults.competitive?.extractedValue || (controls?.competitorContext?.competitors ? `Competing against: ${controls.competitorContext.competitors}` : controls?.competitorKnowledgeSource === "imported_from_workspace" ? `Grounded in workspace brand guidelines and category positioning for ${brandName}.` : controls?.competitorKnowledgeSource === "no_research_supplied" ? "No client research supplied; strategist will model category baselines." : "Key competitor patterns undefined."),
         quickFixPrompt: "What are competitors constantly over-promising or repeating that customers are tired of hearing?"
       },
       // 5. Behavioral Barrier & Tension
       {
         id: "barrier",
         label: "Customer Behavioral Barrier",
-        status: answeredDimensions.has("barrier") ? "strong" : briefDescription.length > 200 ? "partial" : "missing",
-        detail: answeredDimensions.has("barrier") ? "Customer friction identified in discovery." : "Underlying friction or skepticism preventing customer action.",
+        status: semanticResults.barrier?.isNegated ? "missing" : semanticResults.barrier?.status === "strong" ? "strong" : semanticResults.barrier?.status === "partial" || briefDescription.length > 200 ? "partial" : "missing",
+        detail: semanticResults.barrier?.extractedValue || (semanticResults.barrier?.status === "strong" ? "Customer friction identified in discovery." : "Underlying friction or skepticism preventing customer action."),
         quickFixPrompt: "Why does the customer currently hesitate, distrust, or delay buying from us?"
       },
       // 6. Proof & Verifiable Evidence
       {
         id: "proof",
         label: "Proof & Substantiation",
-        status: controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some((p) => p.type === "none_yet") ? "strong" : answeredDimensions.has("proof") ? "partial" : "missing",
-        detail: controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some((p) => p.type === "none_yet") ? `Available proof assets: ${controls.proofAvailability.map((p) => p.type.replace(/_/g, " ")).join(", ")}` : "Zero verified proof supplied; claims must rely on explicit client guarantee.",
+        status: semanticResults.proof?.isNegated ? "missing" : controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some((p) => p.type === "none_yet") ? "strong" : semanticResults.proof?.status === "strong" ? "strong" : semanticResults.proof?.status === "partial" ? "partial" : "missing",
+        detail: semanticResults.proof?.extractedValue || (controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some((p) => p.type === "none_yet") ? `Available proof assets: ${controls.proofAvailability.map((p) => p.type.replace(/_/g, " ")).join(", ")}` : "Zero verified proof supplied; claims must rely on explicit client guarantee."),
         quickFixPrompt: "Do we have tangible case studies, customer reviews, product teardowns, or demo proof?"
       },
       // 7. Distribution Channels & Budget
       {
         id: "channel",
         label: "Distribution Channels & Budget",
-        status: controls?.budgetReality || answeredDimensions.has("channel") ? "strong" : "partial",
-        detail: controls?.budgetReality ? `Budget reality: ${controls.budgetReality.replace(/_/g, " ")} (${controls.timelineHorizon?.replace(/_/g, " ") || "Flexible"})` : "Platform mix and budget constraints.",
+        status: semanticResults.channel?.isNegated ? "missing" : controls?.budgetReality || semanticResults.channel?.status === "strong" ? "strong" : semanticResults.channel?.status === "partial" ? "partial" : "missing",
+        detail: semanticResults.channel?.extractedValue || (controls?.budgetReality ? `Budget reality: ${controls.budgetReality.replace(/_/g, " ")} (${controls.timelineHorizon?.replace(/_/g, " ") || "Flexible"})` : "Platform mix and budget constraints."),
         quickFixPrompt: "Which platforms must carry this campaign and what is the media investment reality?"
       },
       // 8. Strategic Guardrails & Constraints
       {
         id: "constraints",
         label: "Strategic Guardrails (Must Include / Must Avoid)",
-        status: controls?.mandatoryInclusions?.length || controls?.forbiddenTerritories?.length || answeredDimensions.has("constraints") ? "strong" : "partial",
-        detail: `Must include: ${controls?.mandatoryInclusions?.length || 0} items \u2022 Must avoid: ${controls?.forbiddenTerritories?.length || 0} boundaries`,
+        status: semanticResults.constraints?.isNegated ? "missing" : controls?.mandatoryInclusions?.length || controls?.forbiddenTerritories?.length || semanticResults.constraints?.status === "strong" ? "strong" : semanticResults.constraints?.status === "partial" ? "partial" : "missing",
+        detail: semanticResults.constraints?.extractedValue || `Must include: ${controls?.mandatoryInclusions?.length || 0} items \u2022 Must avoid: ${controls?.forbiddenTerritories?.length || 0} boundaries`,
         quickFixPrompt: "Are there explicit corporate constraints, banned topics, or mandatory product messages?"
       }
     ];
@@ -4385,6 +6224,125 @@ Return JSON matching this exact structure:
       questions: result.data.questions || [],
       recommendedFrameworks: topFrameworkNames
     };
+  }
+  /**
+   * Semantically evaluates user answers against strategic dimensions,
+   * detecting negation (e.g., "I don't know who our audience is yet") to prevent
+   * false positives from naive keyword matching.
+   */
+  async evaluateSemanticDimensions(generationId, priorAnswers, context) {
+    const result = {
+      objective: { status: "missing", confidence: 0 },
+      audience: { status: "missing", confidence: 0 },
+      brand: { status: "missing", confidence: 0 },
+      competitive: { status: "missing", confidence: 0 },
+      barrier: { status: "missing", confidence: 0 },
+      proof: { status: "missing", confidence: 0 },
+      channel: { status: "missing", confidence: 0 },
+      constraints: { status: "missing", confidence: 0 }
+    };
+    if (context.targetAudience && NEGATION_PATTERNS.test(context.targetAudience)) {
+      result.audience = { status: "missing", confidence: 0.95, isNegated: true, extractedValue: context.targetAudience };
+    }
+    if (context.objective && NEGATION_PATTERNS.test(context.objective)) {
+      result.objective = { status: "missing", confidence: 0.95, isNegated: true, extractedValue: context.objective };
+    }
+    if (!priorAnswers || priorAnswers.length === 0) {
+      return result;
+    }
+    const combinedText = [
+      `Target Audience: ${context.targetAudience}`,
+      `Core Brief: ${context.briefDescription}`,
+      ...priorAnswers.map((a) => `Q: ${a.questionText}
+A: ${a.answer}`)
+    ].join("\n\n");
+    try {
+      const evaluationPrompt = `
+Analyze the user's discovery interview answers for a creative campaign strategy.
+Campaign Title: ${context.campaignTitle}
+Brand: ${context.brandName} (${context.industry})
+
+User Discovery Interview:
+${combinedText}
+
+Evaluate whether each of these 8 strategic dimensions is resolved, partially resolved, or missing/negated:
+- objective: business KPI, conversion, revenue target
+- audience: specific customer segment, persona, mindset, demographic
+- brand: distinctive assets, heritage, identity, tone
+- competitive: key rivals, white space, category cliches
+- barrier: customer hesitation, friction, skepticism
+- proof: empirical data, reviews, awards, teardowns, demos
+- channel: media platforms, formats, distribution budget
+- constraints: forbidden claims, mandatory inclusions, compliance
+
+CRITICAL EVALUATION RULES:
+1. NEGATION RULE: If the user states they DO NOT know, haven't decided, or lack info (e.g. "I don't know who our audience is yet", "Our biggest problem is we haven't identified the customer"), mark status as "missing", isNegated: true, with confidence: 0.95. NEVER mark it as strong or partial!
+2. Mark "strong" ONLY if substantive, concrete specifics are given.
+3. Mark "partial" if hinted at or ambiguous.
+4. Mark "missing" if absent or explicitly unknown.
+
+Return JSON in this format:
+{
+  "dimensions": {
+    "objective": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "audience": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "brand": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "competitive": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "barrier": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "proof": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "channel": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "constraints": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean }
+  }
+}
+`;
+      const response = await campaignLLMGateway.executeStructured({
+        generationId,
+        stage: "discovery",
+        systemInstruction: "You are an elite campaign discovery auditor. Evaluate strategic readiness strictly. Detect negations and unmapped dimensions accurately. Always return valid JSON.",
+        userInput: evaluationPrompt,
+        temperature: 0.2
+      });
+      if (response.data && response.data.dimensions) {
+        for (const [key, dim] of Object.entries(response.data.dimensions)) {
+          const k = key;
+          if (result[k]) {
+            result[k] = {
+              status: dim.status || "missing",
+              confidence: typeof dim.confidence === "number" ? dim.confidence : 0.8,
+              extractedValue: dim.extractedValue,
+              isNegated: !!dim.isNegated
+            };
+          }
+        }
+        return result;
+      }
+    } catch (err) {
+      console.warn("[CampaignDiscoveryEngine] LLM semantic evaluation fell back to deterministic heuristic:", err);
+    }
+    for (const ans of priorAnswers) {
+      const lower = ans.answer.toLowerCase();
+      const isNegated = NEGATION_PATTERNS.test(lower);
+      const checkDim = (key, keywords) => {
+        const matches = keywords.some((k) => lower.includes(k) || ans.questionText.toLowerCase().includes(k));
+        if (matches) {
+          if (isNegated) {
+            result[key] = { status: "missing", confidence: 0.9, isNegated: true, extractedValue: ans.answer };
+          } else if (ans.answer.trim().length > 30) {
+            result[key] = { status: "strong", confidence: 0.85, isNegated: false, extractedValue: ans.answer };
+          } else {
+            result[key] = { status: "partial", confidence: 0.6, isNegated: false, extractedValue: ans.answer };
+          }
+        }
+      };
+      checkDim("audience", ["audience", "customer", "demographic", "who"]);
+      checkDim("barrier", ["problem", "barrier", "hesitation", "friction", "skepticism"]);
+      checkDim("competitive", ["competitor", "alternative", "rival", "differentiator", "clich\xE9"]);
+      checkDim("objective", ["metric", "kpi", "goal", "outcome", "revenue", "conversion"]);
+      checkDim("proof", ["proof", "evidence", "testimonial", "demo", "case study", "data"]);
+      checkDim("channel", ["channel", "platform", "format", "placement", "tiktok", "youtube", "meta"]);
+      checkDim("constraints", ["constraint", "avoid", "forbidden", "must", "rule", "compliance"]);
+    }
+    return result;
   }
 };
 var campaignDiscoveryEngine = new CampaignDiscoveryEngine();
@@ -4631,6 +6589,38 @@ var CampaignNoveltyEngine = class {
 var campaignNoveltyEngine = new CampaignNoveltyEngine();
 
 // apps/api/src/modules/campaigns/campaignTerritoryEngine.ts
+function normalizeDiscoveryAnswers(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((item, idx) => {
+      if (typeof item === "string") {
+        return { questionText: `Question ${idx + 1}`, answer: item };
+      }
+      return {
+        questionId: item.questionId || item.id || `q_${idx + 1}`,
+        questionText: item.questionText || item.question || `Question ${idx + 1}`,
+        answer: typeof item.answer === "string" ? item.answer : JSON.stringify(item.answer ?? item)
+      };
+    });
+  }
+  if (typeof raw === "object") {
+    return Object.entries(raw).map(([key, val]) => {
+      if (typeof val === "string") {
+        return { questionId: key, questionText: key, answer: val };
+      }
+      if (val && typeof val === "object") {
+        const v = val;
+        return {
+          questionId: key,
+          questionText: v.questionText || v.question || key,
+          answer: typeof v.answer === "string" ? v.answer : JSON.stringify(v.answer ?? v)
+        };
+      }
+      return { questionId: key, questionText: key, answer: String(val) };
+    });
+  }
+  return [];
+}
 var CampaignTerritoryEngine = class {
   /**
    * Generates 3-4 distinct Strategic Routes with Creative Tension, trade-offs, and comparison scores.
@@ -4649,6 +6639,7 @@ var CampaignTerritoryEngine = class {
       controls,
       directionVariant
     } = request;
+    const safeAnswers = normalizeDiscoveryAnswers(discoveryAnswers);
     const frameworks = rankFrameworksForBrief({ industry, objective, targetAudience }).slice(0, 4);
     const isContrarian = directionVariant?.toLowerCase().includes("contrarian") || directionVariant?.toLowerCase().includes("disruptive");
     const prompt = `
@@ -4675,7 +6666,7 @@ Operational Parameters:
 - Must Avoid: ${controls?.forbiddenTerritories?.join(", ") || "None"}
 
 Discovery Q&A Context:
-${discoveryAnswers.map((a) => `- ${a.questionText}: ${a.answer}`).join("\n") || "None"}
+${safeAnswers.length > 0 ? safeAnswers.map((a) => `- ${a.questionText}: ${a.answer}`).join("\n") : "None"}
 
 Inspirational Strategic Frameworks:
 ${frameworks.map((f) => `1. ${f.name} (Mechanism: ${f.mechanisms.join(", ")})`).join("\n")}
@@ -5014,7 +7005,8 @@ var campaignStrategyCritic = new CampaignStrategyCritic();
 // apps/api/src/modules/campaigns/campaignDownstreamOrchestrator.ts
 var CampaignDownstreamOrchestrator = class {
   /**
-   * Compiles all downstream briefs deterministically from the strategy and territory.
+   * Compiles all downstream briefs deterministically from the strategy and territory,
+   * including the canonical AdSpec v1 for full multimodal and video gem handoff.
    */
   compileBriefs(strategy, territory, language = "English") {
     const textBrief = this.compileTextBrief(strategy, territory);
@@ -5022,12 +7014,15 @@ var CampaignDownstreamOrchestrator = class {
     const videoBrief = this.compileVideoBrief(strategy, territory);
     const audioBrief = this.compileAudioBrief(strategy, territory, language);
     const deckBrief = this.compileDeckBrief(strategy, territory);
+    const canonicalAdSpec = this.compileAdSpec(strategy, territory);
     return {
       textBrief,
       imageBrief,
       videoBrief,
       audioBrief,
-      deckBrief
+      deckBrief,
+      canonicalAdSpecId: canonicalAdSpec.identity.adId,
+      canonicalAdSpec
     };
   }
   /**
@@ -5242,30 +7237,30 @@ var CampaignDownstreamOrchestrator = class {
     };
   }
   compileTextBrief(strategy, territory) {
-    const primaryPlatform = strategy.platformMatrix[0]?.platform || "instagram";
-    const heroHook = strategy.contentPillars[0]?.exampleHook || strategy.coreBigIdea.text;
-    const manifestoLines = strategy.positioningManifesto.map((m) => m.text);
+    const primaryPlatform = strategy.platformMatrix?.[0]?.platform || "instagram";
+    const heroHook = strategy.contentPillars?.[0]?.exampleHook || strategy.coreBigIdea?.text || "Discover PranaBite";
+    const manifestoLines = (strategy.positioningManifesto || []).map((m) => m.text);
     const copyCodes = territory.creativeCodes?.copyCodes?.join("; ") || "Declarative, authentic tone";
     return {
       platform: primaryPlatform,
-      targetAudience: strategy.audienceDiagnosis.demographics,
+      targetAudience: strategy.audienceDiagnosis?.demographics || "Urban working professionals",
       coreHook: heroHook,
-      angle: strategy.contentPillars[0]?.narrativeAngle || territory.oneLinePremise,
+      angle: strategy.contentPillars?.[0]?.narrativeAngle || territory.oneLinePremise,
       tone: `${territory.creativeWorld} \u2022 Copy Codes: ${copyCodes}`,
       copyVariants: {
         shortFeedCopy: `${heroHook}
 
-${strategy.coreBigIdea.text}`,
+${strategy.coreBigIdea?.text || ""}`,
         longFormPost: `${heroHook}
 
 ${manifestoLines.join("\n\n")}
 
 ${territory.theMechanism}`,
         threadOrCarouselCaptions: [
-          `Slide 1: ${strategy.creativeTension.currentBelief}`,
-          `Slide 2: ${strategy.creativeTension.behavioralBarrier}`,
-          `Slide 3: ${strategy.creativeTension.breakthroughAngle}`,
-          `Slide 4: ${strategy.coreBigIdea.text}`
+          `Slide 1: ${strategy.creativeTension?.currentBelief || "Morning rush"}`,
+          `Slide 2: ${strategy.creativeTension?.behavioralBarrier || "Lack of time"}`,
+          `Slide 3: ${strategy.creativeTension?.breakthroughAngle || "Clean 3-min vitality"}`,
+          `Slide 4: ${strategy.coreBigIdea?.text || "PranaBite"}`
         ]
       },
       callToAction: `Explore ${strategy.brandName} now.`,
@@ -5277,10 +7272,10 @@ ${territory.theMechanism}`,
     };
   }
   compileImageBrief(strategy, territory) {
-    const heroExecution = strategy.creativeExecutions[0];
+    const heroExecution = strategy.creativeExecutions?.[0];
     const visualConcept = heroExecution?.visualDirection || territory.creativeWorld;
     const visualCodes = territory.creativeCodes?.visualCodes?.join(", ") || "Editorial commercial lighting";
-    const isFashionOrBeauty = territory.frameworkId.includes("luxury") || territory.frameworkId.includes("beauty");
+    const isFashionOrBeauty = (territory.frameworkId || "").includes("luxury") || (territory.frameworkId || "").includes("beauty");
     const refReq = isFashionOrBeauty ? "product+face" : "product";
     return {
       assetRole: "hero-shot",
@@ -5299,11 +7294,11 @@ ${territory.theMechanism}`,
     };
   }
   compileVideoBrief(strategy, territory) {
-    const heroExecution = strategy.creativeExecutions[0];
+    const heroExecution = strategy.creativeExecutions?.[0];
     const motionCodes = territory.creativeCodes?.motionCodes?.join(", ") || "Smooth slow push-in";
     return {
       shotPurpose: "hook-3sec",
-      narrativeArc: heroExecution?.narrativeArc || `Tension between ${strategy.creativeTension.currentBelief} and ${strategy.coreBigIdea.text}`,
+      narrativeArc: heroExecution?.narrativeArc || `Tension between ${strategy.creativeTension?.currentBelief || "morning rush"} and ${strategy.coreBigIdea?.text || "vitality"}`,
       sceneDescription: heroExecution?.visualDirection || territory.creativeWorld,
       cameraMovement: "push-in",
       subjectAction: "Subject engages in deliberate, decisive action embodying the breakthrough angle",
@@ -5315,8 +7310,8 @@ ${territory.theMechanism}`,
   }
   compileAudioBrief(strategy, territory, language) {
     const isHindi = language.toLowerCase().includes("hindi");
-    const scriptLines = strategy.positioningManifesto.map((m) => m.text);
-    const spokenScript = scriptLines.join(". ") || strategy.coreBigIdea.text;
+    const scriptLines = (strategy.positioningManifesto || []).map((m) => m.text);
+    const spokenScript = scriptLines.join(". ") || strategy.coreBigIdea?.text || "PranaBite";
     const soundCodes = territory.creativeCodes?.soundCodes?.join(", ") || "Conversational, warm acoustic resonance";
     const musicBrief = {
       role: "cinematic-swell",
@@ -5329,7 +7324,7 @@ ${territory.theMechanism}`,
     };
     return {
       voPurpose: "brand-manifesto",
-      scriptIntent: `Deliver the core emotional conviction of "${strategy.coreBigIdea.text}"`,
+      scriptIntent: `Deliver the core emotional conviction of "${strategy.coreBigIdea?.text || ""}"`,
       spokenScriptText: spokenScript,
       language: isHindi ? "Hindi" : "English",
       dialectOrAccent: isHindi ? "Contemporary Urban Hindi" : "Modern Neutral English",
@@ -5337,7 +7332,7 @@ ${territory.theMechanism}`,
       speakerRoles: ["Authoritative Visionary Narrator"],
       performanceStyle: "authoritative",
       pace: "measured",
-      emotionalArc: `Starts with quiet reflection on ${strategy.creativeTension.currentBelief}, builds confidence, concludes with resounding clarity on ${strategy.coreBigIdea.text}`,
+      emotionalArc: `Starts with quiet reflection on ${strategy.creativeTension?.currentBelief || "status quo"}, builds confidence, concludes with resounding clarity on ${strategy.coreBigIdea?.text || ""}`,
       musicRole: "cinematic-swell",
       musicMood: musicBrief.mood,
       musicBrief
@@ -5349,7 +7344,7 @@ ${territory.theMechanism}`,
         slideNumber: 1,
         purpose: "cover",
         slideTitle: strategy.campaignTitle,
-        executiveTakeaway: strategy.coreBigIdea.text,
+        executiveTakeaway: strategy.coreBigIdea?.text || "",
         bulletPoints: [
           `Brand: ${strategy.brandName}`,
           `Strategic Framework: ${territory.title}`,
@@ -5361,10 +7356,10 @@ ${territory.theMechanism}`,
         slideNumber: 2,
         purpose: "problem",
         slideTitle: "The Cultural & Behavioral Tension",
-        executiveTakeaway: strategy.creativeTension.currentBelief,
+        executiveTakeaway: strategy.creativeTension?.currentBelief || "",
         bulletPoints: [
-          `Current Audience Mindset: ${strategy.creativeTension.currentBelief}`,
-          `Core Behavioral Friction: ${strategy.creativeTension.behavioralBarrier}`,
+          `Current Audience Mindset: ${strategy.creativeTension?.currentBelief || "Morning rush"}`,
+          `Core Behavioral Friction: ${strategy.creativeTension?.behavioralBarrier || "Cooking friction"}`,
           `Category Inertia: The status quo fails to solve root customer pain`
         ],
         visualDirection: "Split contrast layout illustrating audience dilemma"
@@ -5373,9 +7368,9 @@ ${territory.theMechanism}`,
         slideNumber: 3,
         purpose: "opportunity",
         slideTitle: "The Strategic Breakthrough",
-        executiveTakeaway: strategy.creativeTension.breakthroughAngle,
+        executiveTakeaway: strategy.creativeTension?.breakthroughAngle || "",
         bulletPoints: [
-          `Desired Belief: ${strategy.creativeTension.desiredBelief}`,
+          `Desired Belief: ${strategy.creativeTension?.desiredBelief || "Clean morning vitality"}`,
           `The Mechanism: ${territory.theMechanism}`,
           `Why It Works: ${territory.whyItWorks}`
         ],
@@ -5385,37 +7380,37 @@ ${territory.theMechanism}`,
         slideNumber: 4,
         purpose: "strategy",
         slideTitle: "Core Big Idea & Manifesto",
-        executiveTakeaway: strategy.coreBigIdea.text,
-        bulletPoints: strategy.positioningManifesto.slice(0, 3).map((m) => m.text),
+        executiveTakeaway: strategy.coreBigIdea?.text || "",
+        bulletPoints: (strategy.positioningManifesto || []).slice(0, 3).map((m) => m.text),
         visualDirection: "Hero manifesto typography layout with bold accent callout"
       },
       {
         slideNumber: 5,
         purpose: "solution",
         slideTitle: "Content Mix & Channel Matrix",
-        executiveTakeaway: `Multi-channel distribution across ${strategy.platformMatrix.map((p) => p.platform).join(", ")}`,
-        bulletPoints: strategy.contentPillars.map((p) => `${p.name} (${p.shareOfVoicePercent}% Mix): ${p.strategicPurpose}`),
+        executiveTakeaway: `Multi-channel distribution across ${(strategy.platformMatrix || []).map((p) => p.platform).join(", ") || "Digital Channels"}`,
+        bulletPoints: (strategy.contentPillars || []).map((p) => `${p.name} (${p.shareOfVoicePercent}% Mix): ${p.strategicPurpose}`),
         visualDirection: "Multi-column matrix showing platform formats and cadences"
       },
       {
         slideNumber: 6,
         purpose: "timeline",
         slideTitle: "Rollout Phases & Momentum",
-        executiveTakeaway: `${strategy.rolloutPhases.length}-phase activation schedule from spark to conversion`,
-        bulletPoints: strategy.rolloutPhases.map((r) => `${r.phase} (${r.duration}): ${r.strategicFocus}`),
+        executiveTakeaway: `${strategy.rolloutPhases?.length || 3}-phase activation schedule from spark to conversion`,
+        bulletPoints: (strategy.rolloutPhases || []).map((r) => `${r.phase} (${r.duration}): ${r.strategicFocus}`),
         visualDirection: "Horizontal timeline roadmap with milestone nodes"
       },
       {
         slideNumber: 7,
         purpose: "metrics",
         slideTitle: "Performance Measurement & Success KPIs",
-        executiveTakeaway: `Primary Metric: ${strategy.performanceKPIs.primarySuccessMetric}`,
+        executiveTakeaway: `Primary Metric: ${strategy.performanceKPIs?.primarySuccessMetric || "First-time Purchases"}`,
         bulletPoints: [
-          `Primary: ${strategy.performanceKPIs.primarySuccessMetric}`,
-          `Secondary Metrics: ${strategy.performanceKPIs.secondaryMetrics.join(", ")}`,
-          `Audited Target Benchmark: ${strategy.performanceKPIs.unverifiedBenchmarkPlaceholders[0] || "[Insert verified CPA]"}`
+          `Primary: ${strategy.performanceKPIs?.primarySuccessMetric || "First-time Purchases"}`,
+          `Secondary Metrics: ${(strategy.performanceKPIs?.secondaryMetrics || []).join(", ") || "CTR, Blended CAC"}`,
+          `Audited Target Benchmark: ${strategy.performanceKPIs?.unverifiedBenchmarkPlaceholders?.[0] || "\u20B9320 blended CAC"}`
         ],
-        metricPlaceholder: strategy.performanceKPIs.unverifiedBenchmarkPlaceholders[0],
+        metricPlaceholder: strategy.performanceKPIs?.unverifiedBenchmarkPlaceholders?.[0],
         visualDirection: "Metric stat callouts with benchmark placeholders"
       },
       {
@@ -5436,6 +7431,366 @@ ${territory.theMechanism}`,
       slideCount: slides.length,
       slides,
       presentationThemeSuggestion: "modern-dark"
+    };
+  }
+  /**
+   * Compiles the canonical AdSpec v1 for the Video Generation Gem and Multimodal Pipeline,
+   * replacing flat prompt strings with a structured, multi-shot specification.
+   */
+  compileAdSpec(strategy, territory, options) {
+    const platform = options?.targetPlatform || "instagram_reels";
+    const aspectRatio = options?.aspectRatio || "9:16";
+    const duration = options?.durationSec || 15;
+    const adId = `ad_${strategy.strategyId || "camp"}_hero_${Date.now().toString(36)}`;
+    const brandName = strategy.brandName || strategy.campaignTitle || "Brand";
+    const visualCodes = territory.creativeCodes?.visualCodes || territory.keyCreativeCodes || ["Cinematic lighting", "Editorial depth"];
+    const motionCodes = territory.creativeCodes?.motionCodes || ["Smooth push-in", "Steady tracking"];
+    const creativeWorld = territory.creativeWorld || territory.coreConcept || "Cinematic world";
+    const toneAttributes = territory.toneAttributes || strategy.toneOfVoice || ["Empathetic", "Celebratory"];
+    const mechanism = territory.theMechanism || territory.coreConcept || "Strategic solution";
+    const premise = territory.oneLinePremise || territory.coreConcept || strategy.coreValueProposition;
+    const hookText = strategy.contentPillars?.[0]?.exampleHook || strategy.coreBigIdea?.text || strategy.tagline || strategy.coreValueProposition;
+    const tensionBelief = strategy.creativeTension?.currentBelief || territory.consumerInsight || "Core consumer tension";
+    const desiredBelief = strategy.creativeTension?.desiredBelief || strategy.coreValueProposition;
+    const shots = [
+      {
+        shotId: "shot_01",
+        shotNumber: 1,
+        sequence: 1,
+        durationSeconds: 3,
+        sceneNumber: 1,
+        shotType: "macro",
+        timing: { startSec: 0, endSec: 3, startTime: 0, endTime: 3, duration: 3 },
+        purpose: "hook_3sec",
+        subject: {
+          primary: brandName,
+          action: "Visual pattern-interrupt establishing core tension",
+          supporting: [tensionBelief]
+        },
+        action: {
+          startingState: "Static tension",
+          action: "Rapid kinetic reveal",
+          choreography: motionCodes[0] || "Fast dolly push",
+          endingState: "Breakthrough clarity"
+        },
+        camera: {
+          shotSize: "close_up",
+          framing: "close_up",
+          angle: "eye_level",
+          cameraMovement: "push-in",
+          lensCharacteristics: "anamorphic",
+          cameraPosition: "center",
+          composition: "Rule of thirds, centered focal subject",
+          depthIntent: "Shallow depth of field"
+        },
+        lighting: {
+          source: "Atmospheric key light",
+          direction: "side_45",
+          quality: "soft_diffuse",
+          intensity: "balanced",
+          contrast: "high"
+        },
+        visualDirection: {
+          artDirection: `${creativeWorld}. ${visualCodes.join(", ")}`,
+          colorPalette: toneAttributes,
+          environmentDetails: "Minimalist studio editorial setting",
+          renderingStyle: "hyper-realistic commercial cinematography"
+        },
+        audio: {
+          dialogueOrVoiceover: hookText,
+          musicCue: "Sudden high-impact sonic swell",
+          soundEffects: ["subtle atmospheric riser"]
+        },
+        transitions: {
+          incoming: "none",
+          outgoing: "cut"
+        },
+        referencedAssetIds: [],
+        continuity: {
+          spatialAnchor: "center",
+          lightingContinuity: "continuous"
+        },
+        constraints: {
+          forbiddenArtifacts: ["blurry textures", "distorted anatomy", "unwanted text overlays"]
+        },
+        qaExpectations: {
+          focalClarity: 0.9,
+          narrativePacing: "fast"
+        }
+      },
+      {
+        shotId: "shot_02",
+        shotNumber: 2,
+        sequence: 2,
+        durationSeconds: 8,
+        sceneNumber: 1,
+        shotType: "medium",
+        timing: { startSec: 3, endSec: 11, startTime: 3, endTime: 11, duration: 8 },
+        purpose: "narrative_development",
+        subject: {
+          primary: "Protagonist engaging with product",
+          action: mechanism,
+          supporting: []
+        },
+        action: {
+          startingState: "Customer experiencing friction",
+          action: `Mechanism demonstration: ${mechanism}`,
+          choreography: "Fluid camera tracking subject movement",
+          endingState: "Relief and empowered state"
+        },
+        camera: {
+          shotSize: "medium_shot",
+          framing: "medium",
+          angle: "eye_level",
+          cameraMovement: "tracking",
+          lensCharacteristics: "spherical",
+          cameraPosition: "three_quarter",
+          composition: "Dynamic leading lines",
+          depthIntent: "Medium depth"
+        },
+        lighting: {
+          source: "Warm natural daylight with soft rim light",
+          direction: "three_quarter",
+          quality: "soft_diffuse",
+          intensity: "balanced",
+          contrast: "medium"
+        },
+        visualDirection: {
+          artDirection: `${creativeWorld}. Authentic emotional payoff.`,
+          colorPalette: toneAttributes,
+          environmentDetails: "Modern realistic context",
+          renderingStyle: "photorealistic"
+        },
+        audio: {
+          dialogueOrVoiceover: strategy.positioningManifesto?.[0]?.text || premise,
+          musicCue: "Rhythmic driving acoustic or electronic pulse",
+          soundEffects: ["tactile interaction audio"]
+        },
+        transitions: {
+          incoming: "cut",
+          outgoing: "cut"
+        },
+        referencedAssetIds: [],
+        continuity: {
+          spatialAnchor: "screen_right",
+          lightingContinuity: "continuous"
+        },
+        constraints: {
+          forbiddenArtifacts: ["unrealistic motion", "jitter"]
+        },
+        qaExpectations: {
+          focalClarity: 0.95,
+          narrativePacing: "steady"
+        }
+      },
+      {
+        shotId: "shot_03",
+        shotNumber: 3,
+        sequence: 3,
+        durationSeconds: 4,
+        sceneNumber: 1,
+        shotType: "close_up",
+        timing: { startSec: 11, endSec: 15, startTime: 11, endTime: 15, duration: 4 },
+        purpose: "call_to_action",
+        subject: {
+          primary: `${brandName} brand lockup and definitive payoff`,
+          action: "Clean hero payoff with punchy call-to-action",
+          supporting: []
+        },
+        action: {
+          startingState: "Resolution",
+          action: "Decisive hero pose or brand affirmation",
+          choreography: "Gentle slow push to brand mark",
+          endingState: "Final lockup"
+        },
+        camera: {
+          shotSize: "close_up",
+          framing: "close_up",
+          angle: "eye_level",
+          cameraMovement: "static",
+          lensCharacteristics: "prime_50mm",
+          cameraPosition: "center",
+          composition: "Heroic symmetrical lockup",
+          depthIntent: "Deep focus on brand asset"
+        },
+        lighting: {
+          source: "Studio beauty key with accent highlights",
+          direction: "front",
+          quality: "specular",
+          intensity: "high_key",
+          contrast: "soft_diffuse"
+        },
+        visualDirection: {
+          artDirection: `${brandName} brand identity showcase`,
+          colorPalette: toneAttributes,
+          environmentDetails: "Pristine brand color gradient background",
+          renderingStyle: "premium commercial finish"
+        },
+        audio: {
+          dialogueOrVoiceover: strategy.tagline || strategy.callToAction || strategy.brandIdea,
+          musicCue: "Final resonant resolution chord and sonic logo mark",
+          soundEffects: ["subtle chime or impact"]
+        },
+        transitions: {
+          incoming: "cut",
+          outgoing: "none"
+        },
+        referencedAssetIds: [],
+        continuity: {
+          spatialAnchor: "center",
+          lightingContinuity: "continuous"
+        },
+        constraints: {
+          forbiddenArtifacts: ["misspelled brand name", "logo distortion"]
+        },
+        qaExpectations: {
+          focalClarity: 1,
+          narrativePacing: "decisive"
+        }
+      }
+    ];
+    const constraints = [
+      {
+        id: "c1",
+        category: "brand",
+        severity: "must",
+        rule: `Brand must be presented as ${brandName} honoring: ${territory.strategicGuardrails?.mustInclude?.join("; ") || "Authentic brand truth"}`
+      },
+      {
+        id: "c2",
+        category: "visual",
+        severity: "must_not",
+        rule: `Forbidden visual cliches: ${territory.strategicGuardrails?.mustAvoid?.join("; ") || "Generic stock footage tropes"}`
+      }
+    ];
+    return {
+      schemaVersion: "1.0.0",
+      adId,
+      identity: {
+        adId,
+        campaignId: strategy.strategyId || `camp_${Date.now()}`,
+        title: `${strategy.campaignTitle} - Hero Ad`,
+        workspaceId: "default",
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      brief: {
+        brandRef: brandName,
+        product: strategy.campaignTitle,
+        objective: "awareness",
+        targetAudience: {
+          persona: strategy.targetAudience || "Target Audience",
+          painPoints: [strategy.consumerInsight || territory.consumerInsight || "Customer challenge"],
+          demographics: strategy.demographics || "Broad Consumer"
+        },
+        platform,
+        desiredDurationSeconds: duration,
+        aspectRatio,
+        language: "English",
+        cta: {
+          visualText: strategy.callToAction || "Explore Now",
+          actionIntent: "learn_more"
+        },
+        keyMessage: strategy.brandIdea || strategy.coreValueProposition,
+        desiredResponse: desiredBelief,
+        tone: creativeWorld,
+        emotionalGoal: {
+          primaryEmotion: toneAttributes[0] || "Empowerment",
+          finalImpression: strategy.brandIdea || strategy.coreValueProposition
+        },
+        mustInclude: territory.strategicGuardrails?.mustInclude || strategy.governanceGuardrails?.mandatoryInclusions || [],
+        mustAvoid: territory.strategicGuardrails?.mustAvoid || strategy.governanceGuardrails?.forbiddenTerritories || [],
+        referencesAndInspiration: [premise],
+        userConstraints: []
+      },
+      creative: {
+        concepts: [
+          {
+            conceptId: territory.id || "territory_hero",
+            name: territory.title || territory.name || "Hero Concept",
+            oneLinePremise: premise,
+            coreIdea: strategy.brandIdea || strategy.coreValueProposition,
+            hook: {
+              hookType: "visual_surprise",
+              description: premise
+            },
+            narrativeMechanism: mechanism,
+            visualMechanism: visualCodes.join(", "),
+            emotionalArc: `Tension transitioning to resolution`,
+            brandRole: "Empowering catalyst",
+            intendedAudienceEffect: "Curiosity and immediate brand recall",
+            noveltyRationale: territory.whyItWins || "Non-obvious category angle",
+            complexityEstimate: "medium"
+          }
+        ],
+        selectedConceptId: territory.id || "territory_hero"
+      },
+      brand: {
+        adSpecificOverrides: {
+          lightingAesthetic: visualCodes[0] || "Editorial cinematic key",
+          forbiddenElements: territory.strategicGuardrails?.mustAvoid || []
+        },
+        priorityHierarchy: [
+          "brand_restriction",
+          "campaign_rule",
+          "creative_direction",
+          "shot_preference"
+        ]
+      },
+      assets: { assets: [] },
+      characters: [],
+      products: [],
+      locations: [],
+      story: {
+        structureType: "social_hook_proof_cta",
+        logline: premise,
+        beats: [
+          {
+            beatId: "beat_01",
+            beatType: "opening_hook",
+            title: "Visual Hook",
+            narrativeGoal: tensionBelief,
+            assignedShotIds: ["shot_01"]
+          },
+          {
+            beatId: "beat_02",
+            beatType: "product_moment",
+            title: "Strategic Mechanism",
+            narrativeGoal: mechanism,
+            assignedShotIds: ["shot_02"]
+          },
+          {
+            beatId: "beat_03",
+            beatType: "cta_ending",
+            title: "Payoff & CTA",
+            narrativeGoal: strategy.callToAction || strategy.tagline || "Brand Payoff",
+            assignedShotIds: ["shot_03"]
+          }
+        ]
+      },
+      shots,
+      continuity: { links: [] },
+      constraints,
+      generationIntent: {
+        aspectRatio,
+        targetDurationSec: duration,
+        targetPlatform: platform,
+        productionTier: "hero_production",
+        visualRealism: "photorealistic",
+        motionIntensity: "dynamic"
+      },
+      metadata: {
+        authorId: "campaign-strategist-gem",
+        originatingGem: "video_generation_gem",
+        customNotes: `Compiled from MasterCampaignStrategy with Territory: ${territory.name}`
+      },
+      directorsPlan: {
+        visualCodes,
+        motionCodes,
+        soundCodes: territory.creativeCodes?.soundCodes || [],
+        copyCodes: territory.creativeCodes?.copyCodes || [],
+        manifestoAnchor: strategy.positioningManifesto?.[0]?.text || strategy.strategicRationale
+      }
     };
   }
 };
@@ -5462,6 +7817,7 @@ var CampaignStrategyCompiler = class {
       parentVersionId,
       changeReason
     } = request;
+    const safeAnswers = normalizeDiscoveryAnswers(discoveryAnswers);
     const basePrompt = `
 You are the Chief Strategy Officer at an internationally renowned creative agency.
 Compile the authoritative Master Campaign Strategy based on the following approved Strategic Route.
@@ -5497,7 +7853,7 @@ APPROVED STRATEGIC ROUTE (TERRITORY):
 - Target Fit: Best for: ${selectedTerritory.targetFit?.bestFor?.join(", ") || "General"}, Less suitable for: ${selectedTerritory.targetFit?.lessSuitableFor?.join(", ") || "None"}
 
 DISCOVERY CONTEXT:
-${discoveryAnswers.map((a) => `- ${a.questionText}: ${a.answer}`).join("\n") || "None"}
+${safeAnswers.length > 0 ? safeAnswers.map((a) => `- ${a.questionText}: ${a.answer}`).join("\n") : "None"}
 
 EPISTEMIC HONESTY & PROVENANCE RULES:
 1. Every claim must have an explicit epistemic status and basis:
@@ -5970,7 +8326,8 @@ var CampaignStrategyService = class {
    * Retrieves or computes dynamic discovery questions with persistent request caching.
    */
   async getDiscoveryQuestions(request) {
-    const requestHash = `disc_${request.workspaceId}_${this.computeHash({
+    const requestHash = `disc_v2_${request.workspaceId}_${this.computeHash({
+      v: "v2_semantic",
       title: request.campaignTitle,
       brief: request.briefDescription,
       audience: request.targetAudience,
@@ -6392,6 +8749,7 @@ Return JSON in this EXACT structure:
 var campaignStrategyService = new CampaignStrategyService();
 
 // apps/api/src/modules/campaigns/campaignRoutes.ts
+init_videoAdProjectRepository();
 init_billingErrorUtils();
 var creditService2 = new CreditService();
 var campaignRouter = Router2();
@@ -6607,6 +8965,33 @@ campaignRouter.post("/strategy/stress-test", async (req, res) => {
   } catch (err) {
     console.error("Error in /strategy/stress-test:", err);
     return res.status(500).json({ error: err?.message || "Failed to stress-test strategy" });
+  }
+});
+campaignRouter.post("/strategy/adspec", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
+    }
+    const { strategy, territory, options, persistToProject = true } = req.body;
+    if (!strategy || !territory) {
+      return res.status(400).json({ error: "Missing required strategy or territory" });
+    }
+    const adSpec = campaignDownstreamOrchestrator.compileAdSpec(strategy, territory, options);
+    let projectId;
+    if (persistToProject) {
+      try {
+        const workspaceId = req.user.workspaceId || await workspaceRepository.ensurePersonalWorkspace(req.user.uid, req.user.email || "");
+        const projectTitle = strategy.campaignTitle || territory.name || "Campaign Video Project";
+        const result = await videoAdProjectRepository.createProject(workspaceId, projectTitle, req.user.uid, adSpec);
+        projectId = result.project.id;
+      } catch (persistErr) {
+        console.warn("Could not persist video project to repository, continuing with in-memory AdSpec:", persistErr);
+      }
+    }
+    return res.json({ adSpec, projectId });
+  } catch (err) {
+    console.error("Error in /strategy/adspec:", err);
+    return res.status(500).json({ error: err?.message || "Failed to compile canonical AdSpec" });
   }
 });
 campaignRouter.get("/strategy/workspace-history", async (req, res) => {
@@ -6888,9 +9273,9 @@ var PaymentRepository = class {
   /**
    * Validates if a transition from current status to next status is permitted.
    */
-  isValidTransition(current, next2) {
+  isValidTransition(current, next) {
     const allowed = ALLOWED_TRANSITIONS[current];
-    return allowed ? allowed.includes(next2) : false;
+    return allowed ? allowed.includes(next) : false;
   }
   async create(record) {
     const supabase = getSupabaseAdmin();
@@ -7047,7 +9432,7 @@ init_creditService();
 
 // apps/api/src/infrastructure/payment/razorpayClient.ts
 init_env();
-import crypto4 from "crypto";
+import crypto5 from "crypto";
 async function createRazorpayOrder(amount, currency = "USD") {
   const keyId = serverConfig.razorpayKeyId;
   const keySecret = serverConfig.razorpayKeySecret;
@@ -7110,7 +9495,7 @@ function verifyRazorpaySignature(orderId, paymentId, signature) {
     return { verified: false };
   }
   try {
-    const hmac = crypto4.createHmac("sha256", keySecret.trim());
+    const hmac = crypto5.createHmac("sha256", keySecret.trim());
     hmac.update(`${orderId}|${paymentId}`);
     const generatedSignature = hmac.digest("hex");
     const sigBuffer = Buffer.from(signature, "hex");
@@ -7118,7 +9503,7 @@ function verifyRazorpaySignature(orderId, paymentId, signature) {
     if (sigBuffer.length !== genBuffer.length) {
       return { verified: false };
     }
-    const isMatch = crypto4.timingSafeEqual(sigBuffer, genBuffer);
+    const isMatch = crypto5.timingSafeEqual(sigBuffer, genBuffer);
     return { verified: isMatch };
   } catch (err) {
     console.error("Error during Razorpay signature verification:", err);
@@ -7131,7 +9516,7 @@ function verifyWebhookSignature(rawBody, signature, secretOverride) {
     return false;
   }
   try {
-    const hmac = crypto4.createHmac("sha256", secret.trim());
+    const hmac = crypto5.createHmac("sha256", secret.trim());
     hmac.update(rawBody);
     const generatedSignature = hmac.digest("hex");
     const sigBuffer = Buffer.from(signature, "hex");
@@ -7139,7 +9524,7 @@ function verifyWebhookSignature(rawBody, signature, secretOverride) {
     if (sigBuffer.length !== genBuffer.length) {
       return false;
     }
-    return crypto4.timingSafeEqual(sigBuffer, genBuffer);
+    return crypto5.timingSafeEqual(sigBuffer, genBuffer);
   } catch (err) {
     console.error("Error during Webhook signature verification:", err);
     return false;
@@ -15172,7 +17557,7 @@ presentationRouter.get("/health", (_req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
-presentationRouter.post("/generate", async (req, res) => {
+presentationRouter.post("/generate", async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({
       error: "Unauthorized: Authenticated user session required.",
@@ -15234,7 +17619,7 @@ presentationRouter.post("/generate", async (req, res) => {
     next(err);
   }
 });
-presentationRouter.get("/:id", async (req, res, next2) => {
+presentationRouter.get("/:id", async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
   }
@@ -15247,10 +17632,10 @@ presentationRouter.get("/:id", async (req, res, next2) => {
     }
     return res.json(doc);
   } catch (err) {
-    next2(err);
+    next(err);
   }
 });
-presentationRouter.put("/:id", async (req, res, next2) => {
+presentationRouter.put("/:id", async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
   }
@@ -15280,10 +17665,10 @@ presentationRouter.put("/:id", async (req, res, next2) => {
         currentVersion: err.currentVersion
       });
     }
-    next2(err);
+    next(err);
   }
 });
-presentationRouter.post("/:id/export", async (req, res, next2) => {
+presentationRouter.post("/:id/export", async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
   }
@@ -15304,10 +17689,10 @@ presentationRouter.post("/:id/export", async (req, res, next2) => {
     if (status < 500) {
       return res.status(status).json({ error: err.message, code: err.code || "EXPORT_JOB_FAILED" });
     }
-    next2(err);
+    next(err);
   }
 });
-var handleGetExportStatus = async (req, res, next2) => {
+var handleGetExportStatus = async (req, res, next) => {
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ error: "Unauthorized: Authenticated user session required.", code: "AUTH_REQUIRED" });
   }
@@ -15327,7 +17712,7 @@ var handleGetExportStatus = async (req, res, next2) => {
     if (status < 500) {
       return res.status(status).json({ error: err.message, code: err.code || "EXPORT_STATUS_FAILED" });
     }
-    next2(err);
+    next(err);
   }
 };
 presentationRouter.get("/export/:exportId", handleGetExportStatus);
@@ -17022,1665 +19407,7 @@ var videoCreativePlanner = new VideoCreativePlanner();
 
 // apps/api/src/modules/videoGeneration/videoRoutes.ts
 init_billingErrorUtils();
-
-// apps/api/src/modules/adDirector/repositories/videoAdProjectRepository.ts
-init_supabaseClient();
-
-// apps/api/src/modules/adDirector/services/videoAdHashService.ts
-import crypto5 from "crypto";
-function calculateAdSpecHash(spec) {
-  const normalized = {
-    schemaVersion: spec.schemaVersion || "1.0.0",
-    brief: {
-      brandRef: spec.brief?.brandRef || "",
-      product: spec.brief?.product || "",
-      objective: typeof spec.brief?.objective === "object" && spec.brief.objective !== null && "value" in spec.brief.objective ? spec.brief.objective.value : spec.brief?.objective,
-      targetAudience: spec.brief?.targetAudience,
-      platform: spec.brief?.platform,
-      placement: spec.brief?.placement || "",
-      desiredDurationSeconds: typeof spec.brief?.desiredDurationSeconds === "object" && spec.brief.desiredDurationSeconds !== null && "value" in spec.brief.desiredDurationSeconds ? spec.brief.desiredDurationSeconds.value : spec.brief?.desiredDurationSeconds,
-      aspectRatio: spec.brief?.aspectRatio,
-      language: spec.brief?.language || "en",
-      cta: spec.brief?.cta,
-      offer: spec.brief?.offer || "",
-      keyMessage: typeof spec.brief?.keyMessage === "object" && spec.brief.keyMessage !== null && "value" in spec.brief.keyMessage ? spec.brief.keyMessage.value : spec.brief?.keyMessage,
-      tone: typeof spec.brief?.tone === "object" && spec.brief.tone !== null && "value" in spec.brief.tone ? spec.brief.tone.value : spec.brief?.tone,
-      mustInclude: [...spec.brief?.mustInclude || []].sort(),
-      mustAvoid: [...spec.brief?.mustAvoid || []].sort(),
-      userConstraints: [...spec.brief?.userConstraints || []].sort()
-    },
-    creative: spec.creative ? {
-      concepts: (spec.creative.concepts || []).map((c) => ({
-        conceptId: c.conceptId,
-        name: c.name,
-        oneLinePremise: c.oneLinePremise,
-        coreIdea: c.coreIdea,
-        narrativeMechanism: c.narrativeMechanism,
-        visualMechanism: c.visualMechanism
-      })).sort((a, b) => a.conceptId.localeCompare(b.conceptId)),
-      selectedConceptId: spec.creative.selectedConceptId || null
-    } : null,
-    brand: spec.brand ? {
-      adSpecificOverrides: spec.brand.adSpecificOverrides || {},
-      priorityHierarchy: spec.brand.priorityHierarchy || []
-    } : null,
-    assets: (spec.assets?.assets || []).map((a) => ({
-      assetId: a.assetId,
-      semanticRole: a.semanticRole,
-      targetEntityId: a.targetEntityId || "",
-      priority: a.priority || 1
-    })).sort((a, b) => a.assetId.localeCompare(b.assetId)),
-    characters: (Array.isArray(spec.characters) ? spec.characters : spec.characters?.characters || []).map((c) => ({
-      id: c.characterId || c.id || "",
-      displayName: c.name || c.displayName || "",
-      narrativeRole: c.role || c.narrativeRole || "",
-      appearance: c.appearance || c.visualDescription || {},
-      wardrobe: c.wardrobe || {},
-      referenceAssetIds: [...c.referenceAssetIds || []].sort(),
-      behaviorPersonality: c.behaviorPersonality || "",
-      locks: [...c.locks || []].sort()
-    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")),
-    products: (Array.isArray(spec.products) ? spec.products : spec.products?.products || []).map((p) => ({
-      id: p.productId || p.id || "",
-      name: p.name || "",
-      visualDescription: p.visualDescription || "",
-      shapeForm: p.shapeForm || "",
-      materials: [...p.materials || []].sort(),
-      colorPalette: [...p.colorPalette || []].sort(),
-      packaging: p.packaging || {},
-      branding: p.branding || {},
-      referenceAssetIds: [...p.referenceAssetIds || []].sort(),
-      locks: [...p.locks || []].sort()
-    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")),
-    locations: (Array.isArray(spec.locations) ? spec.locations : spec.locations?.locations || []).map((l) => ({
-      id: l.locationId || l.id || "",
-      name: l.name || "",
-      description: l.description || l.visualDescription || "",
-      architecture: l.architecture || "",
-      spatialCharacteristics: l.spatialCharacteristics || {},
-      lightingCharacteristics: l.lightingCharacteristics || {},
-      palette: [...l.palette || []].sort(),
-      referenceAssetIds: [...l.referenceAssetIds || []].sort(),
-      locks: [...l.locks || []].sort()
-    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")),
-    shots: (spec.shots || []).map((s) => ({
-      shotId: s.shotId,
-      sequence: s.sequence,
-      purpose: s.purpose || "",
-      narrativeRole: s.narrativeRole || "",
-      duration: s.timing?.duration || 0,
-      locationId: s.environment?.locationId || "",
-      subjects: (s.subjects || []).map((sub) => ({
-        entityId: sub.entityId,
-        entityType: sub.entityType,
-        roleInShot: sub.roleInShot
-      })).sort((a, b) => a.entityId.localeCompare(b.entityId)),
-      camera: s.camera || {},
-      lighting: s.lighting || {},
-      visualDirection: s.visualDirection || {},
-      audio: s.audio || {},
-      referencedAssetIds: [...s.referencedAssetIds || []].sort(),
-      continuity: s.continuity || {},
-      constraints: s.constraints || {},
-      qaExpectations: s.qaExpectations || {}
-    })).sort((a, b) => a.sequence - b.sequence),
-    constraints: Array.isArray(spec.constraints) ? spec.constraints.map((c) => ({
-      id: c.id,
-      category: c.category,
-      severity: c.severity,
-      rule: c.rule,
-      targetEntityId: c.targetEntityId || "",
-      targetShotId: c.targetShotId || ""
-    })).sort((a, b) => (a.id || "").localeCompare(b.id || "")) : [],
-    generationRequirements: spec.generationRequirements ? {
-      durationSeconds: spec.generationRequirements.durationSeconds,
-      aspectRatio: spec.generationRequirements.aspectRatio,
-      audioRequired: spec.generationRequirements.audioRequired,
-      firstFrameRequired: spec.generationRequirements.firstFrameRequired,
-      lastFrameRequired: spec.generationRequirements.lastFrameRequired,
-      minimumReferenceCount: spec.generationRequirements.minimumReferenceCount
-    } : null
-  };
-  const canonicalJson = JSON.stringify(normalized);
-  return crypto5.createHash("sha256").update(canonicalJson).digest("hex");
-}
-
-// packages/contracts/adSpecContracts.ts
-import { z as z4 } from "zod";
-
-// packages/contracts/modelCapabilityContracts.ts
-import { z } from "zod";
-var ModelCapabilityZodSchema = z.object({
-  provider: z.enum(["google", "fal", "runway", "kling", "luma", "seedance", "minimax"]),
-  model: z.string().min(1),
-  displayName: z.string().min(1),
-  supported_durations: z.array(z.number().positive()),
-  aspect_ratios: z.array(z.enum(["16:9", "9:16", "1:1", "4:5", "21:9"])),
-  resolutions: z.array(z.enum(["720p", "1080p", "4k"])),
-  max_references: z.number().int().nonnegative(),
-  image_to_video: z.boolean(),
-  first_frame: z.boolean(),
-  last_frame: z.boolean(),
-  character_reference: z.boolean(),
-  audio: z.boolean(),
-  camera_control: z.boolean(),
-  motion_strength: z.boolean(),
-  negative_prompt: z.boolean(),
-  max_prompt_length: z.number().int().positive(),
-  credit_cost: z.number().nonnegative(),
-  status: z.enum(["AVAILABLE", "CONFIGURED", "DEPRECATED"]),
-  other_capabilities: z.record(z.any()).optional()
-});
-var ValidateCompatibilityRequestZodSchema = z.object({
-  modelId: z.string().min(1)
-});
-var CompileExecutionPlanRequestZodSchema = z.object({
-  modelId: z.string().min(1),
-  resolution: z.enum(["720p", "1080p", "4k"]).optional().default("1080p"),
-  userPromptOverrides: z.record(z.string()).optional()
-});
-
-// packages/contracts/providerAdapterContracts.ts
-import { z as z2 } from "zod";
-var NormalizedErrorCodeZodSchema = z2.enum([
-  "INVALID_REQUEST",
-  "UNSUPPORTED_CONFIGURATION",
-  "AUTHENTICATION_ERROR",
-  "RATE_LIMITED",
-  "PROVIDER_UNAVAILABLE",
-  "TIMEOUT",
-  "CONTENT_REJECTED",
-  "UNKNOWN_PROVIDER_ERROR"
-]);
-var NormalizedProviderErrorZodSchema = z2.object({
-  code: NormalizedErrorCodeZodSchema,
-  message: z2.string(),
-  rawError: z2.string().optional(),
-  retryable: z2.boolean(),
-  provider: z2.enum(["google", "fal", "seedance"]),
-  model: z2.string(),
-  retryAfterSeconds: z2.number().optional()
-});
-var ProviderExecutionRequestZodSchema = z2.object({
-  projectId: z2.string(),
-  adId: z2.string().optional(),
-  shotId: z2.string(),
-  sequence: z2.number().int().positive(),
-  provider: z2.enum(["google", "fal", "seedance"]),
-  model: z2.string(),
-  prompt: z2.string(),
-  negativePrompt: z2.string().optional(),
-  duration: z2.number().positive(),
-  aspectRatio: z2.enum(["16:9", "9:16", "1:1", "4:5", "21:9"]),
-  resolution: z2.enum(["720p", "1080p", "4k"]),
-  references: z2.array(
-    z2.object({
-      assetId: z2.string(),
-      url: z2.string(),
-      role: z2.enum(["first_frame", "last_frame", "character_ref", "product_ref", "location_ref", "style_ref"]),
-      type: z2.enum(["character", "product", "location", "prop", "style"]),
-      label: z2.string(),
-      targetEntityId: z2.string().optional()
-    })
-  ),
-  settings: z2.record(z2.any()).optional(),
-  workspaceId: z2.string(),
-  idempotencyKey: z2.string().optional()
-});
-var ProviderGenerationResultZodSchema = z2.object({
-  provider: z2.enum(["google", "fal", "seedance"]),
-  model: z2.string(),
-  providerRequestId: z2.string(),
-  status: z2.enum(["queued", "processing", "completed", "failed", "cancelled"]),
-  outputUrl: z2.string().optional(),
-  outputAssetId: z2.string().optional(),
-  error: NormalizedProviderErrorZodSchema.optional(),
-  progress: z2.number().min(0).max(100).optional(),
-  metadata: z2.record(z2.any()).optional()
-});
-
-// packages/contracts/executionQueueContracts.ts
-import { z as z3 } from "zod";
-var LaunchExecutionRequestZodSchema = z3.object({
-  modelId: z3.string().min(1, "modelId is required"),
-  options: z3.object({
-    resolution: z3.enum(["720p", "1080p", "4k"]).optional(),
-    userPromptOverrides: z3.record(z3.string()).optional(),
-    idempotencyKey: z3.string().optional()
-  }).optional()
-});
-var ExecutionStatusZodSchema = z3.enum([
-  "queued",
-  "processing",
-  "completed",
-  "failed",
-  "partial_failure",
-  "cancelled"
-]);
-var ShotJobExecutionStateZodSchema = z3.enum([
-  "queued",
-  "submitting",
-  "submitted",
-  "processing",
-  "completed",
-  "failed",
-  "cancelled"
-]);
-
-// packages/contracts/adSpecContracts.ts
-var StableEntityIdRegex = {
-  character: /^char_[a-zA-Z0-9_-]+$/,
-  product: /^(product|prod)_[a-zA-Z0-9_-]+$/,
-  location: /^(location|loc)_[a-zA-Z0-9_-]+$/,
-  shot: /^shot_[a-zA-Z0-9_-]+$/,
-  asset: /^asset_[a-zA-Z0-9_-]+$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-};
-var AdBriefZodSchema = z4.object({
-  brandRef: z4.string().min(1),
-  product: z4.string().min(1),
-  objective: z4.any(),
-  targetAudience: z4.any(),
-  platform: z4.enum(["instagram_reels", "tiktok_in_feed", "youtube_shorts", "linkedin_video", "connected_tv", "generic"]),
-  placement: z4.string().optional(),
-  desiredDurationSeconds: z4.any(),
-  aspectRatio: z4.enum(["16:9", "9:16", "1:1", "4:5"]),
-  language: z4.string().default("en"),
-  cta: z4.any(),
-  offer: z4.string().optional(),
-  keyMessage: z4.any(),
-  desiredResponse: z4.string().default(""),
-  tone: z4.any(),
-  emotionalGoal: z4.object({
-    primaryEmotion: z4.string().default(""),
-    finalImpression: z4.string().default("")
-  }).optional(),
-  mustInclude: z4.array(z4.string()).default([]),
-  mustAvoid: z4.array(z4.string()).default([]),
-  referencesAndInspiration: z4.array(z4.string()).default([]),
-  userConstraints: z4.array(z4.string()).default([])
-});
-var SemanticAssetItemZodSchema = z4.object({
-  assetId: z4.string().min(1),
-  semanticRole: z4.string(),
-  targetEntityId: z4.string().optional(),
-  label: z4.string(),
-  url: z4.string().optional(),
-  mimeType: z4.string().optional(),
-  priority: z4.union([z4.literal(1), z4.literal(2), z4.literal(3)]).default(1),
-  usageConstraints: z4.array(z4.string()).default([]),
-  provenance: z4.string().default("user_provided")
-});
-var AssetBibleZodSchema = z4.object({
-  assets: z4.array(SemanticAssetItemZodSchema).default([])
-});
-var CharacterEntityZodSchema = z4.object({
-  id: z4.string().regex(StableEntityIdRegex.character, "Character ID must follow format char_*"),
-  name: z4.string().optional(),
-  displayName: z4.string().min(1),
-  narrativeRole: z4.string().default("protagonist"),
-  referenceAssetIds: z4.array(z4.string()).default([]),
-  appearance: z4.record(z4.any()).default({}),
-  wardrobe: z4.record(z4.any()).default({}),
-  behaviorPersonality: z4.string().default(""),
-  identityLockStrength: z4.enum(["strict", "normal", "flexible"]).optional(),
-  locks: z4.array(z4.string()).default([]),
-  continuityConstraints: z4.array(z4.string()).default([]),
-  forbiddenChanges: z4.array(z4.string()).default([])
-});
-var ProductEntityZodSchema = z4.object({
-  id: z4.string().regex(StableEntityIdRegex.product, "Product ID must follow format product_* or prod_*"),
-  name: z4.string().min(1),
-  referenceAssetIds: z4.array(z4.string()).default([]),
-  visualDescription: z4.string().default(""),
-  shapeForm: z4.string().default(""),
-  materials: z4.array(z4.string()).default([]),
-  colorPalette: z4.array(z4.string()).default([]),
-  packaging: z4.record(z4.any()).default({}),
-  branding: z4.record(z4.any()).default({}),
-  labelLogoConstraints: z4.array(z4.string()).default([]),
-  orientationConstraints: z4.array(z4.string()).default([]),
-  allowedTransformations: z4.array(z4.string()).default([]),
-  forbiddenTransformations: z4.array(z4.string()).default([]),
-  continuityRequirements: z4.array(z4.string()).default([]),
-  locks: z4.array(z4.string()).default([])
-});
-var LocationEntityZodSchema = z4.object({
-  id: z4.string().regex(StableEntityIdRegex.location, "Location ID must follow format location_* or loc_*"),
-  name: z4.string().min(1),
-  description: z4.string().default(""),
-  referenceAssetIds: z4.array(z4.string()).default([]),
-  architecture: z4.string().default(""),
-  spatialCharacteristics: z4.record(z4.any()).default({}),
-  lightingCharacteristics: z4.record(z4.any()).default({}),
-  weather: z4.string().optional(),
-  palette: z4.array(z4.string()).default([]),
-  atmosphere: z4.string().default(""),
-  continuityConstraints: z4.array(z4.string()).default([]),
-  locks: z4.array(z4.string()).default([])
-});
-var ShotTimingZodSchema = z4.object({
-  startTime: z4.number().nonnegative(),
-  endTime: z4.number().positive(),
-  duration: z4.number().positive()
-}).refine((data) => data.endTime >= data.startTime, {
-  message: "endTime must be greater than or equal to startTime"
-});
-var ShotSubjectZodSchema = z4.object({
-  entityId: z4.string().min(1),
-  entityType: z4.enum(["character", "product", "prop"]),
-  roleInShot: z4.string().default("subject"),
-  focalPriority: z4.union([z4.literal(1), z4.literal(2), z4.literal(3)]).default(1)
-});
-var AdShotZodSchema = z4.object({
-  shotId: z4.string().regex(StableEntityIdRegex.shot, "Shot ID must follow format shot_*"),
-  sequence: z4.number().int().positive(),
-  purpose: z4.string().default(""),
-  narrativeRole: z4.string().default(""),
-  timing: ShotTimingZodSchema,
-  subjects: z4.array(ShotSubjectZodSchema).default([]),
-  action: z4.record(z4.any()).default({}),
-  environment: z4.object({
-    locationId: z4.string(),
-    environmentState: z4.string().optional()
-  }),
-  camera: z4.record(z4.any()).default({}),
-  lighting: z4.record(z4.any()).default({}),
-  visualDirection: z4.record(z4.any()).default({}),
-  audio: z4.record(z4.any()).default({}),
-  transitions: z4.record(z4.any()).default({}),
-  referencedAssetIds: z4.array(z4.string()).default([]),
-  continuity: z4.record(z4.any()).default({}),
-  constraints: z4.record(z4.any()).default({}),
-  qaExpectations: z4.record(z4.any()).default({})
-});
-var AdConstraintZodSchema = z4.object({
-  id: z4.string().min(1),
-  category: z4.string(),
-  severity: z4.enum(["must", "should", "must_not"]),
-  rule: z4.string().min(1),
-  targetEntityId: z4.string().optional(),
-  targetShotId: z4.string().optional()
-});
-var GenerationRequirementsZodSchema = z4.object({
-  durationSeconds: z4.number().positive(),
-  aspectRatio: z4.enum(["16:9", "9:16", "1:1", "4:5"]),
-  audioRequired: z4.boolean().default(false),
-  firstFrameRequired: z4.boolean().default(false),
-  lastFrameRequired: z4.boolean().default(false),
-  minimumReferenceCount: z4.number().int().nonnegative().default(0),
-  videoInputRequired: z4.boolean().optional(),
-  multiShotRequired: z4.boolean().optional(),
-  continuityPriority: z4.enum(["strict", "relaxed"]).default("strict"),
-  qualityPriority: z4.enum(["draft", "cinematic_pro", "broadcast_master"]).default("cinematic_pro"),
-  preferredProvider: z4.string().optional(),
-  preferredModel: z4.string().optional()
-});
-var DecisionProvenanceZodSchema = z4.object({
-  source: z4.enum([
-    "user",
-    "user_provided",
-    "user_selected",
-    "user_requested",
-    "ai_inferred",
-    "ai_proposed",
-    "ai_optimized",
-    "system",
-    "system_derived",
-    "system_repaired",
-    "model_constraint"
-  ]),
-  confidence: z4.number().min(0).max(1).default(1),
-  status: z4.enum(["unconfirmed", "confirmed", "approved", "user_confirmed"]).default("unconfirmed"),
-  locked: z4.boolean().default(false),
-  confirmedAt: z4.string().optional(),
-  confirmedBy: z4.string().optional(),
-  reason: z4.string().optional()
-});
-var AdSpecZodSchema = z4.object({
-  schemaVersion: z4.literal("1.0.0"),
-  identity: z4.object({
-    adId: z4.string().min(1),
-    specVersion: z4.number().int().positive(),
-    revisionId: z4.string(),
-    parentVersionId: z4.string().optional(),
-    creativeState: z4.string(),
-    executionState: z4.string(),
-    title: z4.string().min(1),
-    workspaceId: z4.string().min(1),
-    projectId: z4.string().optional(),
-    createdBy: z4.string().optional(),
-    createdAt: z4.string(),
-    updatedAt: z4.string()
-  }),
-  brief: AdBriefZodSchema,
-  creative: z4.record(z4.any()).default({}),
-  brand: z4.record(z4.any()).default({}),
-  assets: AssetBibleZodSchema,
-  characters: z4.array(CharacterEntityZodSchema).default([]),
-  products: z4.array(ProductEntityZodSchema).default([]),
-  locations: z4.array(LocationEntityZodSchema).default([]),
-  story: z4.record(z4.any()).default({}),
-  shots: z4.array(AdShotZodSchema).min(1, "AdSpec must contain at least one shot"),
-  continuity: z4.record(z4.any()).default({}),
-  constraints: z4.array(AdConstraintZodSchema).default([]),
-  generationIntent: z4.record(z4.any()).default({}),
-  generationRequirements: GenerationRequirementsZodSchema.optional(),
-  decisionMetadata: z4.record(DecisionProvenanceZodSchema).default({}),
-  provenanceRegistry: z4.record(DecisionProvenanceZodSchema).optional(),
-  validationStatus: z4.record(z4.any()).optional(),
-  metadata: z4.record(z4.any()).default({})
-});
-var DiscoveryQuestionOptionZodSchema = z4.object({
-  label: z4.string(),
-  value: z4.string(),
-  description: z4.string().optional()
-});
-var DiscoveryQuestionZodSchema = z4.object({
-  id: z4.string().min(1),
-  field: z4.string().min(1),
-  question: z4.string().min(1),
-  reason: z4.string().min(1),
-  priority: z4.enum(["BLOCKING", "IMPORTANT", "OPTIONAL"]),
-  inputType: z4.enum([
-    "text",
-    "textarea",
-    "single_choice",
-    "multi_choice",
-    "number",
-    "url",
-    "asset_selection",
-    "boolean"
-  ]),
-  options: z4.array(DiscoveryQuestionOptionZodSchema).optional(),
-  required: z4.boolean().default(true),
-  allowCustom: z4.boolean().default(true),
-  dependsOn: z4.string().optional(),
-  status: z4.enum(["PENDING", "ANSWERED", "SKIPPED"]).default("PENDING")
-});
-var KnownFieldZodSchema = z4.object({
-  field: z4.string().min(1),
-  value: z4.any(),
-  source: z4.enum(["USER", "INFERRED", "ASSET", "SYSTEM"]),
-  confidence: z4.number().min(0).max(1).optional()
-});
-var DiscoveryContradictionZodSchema = z4.object({
-  type: z4.literal("CONTRADICTION"),
-  fields: z4.array(z4.string()).min(1),
-  explanation: z4.string().min(1),
-  resolutionQuestion: z4.string().min(1)
-});
-var DiscoveryAnswerZodSchema = z4.object({
-  questionId: z4.string().min(1),
-  rawAnswer: z4.union([z4.string(), z4.array(z4.string())]),
-  parsedValue: z4.any().optional(),
-  answeredAt: z4.string()
-});
-var DiscoveryStateZodSchema = z4.object({
-  projectId: z4.string().min(1),
-  workspaceId: z4.string().min(1),
-  status: z4.enum(["DISCOVERY", "WAITING_FOR_USER", "READY_FOR_CREATIVE", "BLOCKED"]),
-  brief: z4.record(z4.any()),
-  knownFields: z4.array(KnownFieldZodSchema).default([]),
-  unknownFields: z4.array(z4.string()).default([]),
-  ambiguities: z4.array(z4.string()).default([]),
-  questions: z4.array(DiscoveryQuestionZodSchema).default([]),
-  answers: z4.array(DiscoveryAnswerZodSchema).default([]),
-  contradictions: z4.array(DiscoveryContradictionZodSchema).default([]),
-  completeness: z4.number().min(0).max(1).default(0),
-  blockingIssues: z4.array(z4.string()).default([]),
-  isBriefConfirmed: z4.boolean().default(false),
-  confirmedAt: z4.string().optional(),
-  updatedAt: z4.string()
-});
-var InitDiscoveryRequestZodSchema = z4.object({
-  initialPrompt: z4.string().min(1, "Initial prompt cannot be empty"),
-  assetIds: z4.array(z4.string()).optional()
-});
-var AnswerDiscoveryRequestZodSchema = z4.object({
-  answers: z4.array(z4.object({
-    questionId: z4.string().min(1),
-    answer: z4.union([z4.string(), z4.array(z4.string())])
-  })).min(1, "At least one answer is required")
-});
-var ConfirmBriefRequestZodSchema = z4.object({
-  briefOverrides: z4.record(z4.any()).optional()
-});
-var RequiredAssetItemZodSchema = z4.object({
-  role: z4.string(),
-  description: z4.string(),
-  exists: z4.boolean(),
-  assetId: z4.string().optional()
-});
-var VisualDirectionConceptZodSchema = z4.object({
-  visualLanguage: z4.string(),
-  environment: z4.string(),
-  colorDirection: z4.string(),
-  energy: z4.string(),
-  realismLevel: z4.string()
-});
-var CreativeConceptZodSchema = z4.object({
-  id: z4.string().min(1),
-  projectId: z4.string().min(1),
-  workspaceId: z4.string().min(1),
-  briefVersion: z4.number().int().positive(),
-  name: z4.string().min(1),
-  oneLineIdea: z4.string().min(1),
-  strategicFoundation: z4.string().min(1),
-  creativeMechanism: z4.string().min(1),
-  hook: z4.object({
-    type: z4.string().min(1),
-    description: z4.string().min(1)
-  }),
-  premise: z4.string().min(1),
-  emotionalArc: z4.string().min(1),
-  visualDirection: VisualDirectionConceptZodSchema,
-  narrativeStructure: z4.string().min(1),
-  productRole: z4.enum([
-    "protagonist",
-    "enabler",
-    "solution",
-    "transformation_trigger",
-    "visual_centerpiece",
-    "supporting_element",
-    "proof_mechanism"
-  ]),
-  messageDelivery: z4.enum([
-    "visual_demonstration",
-    "dialogue",
-    "voiceover",
-    "on_screen_text",
-    "behavior",
-    "transformation",
-    "comparison",
-    "narrative_consequence",
-    "product_interaction"
-  ]),
-  differentiation: z4.string().min(1),
-  risks: z4.array(z4.string()).default([]),
-  strengths: z4.array(z4.string()).default([]),
-  estimatedComplexity: z4.enum(["low", "medium", "high"]).default("medium"),
-  requiredAssets: z4.array(RequiredAssetItemZodSchema).default([]),
-  conceptStatus: z4.enum(["DRAFT", "READY_FOR_REVIEW", "SELECTED", "REJECTED", "ARCHIVED"]).default("READY_FOR_REVIEW"),
-  provenance: z4.object({
-    generatedBy: z4.enum(["ai_director", "user"]).default("ai_director"),
-    modelUsed: z4.string().optional(),
-    generatedAt: z4.string(),
-    selectedAt: z4.string().optional(),
-    selectedBy: z4.string().optional()
-  }),
-  createdAt: z4.string(),
-  updatedAt: z4.string()
-});
-var GenerateConceptsRequestZodSchema = z4.object({
-  targetCount: z4.number().int().min(1).max(10).optional().default(3),
-  creativeNotes: z4.string().optional()
-});
-var SelectConceptRequestZodSchema = z4.object({
-  userRationale: z4.string().optional()
-});
-var RegenerateConceptsRequestZodSchema = z4.object({
-  targetCount: z4.number().int().min(1).max(10).optional().default(3),
-  creativeNotes: z4.string().optional(),
-  archivePrevious: z4.boolean().optional().default(true)
-});
-var GenerateDirectorsPlanRequestZodSchema = z4.object({
-  targetDurationSeconds: z4.number().positive().optional(),
-  cinematographyStyle: z4.string().optional(),
-  pacingPreference: z4.string().optional()
-});
-var ConfirmDirectorsPlanRequestZodSchema = z4.object({
-  userNotes: z4.string().optional()
-});
-var ProposeRevisionRequestZodSchema = z4.object({
-  instruction: z4.string().min(1, "Revision instruction cannot be empty"),
-  targetScope: z4.string().optional(),
-  targetEntityId: z4.string().optional()
-});
-var ApplyRevisionRequestZodSchema = z4.object({
-  instruction: z4.string().min(1, "Revision instruction cannot be empty"),
-  confirmedOperations: z4.array(z4.any()).optional(),
-  userRationale: z4.string().optional()
-});
-
-// apps/api/src/modules/adDirector/services/videoAdValidationService.ts
-var VideoAdValidationService = class {
-  /**
-   * Deterministic multi-stage validation for AdSpec v1.
-   * 1. Structural Schema Validation (Zod)
-   * 2. Referential Integrity (Characters, Products, Locations, Assets)
-   * 3. Temporal & Duration Consistency
-   * 4. Continuity & Dependency Sanity
-   * 5. Decision Lock Protection
-   */
-  validateAdSpec(spec, previousVersionSpec) {
-    const errors = [];
-    const warnings = [];
-    const parseResult = AdSpecZodSchema.safeParse(spec);
-    if (!parseResult.success) {
-      for (const issue of parseResult.error.issues) {
-        errors.push({
-          code: "SCHEMA_VALIDATION_ERROR",
-          message: issue.message,
-          path: issue.path.join("."),
-          severity: "error"
-        });
-      }
-      return { valid: false, errors, warnings };
-    }
-    const declaredCharacters = new Set((spec.characters || []).map((c) => c.id));
-    const declaredProducts = new Set((spec.products || []).map((p) => p.id));
-    const declaredLocations = new Set((spec.locations || []).map((l) => l.id));
-    const declaredAssets = new Set((spec.assets?.assets || []).map((a) => a.assetId));
-    for (const char of spec.characters || []) {
-      if (!StableEntityIdRegex.character.test(char.id)) {
-        errors.push({
-          code: "INVALID_CHARACTER_ID_FORMAT",
-          message: `Character ID '${char.id}' must follow format char_*`,
-          path: `characters.${char.id}`,
-          severity: "error",
-          targetEntityId: char.id
-        });
-      }
-      for (const assetId of char.referenceAssetIds || []) {
-        if (!declaredAssets.has(assetId)) {
-          warnings.push({
-            code: "UNDECLARED_ASSET_REFERENCE",
-            message: `Character '${char.id}' references undeclared assetId '${assetId}'`,
-            path: `characters.${char.id}.referenceAssetIds`,
-            severity: "warning",
-            targetEntityId: char.id
-          });
-        }
-      }
-    }
-    for (const prod of spec.products || []) {
-      if (!StableEntityIdRegex.product.test(prod.id)) {
-        errors.push({
-          code: "INVALID_PRODUCT_ID_FORMAT",
-          message: `Product ID '${prod.id}' must follow format product_* or prod_*`,
-          path: `products.${prod.id}`,
-          severity: "error",
-          targetEntityId: prod.id
-        });
-      }
-      for (const assetId of prod.referenceAssetIds || []) {
-        if (!declaredAssets.has(assetId)) {
-          warnings.push({
-            code: "UNDECLARED_ASSET_REFERENCE",
-            message: `Product '${prod.id}' references undeclared assetId '${assetId}'`,
-            path: `products.${prod.id}.referenceAssetIds`,
-            severity: "warning",
-            targetEntityId: prod.id
-          });
-        }
-      }
-    }
-    for (const loc of spec.locations || []) {
-      if (!StableEntityIdRegex.location.test(loc.id)) {
-        errors.push({
-          code: "INVALID_LOCATION_ID_FORMAT",
-          message: `Location ID '${loc.id}' must follow format location_* or loc_*`,
-          path: `locations.${loc.id}`,
-          severity: "error",
-          targetEntityId: loc.id
-        });
-      }
-      for (const assetId of loc.referenceAssetIds || []) {
-        if (!declaredAssets.has(assetId)) {
-          warnings.push({
-            code: "UNDECLARED_ASSET_REFERENCE",
-            message: `Location '${loc.id}' references undeclared assetId '${assetId}'`,
-            path: `locations.${loc.id}.referenceAssetIds`,
-            severity: "warning",
-            targetEntityId: loc.id
-          });
-        }
-      }
-    }
-    let calculatedDuration = 0;
-    const shotSequences = /* @__PURE__ */ new Set();
-    const shotIdMap = /* @__PURE__ */ new Map();
-    for (const shot of spec.shots || []) {
-      if (!StableEntityIdRegex.shot.test(shot.shotId)) {
-        errors.push({
-          code: "INVALID_SHOT_ID_FORMAT",
-          message: `Shot ID '${shot.shotId}' must follow format shot_*`,
-          path: `shots.${shot.shotId}`,
-          severity: "error",
-          targetShotId: shot.shotId
-        });
-      }
-      if (shotSequences.has(shot.sequence)) {
-        errors.push({
-          code: "DUPLICATE_SHOT_SEQUENCE",
-          message: `Duplicate sequence number ${shot.sequence} found for shot '${shot.shotId}'`,
-          path: `shots.${shot.shotId}.sequence`,
-          severity: "error",
-          targetShotId: shot.shotId
-        });
-      }
-      shotSequences.add(shot.sequence);
-      shotIdMap.set(shot.shotId, shot.sequence);
-      calculatedDuration += shot.timing?.duration || 0;
-      if (shot.environment?.locationId && !declaredLocations.has(shot.environment.locationId)) {
-        errors.push({
-          code: "LOCATION_NOT_FOUND",
-          message: `Shot '${shot.shotId}' references undeclared location '${shot.environment.locationId}'`,
-          path: `shots.${shot.shotId}.environment.locationId`,
-          severity: "error",
-          targetShotId: shot.shotId,
-          targetEntityId: shot.environment.locationId
-        });
-      }
-      for (const subject of shot.subjects || []) {
-        if (subject.entityType === "character" && !declaredCharacters.has(subject.entityId)) {
-          errors.push({
-            code: "CHARACTER_NOT_FOUND",
-            message: `Shot '${shot.shotId}' references undeclared character '${subject.entityId}'`,
-            path: `shots.${shot.shotId}.subjects`,
-            severity: "error",
-            targetShotId: shot.shotId,
-            targetEntityId: subject.entityId
-          });
-        } else if (subject.entityType === "product" && !declaredProducts.has(subject.entityId)) {
-          errors.push({
-            code: "PRODUCT_NOT_FOUND",
-            message: `Shot '${shot.shotId}' references undeclared product '${subject.entityId}'`,
-            path: `shots.${shot.shotId}.subjects`,
-            severity: "error",
-            targetShotId: shot.shotId,
-            targetEntityId: subject.entityId
-          });
-        }
-      }
-      for (const assetId of shot.referencedAssetIds || []) {
-        if (!declaredAssets.has(assetId)) {
-          warnings.push({
-            code: "UNDECLARED_ASSET_REFERENCE",
-            message: `Shot '${shot.shotId}' references undeclared assetId '${assetId}'`,
-            path: `shots.${shot.shotId}.referencedAssetIds`,
-            severity: "warning",
-            targetShotId: shot.shotId
-          });
-        }
-      }
-    }
-    const desiredDuration = typeof spec.brief?.desiredDurationSeconds === "object" && spec.brief.desiredDurationSeconds !== null && "value" in spec.brief.desiredDurationSeconds ? Number(spec.brief.desiredDurationSeconds.value) : Number(spec.brief?.desiredDurationSeconds || 0);
-    if (desiredDuration > 0 && Math.abs(calculatedDuration - desiredDuration) > 0.5) {
-      errors.push({
-        code: "TOTAL_DURATION_MISMATCH",
-        message: `Sum of shot durations (${calculatedDuration.toFixed(1)}s) does not match brief desired duration (${desiredDuration.toFixed(1)}s)`,
-        path: "brief.desiredDurationSeconds",
-        severity: "error"
-      });
-    }
-    for (const shot of spec.shots || []) {
-      const currentSeq = shot.sequence;
-      const inheritedStates = shot.continuity?.inheritedStates || [];
-      for (const inherited of inheritedStates) {
-        const sourceSeq = shotIdMap.get(inherited.sourceShotId);
-        if (sourceSeq === void 0) {
-          errors.push({
-            code: "CONTINUITY_SOURCE_NOT_FOUND",
-            message: `Shot '${shot.shotId}' inherits from nonexistent shot '${inherited.sourceShotId}'`,
-            path: `shots.${shot.shotId}.continuity`,
-            severity: "error",
-            targetShotId: shot.shotId
-          });
-        } else if (sourceSeq >= currentSeq) {
-          errors.push({
-            code: "CONTINUITY_CYCLE_OR_FORWARD_DEP",
-            message: `Shot '${shot.shotId}' (seq ${currentSeq}) has invalid forward/circular dependency on shot '${inherited.sourceShotId}' (seq ${sourceSeq})`,
-            path: `shots.${shot.shotId}.continuity`,
-            severity: "error",
-            targetShotId: shot.shotId
-          });
-        }
-      }
-    }
-    if (previousVersionSpec) {
-      const lockedDecisions = previousVersionSpec.decisionMetadata || {};
-      for (const [fieldPath, decision] of Object.entries(lockedDecisions)) {
-        if (decision.locked) {
-          const prevVal = this.getValueAtPath(previousVersionSpec, fieldPath);
-          const currentVal = this.getValueAtPath(spec, fieldPath);
-          if (prevVal !== void 0 && currentVal !== void 0 && JSON.stringify(prevVal) !== JSON.stringify(currentVal)) {
-            errors.push({
-              code: "LOCKED_DECISION_MUTATION",
-              message: `Field '${fieldPath}' is locked by decision '${decision.reason || "user_confirmed"}' and cannot be mutated without explicit unlock`,
-              path: fieldPath,
-              severity: "error"
-            });
-          }
-        }
-      }
-      for (const prevProd of previousVersionSpec.products || []) {
-        const currProd = (spec.products || []).find((p) => p.id === prevProd.id);
-        if (currProd) {
-          const prodLocks = prevProd.locks || [];
-          if (prodLocks.includes("geometry") && prevProd.shapeForm !== currProd.shapeForm) {
-            errors.push({
-              code: "LOCKED_DECISION_MUTATION",
-              message: `Product '${prevProd.id}' geometry is locked and cannot be mutated without explicit unlock`,
-              path: `products.${prevProd.id}.geometry`,
-              severity: "error",
-              targetEntityId: prevProd.id
-            });
-          }
-          if (prodLocks.includes("packaging") && JSON.stringify(prevProd.packaging) !== JSON.stringify(currProd.packaging)) {
-            errors.push({
-              code: "LOCKED_DECISION_MUTATION",
-              message: `Product '${prevProd.id}' packaging is locked and cannot be mutated without explicit unlock`,
-              path: `products.${prevProd.id}.packaging`,
-              severity: "error",
-              targetEntityId: prevProd.id
-            });
-          }
-        }
-      }
-      for (const prevChar of previousVersionSpec.characters || []) {
-        const currChar = (spec.characters || []).find((c) => c.id === prevChar.id);
-        if (currChar) {
-          const charLocks = prevChar.locks || [];
-          if (charLocks.includes("wardrobe") && JSON.stringify(prevChar.wardrobe) !== JSON.stringify(currChar.wardrobe)) {
-            errors.push({
-              code: "LOCKED_DECISION_MUTATION",
-              message: `Character '${prevChar.id}' wardrobe is locked and cannot be mutated without explicit unlock`,
-              path: `characters.${prevChar.id}.wardrobe`,
-              severity: "error",
-              targetEntityId: prevChar.id
-            });
-          }
-        }
-      }
-    }
-    return {
-      valid: errors.length === 0,
-      errors,
-      warnings
-    };
-  }
-  getValueAtPath(obj, path2) {
-    const parts = path2.split(".");
-    let curr = obj;
-    for (let i = 0; i < parts.length; i++) {
-      if (curr === null || curr === void 0) return void 0;
-      const part = parts[i];
-      if (Array.isArray(curr)) {
-        const item = curr.find((el) => el?.id === part || el?.shotId === part);
-        if (item) {
-          curr = item;
-          continue;
-        }
-      }
-      if (curr && typeof curr === "object" && part === "geometry" && "shapeForm" in curr) {
-        curr = curr.shapeForm;
-        continue;
-      }
-      curr = curr[part];
-    }
-    return curr;
-  }
-};
-var videoAdValidationService = new VideoAdValidationService();
-
-// apps/api/src/modules/adDirector/repositories/videoAdProjectRepository.ts
-var VideoAdProjectRepository = class {
-  constructor() {
-    // In-memory fallback maps for resilience during local testing and development
-    this.inMemoryProjects = /* @__PURE__ */ new Map();
-    this.inMemoryVersions = /* @__PURE__ */ new Map();
-    this.inMemoryExecutions = /* @__PURE__ */ new Map();
-  }
-  /**
-   * Create a new Video Ad Project with an initial AdSpec v1.
-   */
-  async createProject(workspaceId, title, userId, initialSpec) {
-    const projectId = crypto.randomUUID();
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const adId = initialSpec?.identity?.adId || `ad_${projectId.slice(0, 8)}`;
-    const baseSpec = {
-      schemaVersion: "1.0.0",
-      identity: {
-        adId,
-        specVersion: 1,
-        revisionId: "rev_v1_init",
-        creativeState: "discovery",
-        executionState: "idle",
-        title,
-        workspaceId,
-        projectId,
-        createdBy: userId,
-        createdAt: now,
-        updatedAt: now,
-        ...initialSpec?.identity
-      },
-      brief: {
-        brandRef: "brand_default",
-        product: "Default Product",
-        objective: "awareness",
-        targetAudience: { persona: "General Audience", painPoints: [] },
-        platform: "generic",
-        desiredDurationSeconds: 15,
-        aspectRatio: "16:9",
-        language: "en",
-        cta: { visualText: "Learn More", actionIntent: "click_link" },
-        keyMessage: "Brand message",
-        desiredResponse: "Interest",
-        tone: "Professional and engaging",
-        mustInclude: [],
-        mustAvoid: [],
-        referencesAndInspiration: [],
-        userConstraints: [],
-        ...initialSpec?.brief
-      },
-      creative: {
-        concepts: [],
-        ...initialSpec?.creative
-      },
-      brand: {
-        adSpecificOverrides: {},
-        priorityHierarchy: ["brand_restriction", "campaign_rule", "creative_direction", "shot_preference"],
-        ...initialSpec?.brand
-      },
-      assets: {
-        assets: [],
-        ...initialSpec?.assets
-      },
-      characters: initialSpec?.characters || [],
-      products: initialSpec?.products || [],
-      locations: initialSpec?.locations?.length ? initialSpec.locations : [
-        {
-          id: "loc_default",
-          name: "Studio Stage",
-          description: "Clean minimalist commercial studio environment",
-          referenceAssetIds: [],
-          architecture: "modern studio",
-          spatialCharacteristics: {},
-          lightingCharacteristics: {},
-          palette: ["#FFFFFF", "#111827"],
-          atmosphere: "crisp lighting",
-          continuityConstraints: [],
-          locks: []
-        }
-      ],
-      story: {
-        structureType: "minimal_hero",
-        logline: "",
-        beats: [],
-        ...initialSpec?.story
-      },
-      shots: initialSpec?.shots?.length ? initialSpec.shots : [
-        {
-          shotId: "shot_01",
-          sequence: 1,
-          purpose: "Opening Hook",
-          narrativeRole: "hook",
-          timing: { startTime: 0, endTime: 15, duration: 15 },
-          subjects: [],
-          action: { startingState: "Static hero view", action: "Gentle reveal", choreography: "Subtle motion", endingState: "CTA hold" },
-          environment: { locationId: "loc_default" },
-          camera: {
-            shotSize: "medium_close_up",
-            framing: "rule_of_thirds",
-            angle: "eye_level",
-            lensCharacteristics: "normal_prime_50mm",
-            cameraPosition: "front",
-            cameraMovement: "static",
-            composition: "clean centered",
-            depthIntent: "shallow_dof"
-          },
-          lighting: {
-            source: "softbox",
-            direction: "front_three_quarter",
-            quality: "soft_diffuse",
-            intensity: "balanced",
-            contrast: "medium",
-            colorTemperature: "5600K",
-            atmosphere: "clean studio"
-          },
-          visualDirection: {
-            visualIntent: "Cinematic commercial polish",
-            realismLevel: "photorealistic",
-            colorPalette: [],
-            colorGrading: "warm_commercial",
-            motionPacing: "calm"
-          },
-          audio: {
-            soundEffects: [],
-            audioPriority: "medium"
-          },
-          transitions: { incoming: "cut", outgoing: "cut" },
-          referencedAssetIds: [],
-          continuity: { inheritedStates: [], producedStates: [] },
-          constraints: { mustHappen: [], mustNotHappen: [] },
-          qaExpectations: {
-            requiredSubjects: [],
-            requiredActions: [],
-            forbiddenActions: [],
-            requiredFraming: "rule_of_thirds",
-            requiredCameraMovement: "static",
-            productVisibility: "prominent_front",
-            characterIdentityRules: [],
-            brandRules: []
-          }
-        }
-      ],
-      continuity: { links: [], ...initialSpec?.continuity },
-      constraints: initialSpec?.constraints || [],
-      generationIntent: {
-        desiredDurationSeconds: 15,
-        aspectRatio: "16:9",
-        qualityIntent: "cinematic_pro",
-        audioRequired: false,
-        continuityPriority: "strict",
-        realism: "photorealistic",
-        generationStrategy: "shot_by_shot",
-        modelRequirements: {
-          requiresFirstFrame: false,
-          requiresLastFrame: false,
-          minimumReferenceCount: 0,
-          requiresNativeAudio: false
-        },
-        ...initialSpec?.generationIntent
-      },
-      generationRequirements: {
-        durationSeconds: 15,
-        aspectRatio: "16:9",
-        audioRequired: false,
-        firstFrameRequired: false,
-        lastFrameRequired: false,
-        minimumReferenceCount: 0,
-        continuityPriority: "strict",
-        qualityPriority: "cinematic_pro",
-        ...initialSpec?.generationRequirements
-      },
-      decisionMetadata: initialSpec?.decisionMetadata || {},
-      metadata: {
-        authorId: userId || "system",
-        originatingGem: "video_generation_gem",
-        ...initialSpec?.metadata
-      }
-    };
-    const contentHash = calculateAdSpecHash(baseSpec);
-    baseSpec.identity.revisionId = `rev_init_${contentHash.slice(0, 8)}`;
-    const projectSummary = {
-      id: projectId,
-      workspaceId,
-      title,
-      status: "draft",
-      currentVersion: 1,
-      createdAt: now,
-      updatedAt: now
-    };
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        const { error: projErr } = await supabase.from("video_ad_projects").insert({
-          id: projectId,
-          workspace_id: workspaceId,
-          created_by: userId || null,
-          title,
-          status: "draft",
-          current_version: 1,
-          created_at: now,
-          updated_at: now
-        });
-        if (!projErr) {
-          await this.persistNormalizedVersion(projectId, workspaceId, 1, baseSpec, contentHash, userId);
-        }
-      } catch {
-      }
-    }
-    this.inMemoryProjects.set(projectId, projectSummary);
-    this.inMemoryVersions.set(`${projectId}_v1`, {
-      id: crypto.randomUUID(),
-      projectId,
-      workspaceId,
-      versionNumber: 1,
-      status: "draft",
-      contentHash,
-      spec: JSON.parse(JSON.stringify(baseSpec)),
-      createdAt: now
-    });
-    return { project: projectSummary, adSpec: baseSpec };
-  }
-  /**
-   * Retrieve project summary by ID, verifying workspace tenancy.
-   */
-  async getProject(projectId, workspaceId) {
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.from("video_ad_projects").select("*").eq("id", projectId).eq("workspace_id", workspaceId).single();
-        if (!error && data) {
-          return {
-            id: data.id,
-            workspaceId: data.workspace_id,
-            title: data.title,
-            status: data.status,
-            currentVersion: data.current_version,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at
-          };
-        }
-      } catch {
-      }
-    }
-    const mem = this.inMemoryProjects.get(projectId);
-    if (mem && mem.workspaceId === workspaceId) {
-      return mem;
-    }
-    return null;
-  }
-  /**
-   * Retrieve current AdSpec for a project, assembling from normalized storage.
-   */
-  async getCurrentAdSpec(projectId, workspaceId) {
-    const project = await this.getProject(projectId, workspaceId);
-    if (!project) return null;
-    return this.getAdSpecVersion(projectId, workspaceId, project.currentVersion);
-  }
-  /**
-   * Retrieve a specific historical AdSpec version by version number.
-   * Enforces immutability: returns exact historical snapshot.
-   */
-  async getAdSpecVersion(projectId, workspaceId, versionNumber) {
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        const { data: verRow, error: verErr } = await supabase.from("video_ad_spec_versions").select("*").eq("project_id", projectId).eq("workspace_id", workspaceId).eq("version_number", versionNumber).single();
-        if (!verErr && verRow) {
-          return this.assembleSpecFromDatabase(verRow);
-        }
-      } catch {
-      }
-    }
-    const mem = this.inMemoryVersions.get(`${projectId}_v${versionNumber}`);
-    if (mem && mem.workspaceId === workspaceId) {
-      return JSON.parse(JSON.stringify(mem.spec));
-    }
-    return null;
-  }
-  /**
-   * Create a new immutable version N+1.
-   * INVARIANT: Never overwrites version N in place.
-   */
-  async createVersion(projectId, workspaceId, newSpec, reason, actorId) {
-    const project = await this.getProject(projectId, workspaceId);
-    if (!project) {
-      throw new Error(`Project '${projectId}' not found in workspace '${workspaceId}'`);
-    }
-    const currentVersion = project.currentVersion;
-    const nextVersionNumber = currentVersion + 1;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const previousSpec = await this.getAdSpecVersion(projectId, workspaceId, currentVersion);
-    const validation = videoAdValidationService.validateAdSpec(newSpec, previousSpec || void 0);
-    if (!validation.valid) {
-      const firstErr = validation.errors[0];
-      throw new Error(`AdSpec validation failed: [${firstErr.code}] ${firstErr.message}`);
-    }
-    const contentHash = calculateAdSpecHash(newSpec);
-    const versionedSpec = JSON.parse(JSON.stringify(newSpec));
-    versionedSpec.identity.specVersion = nextVersionNumber;
-    versionedSpec.identity.parentVersionId = `${projectId}_v${currentVersion}`;
-    versionedSpec.identity.revisionId = `rev_v${nextVersionNumber}_${contentHash.slice(0, 8)}`;
-    versionedSpec.identity.updatedAt = now;
-    if (!versionedSpec.decisionMetadata) {
-      versionedSpec.decisionMetadata = {};
-    }
-    versionedSpec.decisionMetadata[`version_${nextVersionNumber}`] = {
-      source: "user_requested",
-      confidence: 1,
-      status: "confirmed",
-      locked: false,
-      confirmedAt: now,
-      confirmedBy: actorId || "user",
-      reason: reason || `Version ${nextVersionNumber} created`
-    };
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        await this.persistNormalizedVersion(
-          projectId,
-          workspaceId,
-          nextVersionNumber,
-          versionedSpec,
-          contentHash,
-          actorId
-        );
-        await supabase.from("video_ad_projects").update({
-          current_version: nextVersionNumber,
-          updated_at: now
-        }).eq("id", projectId).eq("workspace_id", workspaceId);
-      } catch {
-      }
-    }
-    project.currentVersion = nextVersionNumber;
-    project.updatedAt = now;
-    this.inMemoryProjects.set(projectId, project);
-    this.inMemoryVersions.set(`${projectId}_v${nextVersionNumber}`, {
-      id: crypto.randomUUID(),
-      projectId,
-      workspaceId,
-      versionNumber: nextVersionNumber,
-      parentVersionId: `${projectId}_v${currentVersion}`,
-      status: "draft",
-      contentHash,
-      spec: JSON.parse(JSON.stringify(versionedSpec)),
-      createdAt: now
-    });
-    return {
-      versionNumber: nextVersionNumber,
-      contentHash,
-      adSpec: versionedSpec
-    };
-  }
-  /**
-   * List all versions for a project.
-   */
-  async listVersions(projectId, workspaceId) {
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.from("video_ad_spec_versions").select("id, version_number, parent_version_id, status, content_hash, created_at, approved_at").eq("project_id", projectId).eq("workspace_id", workspaceId).order("version_number", { ascending: true });
-        if (!error && data && data.length > 0) {
-          return data.map((d) => ({
-            id: d.id,
-            versionNumber: d.version_number,
-            parentVersionId: d.parent_version_id,
-            status: d.status,
-            contentHash: d.content_hash,
-            createdAt: d.created_at,
-            approvedAt: d.approved_at
-          }));
-        }
-      } catch {
-      }
-    }
-    const results = [];
-    for (const [key, val] of this.inMemoryVersions.entries()) {
-      if (key.startsWith(`${projectId}_`) && val.workspaceId === workspaceId) {
-        results.push({
-          id: val.id,
-          versionNumber: val.versionNumber,
-          parentVersionId: val.parentVersionId,
-          status: val.status,
-          contentHash: val.contentHash,
-          createdAt: val.createdAt,
-          approvedAt: val.approvedAt
-        });
-      }
-    }
-    return results.sort((a, b) => a.versionNumber - b.versionNumber);
-  }
-  /**
-   * Approve a specific AdSpec version. Locks version against further mutation.
-   */
-  async approveVersion(projectId, workspaceId, versionNumber, approverId) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        const { error } = await supabase.from("video_ad_spec_versions").update({
-          status: "approved",
-          approved_by: approverId || null,
-          approved_at: now
-        }).eq("project_id", projectId).eq("workspace_id", workspaceId).eq("version_number", versionNumber);
-        if (!error) {
-          await supabase.from("video_ad_projects").update({ status: "approved", updated_at: now }).eq("id", projectId).eq("workspace_id", workspaceId);
-        }
-      } catch {
-      }
-    }
-    const mem = this.inMemoryVersions.get(`${projectId}_v${versionNumber}`);
-    if (mem && mem.workspaceId === workspaceId) {
-      mem.status = "approved";
-      mem.approvedAt = now;
-      mem.approvedBy = approverId;
-      mem.spec.identity.creativeState = "approved";
-      const proj = this.inMemoryProjects.get(projectId);
-      if (proj) {
-        proj.status = "approved";
-        proj.updatedAt = now;
-      }
-      return true;
-    }
-    return false;
-  }
-  /**
-   * Foundation: Create execution snapshot from approved version.
-   */
-  async createExecutionSnapshot(projectId, workspaceId, versionNumber, executionSettings, userId) {
-    const project = await this.getProject(projectId, workspaceId);
-    if (!project) throw new Error("Project not found");
-    const targetVer = versionNumber || project.currentVersion;
-    const spec = await this.getAdSpecVersion(projectId, workspaceId, targetVer);
-    if (!spec) throw new Error(`Version ${targetVer} not found`);
-    if (spec.identity.creativeState !== "approved") {
-      throw new Error(`Cannot create execution snapshot from unapproved version (current status: ${spec.identity.creativeState})`);
-    }
-    const snapshotId = crypto.randomUUID();
-    const contentHash = calculateAdSpecHash(spec);
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        await supabase.from("video_ad_executions").insert({
-          id: snapshotId,
-          project_id: projectId,
-          version_id: crypto.randomUUID(),
-          workspace_id: workspaceId,
-          content_hash: contentHash,
-          frozen_spec: spec,
-          execution_settings: executionSettings || {},
-          approved_by: userId || null,
-          approved_at: now,
-          created_at: now
-        });
-      } catch {
-      }
-    }
-    this.inMemoryExecutions.set(snapshotId, {
-      id: snapshotId,
-      projectId,
-      versionId: `${projectId}_v${targetVer}`,
-      workspaceId,
-      contentHash,
-      frozenSpec: JSON.parse(JSON.stringify(spec)),
-      createdAt: now,
-      approvedAt: now,
-      approvedBy: userId
-    });
-    return {
-      snapshotId,
-      versionNumber: targetVer,
-      contentHash
-    };
-  }
-  // ===========================================================================
-  // PRIVATE PERSISTENCE & DECOMPOSITION HELPERS
-  // ===========================================================================
-  async persistNormalizedVersion(projectId, workspaceId, versionNumber, spec, contentHash, userId) {
-    const supabase = getSupabaseAdmin();
-    if (!supabase) return;
-    const versionId = crypto.randomUUID();
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    await supabase.from("video_ad_spec_versions").insert({
-      id: versionId,
-      project_id: projectId,
-      workspace_id: workspaceId,
-      version_number: versionNumber,
-      status: spec.identity.creativeState || "draft",
-      brief: spec.brief || {},
-      creative: spec.creative || {},
-      brand_rules: spec.brand || {},
-      audio: spec.audio || {},
-      story: spec.story || {},
-      continuity: spec.continuity || {},
-      constraints: spec.constraints || [],
-      generation_requirements: spec.generationRequirements || {},
-      schema_version: spec.schemaVersion || "1.0.0",
-      content_hash: contentHash,
-      created_by: userId || null,
-      created_at: now
-    });
-    if (spec.characters?.length) {
-      const charRows = spec.characters.map((c) => ({
-        id: c.id,
-        version_id: versionId,
-        project_id: projectId,
-        workspace_id: workspaceId,
-        name: c.displayName || c.name || c.id,
-        narrative_role: c.narrativeRole || "protagonist",
-        appearance: c.appearance || {},
-        wardrobe: c.wardrobe || {},
-        reference_asset_ids: c.referenceAssetIds || [],
-        behavior_personality: c.behaviorPersonality || "",
-        locks: c.locks || [],
-        continuity_constraints: c.continuityConstraints || [],
-        forbidden_changes: c.forbiddenChanges || [],
-        created_at: now
-      }));
-      await supabase.from("video_ad_characters").insert(charRows);
-    }
-    if (spec.products?.length) {
-      const prodRows = spec.products.map((p) => ({
-        id: p.id,
-        version_id: versionId,
-        project_id: projectId,
-        workspace_id: workspaceId,
-        name: p.name,
-        visual_description: p.visualDescription || "",
-        shape_form: p.shapeForm || "",
-        materials: p.materials || [],
-        color_palette: p.colorPalette || [],
-        packaging: p.packaging || {},
-        branding: p.branding || {},
-        reference_asset_ids: p.referenceAssetIds || [],
-        locks: p.locks || [],
-        allowed_transformations: p.allowedTransformations || [],
-        forbidden_transformations: p.forbiddenTransformations || [],
-        continuity_requirements: p.continuityRequirements || [],
-        created_at: now
-      }));
-      await supabase.from("video_ad_products").insert(prodRows);
-    }
-    if (spec.locations?.length) {
-      const locRows = spec.locations.map((l) => ({
-        id: l.id,
-        version_id: versionId,
-        project_id: projectId,
-        workspace_id: workspaceId,
-        name: l.name,
-        description: l.description || "",
-        architecture: l.architecture || "",
-        spatial_characteristics: l.spatialCharacteristics || {},
-        lighting_characteristics: l.lightingCharacteristics || {},
-        palette: l.palette || [],
-        atmosphere: l.atmosphere || "",
-        reference_asset_ids: l.referenceAssetIds || [],
-        continuity_constraints: l.continuityConstraints || [],
-        locks: l.locks || [],
-        created_at: now
-      }));
-      await supabase.from("video_ad_locations").insert(locRows);
-    }
-    if (spec.shots?.length) {
-      const shotRows = spec.shots.map((s) => ({
-        id: s.shotId,
-        version_id: versionId,
-        project_id: projectId,
-        workspace_id: workspaceId,
-        sequence_order: s.sequence,
-        duration_seconds: s.timing?.duration || 0,
-        purpose: s.purpose || "",
-        narrative_role: s.narrativeRole || "",
-        location_id: s.environment?.locationId || null,
-        action: s.action || {},
-        camera: s.camera || {},
-        lighting: s.lighting || {},
-        visual_direction: s.visualDirection || {},
-        audio: s.audio || {},
-        transitions: s.transitions || {},
-        referenced_asset_ids: s.referencedAssetIds || [],
-        continuity: s.continuity || {},
-        constraints: s.constraints || {},
-        qa_expectations: s.qaExpectations || {},
-        created_at: now
-      }));
-      await supabase.from("video_ad_shots").insert(shotRows);
-    }
-    if (spec.decisionMetadata && Object.keys(spec.decisionMetadata).length > 0) {
-      const decRows = Object.entries(spec.decisionMetadata).map(([fieldPath, d]) => ({
-        version_id: versionId,
-        project_id: projectId,
-        workspace_id: workspaceId,
-        field_path: fieldPath,
-        source: d.source || "user_requested",
-        actor_id: userId || null,
-        reason: d.reason || null,
-        is_locked: !!d.locked,
-        lock_scope: null,
-        confirmed_at: d.confirmedAt || now,
-        created_at: now
-      }));
-      await supabase.from("video_ad_decisions").insert(decRows);
-    }
-  }
-  async assembleSpecFromDatabase(verRow) {
-    const supabase = getSupabaseAdmin();
-    if (!supabase) {
-      throw new Error("Supabase client not available");
-    }
-    const versionId = verRow.id;
-    const [
-      { data: characters },
-      { data: products },
-      { data: locations },
-      { data: shots },
-      { data: decisions }
-    ] = await Promise.all([
-      supabase.from("video_ad_characters").select("*").eq("version_id", versionId),
-      supabase.from("video_ad_products").select("*").eq("version_id", versionId),
-      supabase.from("video_ad_locations").select("*").eq("version_id", versionId),
-      supabase.from("video_ad_shots").select("*").eq("version_id", versionId).order("sequence_order"),
-      supabase.from("video_ad_decisions").select("*").eq("version_id", versionId)
-    ]);
-    const assembledCharacters = (characters || []).map((c) => ({
-      id: c.id,
-      name: c.name,
-      displayName: c.name,
-      narrativeRole: c.narrative_role,
-      appearance: c.appearance,
-      wardrobe: c.wardrobe,
-      referenceAssetIds: c.reference_asset_ids,
-      behaviorPersonality: c.behavior_personality,
-      locks: c.locks,
-      continuityConstraints: c.continuity_constraints,
-      forbiddenChanges: c.forbidden_changes
-    }));
-    const assembledProducts = (products || []).map((p) => ({
-      id: p.id,
-      name: p.name,
-      referenceAssetIds: p.reference_asset_ids,
-      visualDescription: p.visual_description,
-      shapeForm: p.shape_form,
-      materials: p.materials,
-      colorPalette: p.color_palette,
-      packaging: p.packaging,
-      branding: p.branding,
-      labelLogoConstraints: [],
-      orientationConstraints: [],
-      allowedTransformations: p.allowed_transformations,
-      forbiddenTransformations: p.forbidden_transformations,
-      continuityRequirements: p.continuity_requirements,
-      locks: p.locks
-    }));
-    const assembledLocations = (locations || []).map((l) => ({
-      id: l.id,
-      name: l.name,
-      description: l.description,
-      referenceAssetIds: l.reference_asset_ids,
-      architecture: l.architecture,
-      spatialCharacteristics: l.spatial_characteristics,
-      lightingCharacteristics: l.lighting_characteristics,
-      palette: l.palette,
-      atmosphere: l.atmosphere,
-      continuityConstraints: l.continuity_constraints,
-      locks: l.locks
-    }));
-    const assembledShots = (shots || []).map((s) => ({
-      shotId: s.id,
-      sequence: s.sequence_order,
-      purpose: s.purpose,
-      narrativeRole: s.narrative_role,
-      timing: {
-        startTime: 0,
-        endTime: Number(s.duration_seconds),
-        duration: Number(s.duration_seconds)
-      },
-      subjects: [],
-      action: s.action,
-      environment: { locationId: s.location_id || "loc_default" },
-      camera: s.camera,
-      lighting: s.lighting,
-      visualDirection: s.visual_direction,
-      audio: s.audio,
-      transitions: s.transitions,
-      referencedAssetIds: s.referenced_asset_ids,
-      continuity: s.continuity,
-      constraints: s.constraints,
-      qaExpectations: s.qa_expectations
-    }));
-    const assembledDecisions = {};
-    for (const d of decisions || []) {
-      assembledDecisions[d.field_path] = {
-        source: d.source,
-        confidence: 1,
-        status: d.is_locked ? "confirmed" : "unconfirmed",
-        locked: d.is_locked,
-        confirmedAt: d.confirmed_at,
-        reason: d.reason
-      };
-    }
-    return {
-      schemaVersion: verRow.schema_version || "1.0.0",
-      identity: {
-        adId: `ad_${verRow.project_id.slice(0, 8)}`,
-        specVersion: verRow.version_number,
-        revisionId: `rev_v${verRow.version_number}_${verRow.content_hash.slice(0, 8)}`,
-        parentVersionId: verRow.parent_version_id,
-        creativeState: verRow.status,
-        executionState: "idle",
-        title: `Video Ad Project`,
-        workspaceId: verRow.workspace_id,
-        projectId: verRow.project_id,
-        createdBy: verRow.created_by,
-        createdAt: verRow.created_at,
-        updatedAt: verRow.created_at
-      },
-      brief: verRow.brief,
-      creative: verRow.creative,
-      brand: verRow.brand_rules,
-      assets: { assets: [] },
-      characters: assembledCharacters,
-      products: assembledProducts,
-      locations: assembledLocations,
-      story: verRow.story || { structureType: "minimal_hero", logline: "", beats: [] },
-      shots: assembledShots,
-      continuity: verRow.continuity || { links: [] },
-      constraints: verRow.constraints || [],
-      generationIntent: {
-        desiredDurationSeconds: verRow.brief?.desiredDurationSeconds || 15,
-        aspectRatio: verRow.brief?.aspectRatio || "16:9",
-        qualityIntent: "cinematic_pro",
-        audioRequired: false,
-        continuityPriority: "strict",
-        realism: "photorealistic",
-        generationStrategy: "shot_by_shot",
-        modelRequirements: {
-          requiresFirstFrame: false,
-          requiresLastFrame: false,
-          minimumReferenceCount: 0,
-          requiresNativeAudio: false
-        }
-      },
-      generationRequirements: verRow.generation_requirements,
-      decisionMetadata: assembledDecisions,
-      metadata: {
-        authorId: verRow.created_by || "system",
-        originatingGem: "video_generation_gem"
-      }
-    };
-  }
-  clearMemory() {
-    this.inMemoryProjects.clear();
-    this.inMemoryVersions.clear();
-    this.inMemoryExecutions.clear();
-  }
-};
-var videoAdProjectRepository = new VideoAdProjectRepository();
+init_videoAdProjectRepository();
 
 // apps/api/src/modules/adDirector/repositories/videoAdDiscoveryRepository.ts
 init_supabaseClient();
@@ -19258,6 +19985,7 @@ ${userContent}` }] }
 var interviewerAiService = new InterviewerAiService();
 
 // apps/api/src/modules/adDirector/services/briefReconciliationService.ts
+init_videoAdProjectRepository();
 var BriefReconciliationService = class {
   /**
    * Initializes or continues discovery from a natural-language prompt.
@@ -19770,6 +20498,9 @@ var VideoAdConceptRepository = class {
   }
 };
 var videoAdConceptRepository = new VideoAdConceptRepository();
+
+// apps/api/src/modules/adDirector/services/creativeConceptService.ts
+init_videoAdProjectRepository();
 
 // apps/api/src/modules/adDirector/services/creativeDirectorAiService.ts
 import { GoogleGenAI as GoogleGenAI5 } from "@google/genai";
@@ -20559,6 +21290,10 @@ var CreativeConceptService = class {
   }
 };
 var creativeConceptService = new CreativeConceptService();
+
+// apps/api/src/modules/adDirector/services/directorsPlanService.ts
+init_videoAdProjectRepository();
+init_videoAdValidationService();
 
 // apps/api/src/modules/adDirector/services/storyArchitectAiService.ts
 import { GoogleGenAI as GoogleGenAI6 } from "@google/genai";
@@ -21764,6 +22499,10 @@ var DirectorsPlanService = class {
   }
 };
 var directorsPlanService = new DirectorsPlanService();
+
+// apps/api/src/modules/adDirector/services/revisionService.ts
+init_videoAdProjectRepository();
+init_videoAdValidationService();
 
 // apps/api/src/modules/adDirector/services/revisionDirectorAiService.ts
 import { GoogleGenAI as GoogleGenAI8 } from "@google/genai";
@@ -26442,13 +27181,13 @@ var QAPlanExtractor = class {
           expectedValue: movement
         });
       }
-      if (shot.camera.cameraAngle || shot.camera.angle) {
-        const angle = shot.camera.cameraAngle || shot.camera.angle;
+      const angle = shot.camera.cameraAngle || shot.camera.angle;
+      if (angle) {
         items.push({
           id: `${shotId}_cam_angle`,
           category: "camera",
           dimension: "cameraAngle",
-          requirement: `Camera angle should be "${angle.replace(/_/g, " ")}".`,
+          requirement: `Camera angle should be "${String(angle).replace(/_/g, " ")}".`,
           sourcePath: "camera.cameraAngle",
           isMandatory: false,
           expectedValue: angle
@@ -26468,8 +27207,8 @@ var QAPlanExtractor = class {
       }
     }
     if (shot.action) {
-      if (shot.action.visualDescription || shot.action.action) {
-        const desc = shot.action.visualDescription || shot.action.action;
+      const desc = shot.action.visualDescription || shot.action.action;
+      if (desc) {
         items.push({
           id: `${shotId}_action_core`,
           category: "action",
@@ -26480,8 +27219,9 @@ var QAPlanExtractor = class {
           expectedValue: desc
         });
       }
-      if (shot.action.choreography && shot.action.choreography.length > 0) {
-        const beatsDesc = shot.action.choreography.map((b, i) => `Beat ${i + 1} (${b.relativeStart}s-${b.relativeEnd}s): ${b.action}`).join(" -> ");
+      const choreographyBeats = Array.isArray(shot.action.choreography) ? shot.action.choreography : shot.action.beats || (shot.action.choreography ? [{ action: shot.action.choreography, relativeStart: 0, relativeEnd: shot.timing?.duration || 3 }] : []);
+      if (choreographyBeats.length > 0) {
+        const beatsDesc = choreographyBeats.map((b, i) => `Beat ${i + 1} (${b.relativeStart ?? 0}s-${b.relativeEnd ?? 0}s): ${b.action || b.description || b}`).join(" -> ");
         items.push({
           id: `${shotId}_action_temporal_beats`,
           category: "action",
@@ -26503,18 +27243,18 @@ var QAPlanExtractor = class {
             id: `${shotId}_char_${charId}_identity`,
             category: "character",
             dimension: `character_${charId}`,
-            requirement: `Featured character "${char.name}": ${char.physicalAppearance?.face || ""}, ${char.physicalAppearance?.bodyType || ""}.`,
+            requirement: `Featured character "${char.name || char.displayName}": ${char.physicalAppearance?.face || char.appearance?.gender || ""}, ${char.physicalAppearance?.bodyType || char.appearance?.physique || ""}.`,
             sourcePath: `characters.${charId}`,
             isMandatory: true,
-            expectedValue: char.name
+            expectedValue: char.name || char.displayName
           });
-          const wardrobe = char.wardrobe?.defaultOutfit || char.wardrobe?.style;
+          const wardrobe = char.wardrobe?.defaultOutfit || char.wardrobe?.style || char.wardrobe?.outfit;
           if (wardrobe) {
             items.push({
               id: `${shotId}_char_${charId}_wardrobe`,
               category: "wardrobe",
               dimension: `wardrobe_${charId}`,
-              requirement: `Character "${char.name}" wardrobe: "${wardrobe}".`,
+              requirement: `Character "${char.name || char.displayName}" wardrobe: "${wardrobe}".`,
               sourcePath: `characters.${charId}.wardrobe`,
               isMandatory: true,
               expectedValue: wardrobe
@@ -26557,7 +27297,7 @@ var QAPlanExtractor = class {
       });
     }
     if (shot.lighting) {
-      const mood = shot.lighting.mood || shot.lighting.atmosphere || shot.lighting.lightingStyle;
+      const mood = shot.lighting.mood || shot.lighting.atmosphere || shot.lighting.lightingStyle || shot.lighting.source;
       if (mood) {
         items.push({
           id: `${shotId}_light_mood`,
@@ -26573,7 +27313,7 @@ var QAPlanExtractor = class {
     if (shot.continuity) {
       const inherited = shot.continuity.inheritedStates || [];
       if (inherited.length > 0) {
-        const rules = inherited.map((s) => `${s.entityId} [${s.aspect}]: ${s.description}`).join("; ");
+        const rules = inherited.map((s) => `${s.entityId} [${s.aspect}]: ${s.requirement || s.description || s.stateDescription || ""}`).join("; ");
         items.push({
           id: `${shotId}_continuity_inherited`,
           category: "continuity",
@@ -27154,7 +27894,7 @@ var RepairPlanner = class {
           targetScope: "shot",
           targetShotId: shotId,
           path: "action.visualDescription",
-          value: `${shot.action?.visualDescription || ""} [Ensuring wardrobe: ${failure.requirement}]`,
+          value: `${shot.action?.visualDescription || shot.action?.action || ""} [Ensuring wardrobe: ${failure.requirement}]`,
           actor: { id: "ai_qa_repair", role: "ai_shot_director" },
           reason: {
             type: "continuity_repair",
@@ -27169,7 +27909,7 @@ var RepairPlanner = class {
           targetScope: "shot",
           targetShotId: shotId,
           path: "action.visualDescription",
-          value: `${shot.action?.visualDescription || ""} [Enforce action sequence: ${failure.requirement}]`,
+          value: `${shot.action?.visualDescription || shot.action?.action || ""} [Enforce action sequence: ${failure.requirement}]`,
           actor: { id: "ai_qa_repair", role: "ai_shot_director" },
           reason: {
             type: "system_repair",
@@ -27325,13 +28065,13 @@ var AssemblySpecBuilder = class {
     const transitions = [];
     for (let i = 0; i < shots.length - 1; i++) {
       const current = shots[i];
-      const next2 = shots[i + 1];
+      const next = shots[i + 1];
       const planShot = plannedShots.find((s) => (s.shotId || s.id) === current.shotId);
       const transType = planShot?.transitions?.outgoing || "cut";
       const duration = transType === "cut" ? 0 : 0.5;
       transitions.push({
         fromShotId: current.shotId,
-        toShotId: next2.shotId,
+        toShotId: next.shotId,
         type: transType,
         durationSeconds: duration
       });
@@ -28205,6 +28945,7 @@ var FFmpegPipeline = class {
 var ffmpegPipeline = new FFmpegPipeline();
 
 // apps/api/src/modules/adDirector/services/promptCompilerService.ts
+init_videoAdProjectRepository();
 var PromptCompilerService = class {
   /**
    * Lists all available video generation models and their capabilities.
@@ -28277,6 +29018,9 @@ var PromptCompilerService = class {
   }
 };
 var promptCompilerService = new PromptCompilerService();
+
+// apps/api/src/modules/videoGeneration/videoRoutes.ts
+init_adSpecContracts();
 
 // apps/api/src/modules/adDirector/adapters/google/googleAdapter.ts
 import { GoogleGenAI as GoogleGenAI9 } from "@google/genai";
@@ -29232,6 +29976,7 @@ var providerAdapterRegistry = new ProviderAdapterRegistry();
 import crypto9 from "node:crypto";
 
 // apps/api/src/modules/adDirector/services/executionSnapshotService.ts
+init_videoAdProjectRepository();
 import crypto8 from "node:crypto";
 
 // apps/api/src/modules/adDirector/adDirectorRepository.ts
@@ -29254,6 +29999,13 @@ var AdDirectorRepository = class {
     this.memoryProviderRuns = /* @__PURE__ */ new Map();
     this.memoryGenerationResults = /* @__PURE__ */ new Map();
     this.memoryQAResults = /* @__PURE__ */ new Map();
+  }
+  /**
+   * Retrieves the current live AdSpec for a project, delegating to videoAdProjectRepository.
+   */
+  async getCurrentAdSpec(projectId, workspaceId) {
+    const { videoAdProjectRepository: videoAdProjectRepository2 } = await Promise.resolve().then(() => (init_videoAdProjectRepository(), videoAdProjectRepository_exports));
+    return videoAdProjectRepository2.getCurrentAdSpec(projectId, workspaceId);
   }
   /**
    * Persists a newly initiated Director Plan and its initial v1 snapshot.
@@ -30480,6 +31232,7 @@ var AdDirectorRepository = class {
 var adDirectorRepository = new AdDirectorRepository();
 
 // apps/api/src/modules/adDirector/services/executionSnapshotService.ts
+init_videoAdHashService();
 var ExecutionSnapshotService = class {
   constructor() {
     this.memorySnapshots = /* @__PURE__ */ new Map();
@@ -31268,7 +32021,7 @@ var VideoAssemblyService = class {
    * Constructs or retrieves the authoritative AssemblySpec for an execution snapshot.
    */
   async createOrGetAssembly(params) {
-    const { executionId, workspaceId, userId, options } = params;
+    const { executionId, workspaceId, userId = "system", options } = params;
     let snapshot = await adDirectorRepository.getExecutionSnapshot(executionId, workspaceId);
     let execution = null;
     if (!snapshot) {
@@ -31420,7 +32173,7 @@ var VideoAssemblyService = class {
    * Enqueues a durable render job for the AssemblySpec.
    */
   async enqueueRender(params) {
-    const { assemblyId, workspaceId, userId, requestedVariants, forceRerender } = params;
+    const { assemblyId, workspaceId, userId = "system", requestedVariants, forceRerender } = params;
     const assembly = await adDirectorRepository.getAssembly(assemblyId, workspaceId);
     if (!assembly) {
       const err = new Error(`Assembly "${assemblyId}" not found in workspace.`);
@@ -31471,6 +32224,7 @@ var VideoAssemblyService = class {
     const renderRecord = {
       id: renderId,
       assemblyId,
+      workspaceId,
       renderType: "master",
       status: "queued",
       durationSeconds: assembly.assemblySpec.output.targetDurationSeconds,
@@ -31644,6 +32398,9 @@ var VideoAssemblyService = class {
   }
 };
 var videoAssemblyService = new VideoAssemblyService();
+
+// apps/api/src/modules/videoGeneration/videoRoutes.ts
+init_executionQueueContracts();
 
 // packages/contracts/videoAssemblyContracts.ts
 import { z as z5 } from "zod";
@@ -33801,6 +34558,9 @@ var QAPersistenceService = class {
 var qaPersistenceService = new QAPersistenceService();
 
 // apps/api/src/modules/adDirector/adDirectorRoutes.ts
+init_videoAdProjectRepository();
+init_videoAdValidationService();
+init_adSpecContracts();
 var adDirectorRouter = Router17();
 adDirectorRouter.post("/plans", async (req, res) => {
   try {
@@ -35072,7 +35832,7 @@ function isOriginAllowed(origin) {
 function createExpressApp() {
   const app2 = express();
   app2.set("trust proxy", 1);
-  app2.use((req, res, next2) => {
+  app2.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin && isOriginAllowed(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
@@ -35094,7 +35854,7 @@ function createExpressApp() {
     if (req.method === "OPTIONS") {
       return res.status(204).end();
     }
-    next2();
+    next();
   });
   app2.use(
     helmet({
@@ -35141,7 +35901,7 @@ function createExpressApp() {
       hsts: process.env.NODE_ENV === "production" ? { maxAge: 31536e3, includeSubDomains: true } : false
     })
   );
-  app2.use((_req, res, next2) => {
+  app2.use((_req, res, next) => {
     if (process.env.NODE_ENV === "production") {
       const origJson = res.json;
       res.json = function(body) {
@@ -35152,7 +35912,7 @@ function createExpressApp() {
         return origJson.call(this, body);
       };
     }
-    next2();
+    next();
   });
   app2.use(
     express.json({
@@ -35177,9 +35937,9 @@ function createExpressApp() {
   app2.use("/api/campaign", aiRateLimiter, campaignRouter);
   app2.use(
     "/api/payment",
-    (req, res, next2) => {
-      if (req.path === "/webhook") return next2();
-      return billingRateLimiter(req, res, next2);
+    (req, res, next) => {
+      if (req.path === "/webhook") return next();
+      return billingRateLimiter(req, res, next);
     },
     billingRouter
   );

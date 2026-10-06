@@ -95,6 +95,17 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
     }
   };
 
+  const getFormattedDiscoveryAnswers = () => {
+    return Object.entries(discovery.discoveryAnswers || {}).map(([id, answer]) => {
+      const q = discovery.adaptiveQuestions.find(aq => aq.id === id);
+      return {
+        questionId: id,
+        questionText: q?.question || id,
+        answer
+      };
+    });
+  };
+
   // 2. Stage 2 -> Stage 3: Strategic Routes Generator
   const handleGenerateTerritories = async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
@@ -107,7 +118,7 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
         industry: brandGuidelines.industry,
         objective: brief.selectedGoal,
         targetAudience: brief.targetAudience,
-        discoveryAnswers: discovery.discoveryAnswers,
+        discoveryAnswers: getFormattedDiscoveryAnswers(),
         controls: brief.controls,
         directionVariant: territories.directionVariant
       });
@@ -139,7 +150,7 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
         objective: brief.selectedGoal,
         targetAudience: brief.targetAudience,
         selectedTerritory: territory,
-        discoveryAnswers: discovery.discoveryAnswers,
+        discoveryAnswers: getFormattedDiscoveryAnswers(),
         language: brief.campaignLanguage,
         controls: brief.controls
       });
@@ -195,7 +206,7 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
         industry: brandGuidelines.industry,
         objective: brief.selectedGoal,
         targetAudience: brief.targetAudience,
-        discoveryAnswers: discovery.discoveryAnswers,
+        discoveryAnswers: getFormattedDiscoveryAnswers(),
         controls: brief.controls,
         directionVariant: 'unconventional'
       });
@@ -332,7 +343,7 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
               <div>
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">Readiness Audit</span>
                 <p className="text-slate-700 dark:text-slate-300">
-                  {discovery.discoveryConfidence ? `${Math.round(discovery.discoveryConfidence.confidenceScore * 100)}% (${discovery.discoveryConfidence.readiness})` : 'Pending submission'}
+                  {discovery.discoveryConfidence ? `${Math.round(discovery.discoveryConfidence.confidenceScore * 100)}% (${discovery.discoveryConfidence.readiness?.overallStatus ? discovery.discoveryConfidence.readiness.overallStatus.replace(/_/g, ' ').toUpperCase() : (discovery.discoveryConfidence.confidenceScore >= 0.8 ? 'STRONG' : discovery.discoveryConfidence.confidenceScore >= 0.5 ? 'MODERATE' : 'EMERGING')})` : 'Pending submission'}
                 </p>
               </div>
 
@@ -353,7 +364,7 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
               <div>
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">Selected Route</span>
                 <p className="text-slate-700 dark:text-slate-300">
-                  {territories.items.find(t => t.id === territories.selectedTerritoryId)?.name || 'Pending selection'}
+                  {territories.items.find(t => t.id === territories.selectedTerritoryId)?.title || territories.items.find(t => t.id === territories.selectedTerritoryId)?.name || 'Pending selection'}
                 </p>
               </div>
 

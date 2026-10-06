@@ -30,6 +30,39 @@ export interface TerritoryGenerationRequest {
   directionVariant?: string; // Curated variant or free-form user steering
 }
 
+export function normalizeDiscoveryAnswers(raw: any): Array<{ questionId?: string; questionText: string; answer: string }> {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((item, idx) => {
+      if (typeof item === 'string') {
+        return { questionText: `Question ${idx + 1}`, answer: item };
+      }
+      return {
+        questionId: item.questionId || item.id || `q_${idx + 1}`,
+        questionText: item.questionText || item.question || `Question ${idx + 1}`,
+        answer: typeof item.answer === 'string' ? item.answer : JSON.stringify(item.answer ?? item)
+      };
+    });
+  }
+  if (typeof raw === 'object') {
+    return Object.entries(raw).map(([key, val]) => {
+      if (typeof val === 'string') {
+        return { questionId: key, questionText: key, answer: val };
+      }
+      if (val && typeof val === 'object') {
+        const v = val as any;
+        return {
+          questionId: key,
+          questionText: v.questionText || v.question || key,
+          answer: typeof v.answer === 'string' ? v.answer : JSON.stringify(v.answer ?? v)
+        };
+      }
+      return { questionId: key, questionText: key, answer: String(val) };
+    });
+  }
+  return [];
+}
+
 export class CampaignTerritoryEngine {
   /**
    * Generates 3-4 distinct Strategic Routes with Creative Tension, trade-offs, and comparison scores.
@@ -50,6 +83,8 @@ export class CampaignTerritoryEngine {
       controls,
       directionVariant
     } = request;
+
+    const safeAnswers = normalizeDiscoveryAnswers(discoveryAnswers);
 
     // Pick top framework candidates for inspiration
     const frameworks = rankFrameworksForBrief({ industry, objective, targetAudience }).slice(0, 4);
@@ -80,7 +115,7 @@ Operational Parameters:
 - Must Avoid: ${controls?.forbiddenTerritories?.join(', ') || 'None'}
 
 Discovery Q&A Context:
-${discoveryAnswers.map(a => `- ${a.questionText}: ${a.answer}`).join('\n') || 'None'}
+${safeAnswers.length > 0 ? safeAnswers.map(a => `- ${a.questionText}: ${a.answer}`).join('\n') : 'None'}
 
 Inspirational Strategic Frameworks:
 ${frameworks.map(f => `1. ${f.name} (Mechanism: ${f.mechanisms.join(', ')})`).join('\n')}
