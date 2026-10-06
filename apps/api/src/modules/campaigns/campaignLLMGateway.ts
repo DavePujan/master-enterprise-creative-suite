@@ -22,6 +22,7 @@ export interface CampaignLLMParams<T> {
   temperature?: number;
   timeoutMs?: number;
   enableGoogleSearchGrounding?: boolean;
+  searchGrounding?: boolean;
 }
 
 export interface CampaignLLMResult<T> {
@@ -52,9 +53,9 @@ export class CampaignLLMGateway {
       responseSchema,
       semanticValidator,
       temperature = 0.7,
-      timeoutMs = this.DEFAULT_TIMEOUT_MS,
-      enableGoogleSearchGrounding = false
+      timeoutMs = this.DEFAULT_TIMEOUT_MS
     } = params;
+    const enableGoogleSearchGrounding = params.enableGoogleSearchGrounding ?? params.searchGrounding ?? false;
 
     const startTime = Date.now();
     const billing = getGeminiBillingContext();
@@ -89,16 +90,19 @@ export class CampaignLLMGateway {
           const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
 
           const config: any = {
-            systemInstruction,
-            responseMimeType: 'application/json',
+            systemInstruction: enableGoogleSearchGrounding
+              ? `${systemInstruction}\n\nIMPORTANT: Return ONLY a valid JSON object matching the requested schema. No conversational markdown wrap outside the JSON block.`
+              : systemInstruction,
             temperature,
             abortSignal: abortController.signal
           };
-          if (responseSchema) {
-            config.responseSchema = responseSchema;
-          }
           if (enableGoogleSearchGrounding) {
             config.tools = [{ googleSearch: {} }];
+          } else {
+            config.responseMimeType = 'application/json';
+            if (responseSchema) {
+              config.responseSchema = responseSchema;
+            }
           }
 
           const response = await ai.models.generateContent({
@@ -125,7 +129,8 @@ export class CampaignLLMGateway {
           // Extract optional Google Search grounding citations
           let citations: Array<{ title: string; url: string }> | undefined = undefined;
           const candidate = (response as any).candidates?.[0];
-          const chunks = candidate?.groundingMetadata?.groundingChunks;
+          const groundingMeta = candidate?.groundingMetadata || (response as any).groundingMetadata;
+          const chunks = groundingMeta?.groundingChunks;
           if (Array.isArray(chunks) && chunks.length > 0) {
             citations = chunks
               .map((chunk: any) => ({
@@ -153,12 +158,19 @@ export class CampaignLLMGateway {
           console.warn(`[CampaignLLMGateway] Google model ${model} (attempt ${modelAttempt}) failed [code: ${errCode}]: ${errMsg}`);
 
           // Intelligent Error Classification
+          const isAuthError = errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('PERMISSION_DENIED') || errCode === 401 || errCode === 403;
           const isRateLimit = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errCode === 429;
           const isTransient = errMsg.includes('503') || errMsg.includes('500') || errMsg.includes('UNAVAILABLE') || errMsg.includes('OVERLOADED');
           const isNotFound = errMsg.includes('404') || errMsg.includes('not found') || errMsg.includes('NOT_FOUND');
           const isBadRequest = errMsg.includes('400') || errMsg.includes('INVALID_ARGUMENT');
 
-          if (isRateLimit) {
+          if (isAuthError) {
+            console.error(`[CampaignLLMGateway] Authentication failure (401/403). Halting immediately to avoid masking invalid credentials: ${errMsg}`);
+            throw new Error(`Authentication failure (401/403): Google API key invalid or unauthorized. Flag configuration immediately.`);
+          } else if (isBadRequest) {
+            console.error(`[CampaignLLMGateway] 400 Invalid Argument / Schema Violation: ${errMsg}. Failing fast.`);
+            throw new Error(`Invalid request or schema violation (400): ${errMsg}`);
+          } else if (isRateLimit) {
             console.log('[CampaignLLMGateway] 429 rate limit encountered. Rotating Gemini client and backing off...');
             rotateGeminiClient();
             await new Promise(r => setTimeout(r, 800 * modelAttempt));
@@ -171,9 +183,6 @@ export class CampaignLLMGateway {
           } else if (isNotFound) {
             console.log(`[CampaignLLMGateway] Model ${model} returned 404/not available. Advancing to next model in chain immediately.`);
             break; // Break while loop to move to next model in for loop
-          } else if (isBadRequest) {
-            console.warn(`[CampaignLLMGateway] 400 Invalid Argument. Schema or input violation: ${errMsg}. Advancing to next fallback.`);
-            break;
           } else {
             // General or exhausted error for this model, break while loop to try next model
             break;

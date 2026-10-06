@@ -526,23 +526,32 @@ export class CampaignDownstreamOrchestrator {
     const platform = (options?.targetPlatform || 'instagram_reels') as AdTargetPlatform;
     const aspectRatio = (options?.aspectRatio || '9:16') as AdAspectRatio;
     const duration = options?.durationSec || 15;
-    const adId = `ad_${strategy.strategyId || 'camp'}_hero_${Date.now().toString(36)}`;
-    const visualCodes = territory.creativeCodes?.visualCodes || ['Cinematic lighting', 'Editorial depth'];
+    const adId = `ad_${(strategy as any).strategyId || 'camp'}_hero_${Date.now().toString(36)}`;
+    const brandName = (strategy as any).brandName || strategy.campaignTitle || 'Brand';
+    const visualCodes = territory.creativeCodes?.visualCodes || territory.keyCreativeCodes || ['Cinematic lighting', 'Editorial depth'];
     const motionCodes = territory.creativeCodes?.motionCodes || ['Smooth push-in', 'Steady tracking'];
+    const creativeWorld = (territory as any).creativeWorld || territory.coreConcept || 'Cinematic world';
+    const toneAttributes = (territory as any).toneAttributes || strategy.toneOfVoice || ['Empathetic', 'Celebratory'];
+    const mechanism = (territory as any).theMechanism || territory.coreConcept || 'Strategic solution';
+    const premise = (territory as any).oneLinePremise || territory.coreConcept || strategy.coreValueProposition;
+    const hookText = (strategy as any).contentPillars?.[0]?.exampleHook || (strategy as any).coreBigIdea?.text || strategy.tagline || strategy.coreValueProposition;
+    const tensionBelief = (strategy as any).creativeTension?.currentBelief || territory.consumerInsight || 'Core consumer tension';
+    const desiredBelief = (strategy as any).creativeTension?.desiredBelief || strategy.coreValueProposition;
 
     const shots: AdShot[] = [
       {
         shotId: 'shot_01',
         shotNumber: 1,
+        sequence: 1,
         durationSeconds: 3,
         sceneNumber: 1,
         shotType: 'macro',
-        timing: { startSec: 0, endSec: 3 },
+        timing: { startSec: 0, endSec: 3, startTime: 0, endTime: 3, duration: 3 },
         purpose: 'hook_3sec',
         subject: {
-          primary: strategy.brandName,
+          primary: brandName,
           action: 'Visual pattern-interrupt establishing core tension',
-          supporting: [strategy.creativeTension.currentBelief]
+          supporting: [tensionBelief]
         },
         action: {
           startingState: 'Static tension',
@@ -568,13 +577,13 @@ export class CampaignDownstreamOrchestrator {
           contrast: 'high'
         },
         visualDirection: {
-          artDirection: `${territory.creativeWorld}. ${visualCodes.join(', ')}`,
-          colorPalette: territory.toneAttributes || ['#1A1A1A', '#E0E0E0'],
+          artDirection: `${creativeWorld}. ${visualCodes.join(', ')}`,
+          colorPalette: toneAttributes,
           environmentDetails: 'Minimalist studio editorial setting',
           renderingStyle: 'hyper-realistic commercial cinematography'
         },
         audio: {
-          dialogueOrVoiceover: strategy.contentPillars[0]?.exampleHook || strategy.coreBigIdea.text,
+          dialogueOrVoiceover: hookText,
           musicCue: 'Sudden high-impact sonic swell',
           soundEffects: ['subtle atmospheric riser']
         },
@@ -598,19 +607,20 @@ export class CampaignDownstreamOrchestrator {
       {
         shotId: 'shot_02',
         shotNumber: 2,
+        sequence: 2,
         durationSeconds: 8,
         sceneNumber: 1,
         shotType: 'medium',
-        timing: { startSec: 3, endSec: 11 },
+        timing: { startSec: 3, endSec: 11, startTime: 3, endTime: 11, duration: 8 },
         purpose: 'narrative_development',
         subject: {
           primary: 'Protagonist engaging with product',
-          action: territory.theMechanism,
+          action: mechanism,
           supporting: []
         },
         action: {
           startingState: 'Customer experiencing friction',
-          action: `Mechanism demonstration: ${territory.theMechanism}`,
+          action: `Mechanism demonstration: ${mechanism}`,
           choreography: 'Fluid camera tracking subject movement',
           endingState: 'Relief and empowered state'
         },
@@ -632,13 +642,13 @@ export class CampaignDownstreamOrchestrator {
           contrast: 'medium'
         },
         visualDirection: {
-          artDirection: `${territory.creativeWorld}. Authentic emotional payoff.`,
-          colorPalette: territory.toneAttributes || [],
+          artDirection: `${creativeWorld}. Authentic emotional payoff.`,
+          colorPalette: toneAttributes,
           environmentDetails: 'Modern realistic context',
           renderingStyle: 'photorealistic'
         },
         audio: {
-          dialogueOrVoiceover: strategy.positioningManifesto[0]?.text || territory.oneLinePremise,
+          dialogueOrVoiceover: (strategy as any).positioningManifesto?.[0]?.text || premise,
           musicCue: 'Rhythmic driving acoustic or electronic pulse',
           soundEffects: ['tactile interaction audio']
         },
@@ -662,13 +672,14 @@ export class CampaignDownstreamOrchestrator {
       {
         shotId: 'shot_03',
         shotNumber: 3,
+        sequence: 3,
         durationSeconds: 4,
         sceneNumber: 1,
         shotType: 'close_up',
-        timing: { startSec: 11, endSec: 15 },
+        timing: { startSec: 11, endSec: 15, startTime: 11, endTime: 15, duration: 4 },
         purpose: 'call_to_action',
         subject: {
-          primary: `${strategy.brandName} brand lockup and definitive payoff`,
+          primary: `${brandName} brand lockup and definitive payoff`,
           action: 'Clean hero payoff with punchy call-to-action',
           supporting: []
         },
@@ -696,13 +707,13 @@ export class CampaignDownstreamOrchestrator {
           contrast: 'soft_diffuse'
         },
         visualDirection: {
-          artDirection: `${strategy.brandName} brand identity showcase`,
-          colorPalette: territory.toneAttributes || [],
+          artDirection: `${brandName} brand identity showcase`,
+          colorPalette: toneAttributes,
           environmentDetails: 'Pristine brand color gradient background',
           renderingStyle: 'premium commercial finish'
         },
         audio: {
-          dialogueOrVoiceover: strategy.coreBigIdea.text,
+          dialogueOrVoiceover: strategy.tagline || strategy.callToAction || strategy.brandIdea,
           musicCue: 'Final resonant resolution chord and sonic logo mark',
           soundEffects: ['subtle chime or impact']
         },
@@ -730,7 +741,7 @@ export class CampaignDownstreamOrchestrator {
         id: 'c1',
         category: 'brand',
         severity: 'must',
-        rule: `Brand must be presented as ${strategy.brandName} honoring: ${territory.strategicGuardrails?.mustInclude?.join('; ') || 'Authentic brand truth'}`
+        rule: `Brand must be presented as ${brandName} honoring: ${territory.strategicGuardrails?.mustInclude?.join('; ') || 'Authentic brand truth'}`
       },
       {
         id: 'c2',
@@ -745,58 +756,58 @@ export class CampaignDownstreamOrchestrator {
       adId,
       identity: {
         adId,
-        campaignId: strategy.strategyId || `camp_${Date.now()}`,
+        campaignId: (strategy as any).strategyId || `camp_${Date.now()}`,
         title: `${strategy.campaignTitle} - Hero Ad`,
         workspaceId: 'default',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       },
       brief: {
-        brandRef: strategy.brandName,
+        brandRef: brandName,
         product: strategy.campaignTitle,
         objective: 'awareness',
         targetAudience: {
-          persona: strategy.audienceDiagnosis.primaryTension,
-          painPoints: [strategy.audienceDiagnosis.underlyingTruth],
-          demographics: strategy.audienceDiagnosis.demographics
+          persona: (strategy as any).targetAudience || 'Target Audience',
+          painPoints: [(strategy as any).consumerInsight || territory.consumerInsight || 'Customer challenge'],
+          demographics: (strategy as any).demographics || 'Broad Consumer'
         },
         platform,
         desiredDurationSeconds: duration,
         aspectRatio,
         language: 'English',
         cta: {
-          visualText: strategy.contentPillars[0]?.exampleHook || 'Explore Now',
+          visualText: strategy.callToAction || 'Explore Now',
           actionIntent: 'learn_more'
         },
-        keyMessage: strategy.coreBigIdea.text,
-        desiredResponse: strategy.creativeTension.desiredBelief,
-        tone: territory.creativeWorld,
+        keyMessage: strategy.brandIdea || strategy.coreValueProposition,
+        desiredResponse: desiredBelief,
+        tone: creativeWorld,
         emotionalGoal: {
-          primaryEmotion: territory.toneAttributes?.[0] || 'Empowerment',
-          finalImpression: strategy.coreBigIdea.text
+          primaryEmotion: toneAttributes[0] || 'Empowerment',
+          finalImpression: strategy.brandIdea || strategy.coreValueProposition
         },
-        mustInclude: territory.strategicGuardrails?.mustInclude || [],
-        mustAvoid: territory.strategicGuardrails?.mustAvoid || [],
-        referencesAndInspiration: [territory.oneLinePremise],
+        mustInclude: territory.strategicGuardrails?.mustInclude || strategy.governanceGuardrails?.mandatoryInclusions || [],
+        mustAvoid: territory.strategicGuardrails?.mustAvoid || strategy.governanceGuardrails?.forbiddenTerritories || [],
+        referencesAndInspiration: [premise],
         userConstraints: []
       },
       creative: {
         concepts: [
           {
             conceptId: territory.id || 'territory_hero',
-            name: territory.name,
-            oneLinePremise: territory.oneLinePremise,
-            coreIdea: strategy.coreBigIdea.text,
+            name: (territory as any).title || territory.name || 'Hero Concept',
+            oneLinePremise: premise,
+            coreIdea: strategy.brandIdea || strategy.coreValueProposition,
             hook: {
               hookType: 'visual_surprise',
-              description: territory.oneLinePremise
+              description: premise
             },
-            narrativeMechanism: territory.theMechanism,
+            narrativeMechanism: mechanism,
             visualMechanism: visualCodes.join(', '),
-            emotionalArc: `Tension between "${strategy.creativeTension.currentBelief}" transitioning to "${strategy.creativeTension.desiredBelief}"`,
+            emotionalArc: `Tension transitioning to resolution`,
             brandRole: 'Empowering catalyst',
             intendedAudienceEffect: 'Curiosity and immediate brand recall',
-            noveltyRationale: territory.risksAndWatchouts || 'Non-obvious category angle',
+            noveltyRationale: territory.whyItWins || 'Non-obvious category angle',
             complexityEstimate: 'medium'
           }
         ],
@@ -820,27 +831,27 @@ export class CampaignDownstreamOrchestrator {
       locations: [],
       story: {
         structureType: 'social_hook_proof_cta',
-        logline: territory.oneLinePremise,
+        logline: premise,
         beats: [
           {
             beatId: 'beat_01',
             beatType: 'opening_hook',
             title: 'Visual Hook',
-            narrativeGoal: strategy.creativeTension.currentBelief,
+            narrativeGoal: tensionBelief,
             assignedShotIds: ['shot_01']
           },
           {
             beatId: 'beat_02',
             beatType: 'product_moment',
             title: 'Strategic Mechanism',
-            narrativeGoal: territory.theMechanism,
+            narrativeGoal: mechanism,
             assignedShotIds: ['shot_02']
           },
           {
             beatId: 'beat_03',
             beatType: 'cta_ending',
             title: 'Payoff & CTA',
-            narrativeGoal: strategy.coreBigIdea.text,
+            narrativeGoal: strategy.callToAction || strategy.tagline || 'Brand Payoff',
             assignedShotIds: ['shot_03']
           }
         ]
@@ -859,14 +870,14 @@ export class CampaignDownstreamOrchestrator {
       metadata: {
         authorId: 'campaign-strategist-gem',
         originatingGem: 'video_generation_gem',
-        customNotes: `Compiled from MasterCampaignStrategy (${strategy.strategyId}) with Territory: ${territory.name}`
+        customNotes: `Compiled from MasterCampaignStrategy with Territory: ${territory.name}`
       },
       directorsPlan: {
         visualCodes,
         motionCodes,
         soundCodes: territory.creativeCodes?.soundCodes || [],
         copyCodes: territory.creativeCodes?.copyCodes || [],
-        manifestoAnchor: strategy.positioningManifesto[0]?.text
+        manifestoAnchor: (strategy as any).positioningManifesto?.[0]?.text || strategy.strategicRationale
       }
     };
   }

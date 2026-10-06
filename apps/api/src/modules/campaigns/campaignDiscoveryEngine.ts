@@ -18,6 +18,8 @@ import {
 import { campaignLLMGateway } from './campaignLLMGateway.js';
 import { rankFrameworksForBrief } from './campaignFrameworkLibrary.js';
 
+export const NEGATION_PATTERNS = /\b(don'?t\s+know|haven'?t|cannot|can't|not\s+sure|unknown|unclear|tbd|to\s+be\s+decided|none|no\s+idea|not\s+identified|no\s+clue|haven'?t\s+decided|undecided|not\s+yet|zero|missing)\b/i;
+
 export interface DiscoveryEvaluationRequest {
   generationId: string;
   campaignTitle: string;
@@ -91,17 +93,17 @@ export class CampaignDiscoveryEngine {
       {
         id: 'audience',
         label: 'Audience Context & Mindset',
-        status: semanticResults.audience?.isNegated
+        status: (semanticResults.audience?.isNegated || NEGATION_PATTERNS.test(targetAudience))
           ? 'missing'
           : semanticResults.audience?.status === 'strong'
           ? 'strong'
-          : (targetAudience.length > 20)
+          : (targetAudience.length > 20 && !NEGATION_PATTERNS.test(targetAudience))
           ? 'strong'
-          : (targetAudience.length > 5 || semanticResults.audience?.status === 'partial')
+          : (targetAudience.length > 5 && !NEGATION_PATTERNS.test(targetAudience) || semanticResults.audience?.status === 'partial')
           ? 'partial'
           : 'missing',
-        detail: semanticResults.audience?.isNegated
-          ? `Audience intentionally undefined: ${semanticResults.audience.extractedValue || 'Needs scoping'}`
+        detail: (semanticResults.audience?.isNegated || NEGATION_PATTERNS.test(targetAudience))
+          ? `Audience intentionally undefined or pending scoping: "${targetAudience}"`
           : (semanticResults.audience?.extractedValue || targetAudience || 'Target audience demographic or psychographic segment needed.'),
         quickFixPrompt: 'Who is the exact customer segment we must move, and what is their default routine?'
       },
@@ -352,15 +354,23 @@ Return JSON matching this exact structure:
       constraints: { status: 'missing', confidence: 0 }
     };
 
+    // Check initial brief fields for direct negation
+    if (context.targetAudience && NEGATION_PATTERNS.test(context.targetAudience)) {
+      result.audience = { status: 'missing', confidence: 0.95, isNegated: true, extractedValue: context.targetAudience };
+    }
+    if (context.objective && NEGATION_PATTERNS.test(context.objective)) {
+      result.objective = { status: 'missing', confidence: 0.95, isNegated: true, extractedValue: context.objective };
+    }
+
     if (!priorAnswers || priorAnswers.length === 0) {
       return result;
     }
 
-    // Explicit Negation & Indecision Guard:
-    // Regex matching phrases indicating the user doesn't know, hasn't established, or rejects the dimension
-    const NEGATION_PATTERNS = /\b(don'?t\s+know|haven'?t|cannot|can't|not\s+sure|unknown|unclear|tbd|to\s+be\s+decided|none|no\s+idea|not\s+identified|no\s+clue|haven'?t\s+decided|undecided|not\s+yet|zero)\b/i;
-
-    const combinedText = priorAnswers.map(a => `Q: ${a.questionText}\nA: ${a.answer}`).join('\n\n');
+    const combinedText = [
+      `Target Audience: ${context.targetAudience}`,
+      `Core Brief: ${context.briefDescription}`,
+      ...priorAnswers.map(a => `Q: ${a.questionText}\nA: ${a.answer}`)
+    ].join('\n\n');
 
     // Attempt high-accuracy LLM semantic dimension extraction
     try {

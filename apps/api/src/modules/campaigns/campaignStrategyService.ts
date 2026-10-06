@@ -96,7 +96,8 @@ export class CampaignStrategyService {
     questions: AdaptiveQuestion[];
     recommendedFrameworks: string[];
   }> {
-    const requestHash = `disc_${request.workspaceId}_${this.computeHash({
+    const requestHash = `disc_v2_${request.workspaceId}_${this.computeHash({
+      v: 'v2_semantic',
       title: request.campaignTitle,
       brief: request.briefDescription,
       audience: request.targetAudience,

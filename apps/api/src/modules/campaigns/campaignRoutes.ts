@@ -13,6 +13,7 @@ import { workspaceRepository } from "../../repositories/workspaceRepository.js";
 import { campaignStrategyService } from "./campaignStrategyService.js";
 import { campaignRepository } from "./campaignRepository.js";
 import { campaignDownstreamOrchestrator } from "./campaignDownstreamOrchestrator.js";
+import { videoAdProjectRepository } from "../adDirector/repositories/videoAdProjectRepository.js";
 import { sendInsufficientCreditsResponse, InsufficientCreditsError } from "../billing/billingErrorUtils.js";
 
 const creditService = new CreditService();
@@ -289,13 +290,28 @@ campaignRouter.post("/strategy/adspec", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized: Authenticated session required", code: "AUTH_REQUIRED" });
     }
 
-    const { strategy, territory, options } = req.body;
+    const { strategy, territory, options, persistToProject = true } = req.body;
     if (!strategy || !territory) {
       return res.status(400).json({ error: "Missing required strategy or territory" });
     }
 
     const adSpec = campaignDownstreamOrchestrator.compileAdSpec(strategy, territory, options);
-    return res.json({ adSpec });
+    
+    let projectId: string | undefined;
+    if (persistToProject) {
+      try {
+        const workspaceId =
+          req.user.workspaceId ||
+          (await workspaceRepository.ensurePersonalWorkspace(req.user.uid, req.user.email || ''));
+        const projectTitle = strategy.campaignTitle || territory.name || "Campaign Video Project";
+        const result = await videoAdProjectRepository.createProject(workspaceId, projectTitle, req.user.uid, adSpec);
+        projectId = result.project.id;
+      } catch (persistErr) {
+        console.warn("Could not persist video project to repository, continuing with in-memory AdSpec:", persistErr);
+      }
+    }
+
+    return res.json({ adSpec, projectId });
   } catch (err: any) {
     console.error("Error in /strategy/adspec:", err);
     return res.status(500).json({ error: err?.message || "Failed to compile canonical AdSpec" });
