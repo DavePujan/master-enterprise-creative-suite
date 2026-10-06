@@ -39,10 +39,14 @@ export class CampaignLLMGateway {
     'gemini-3.8-flash',
     'gemini-3.7-flash',
     'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-2.5-flash' // Resilient legacy fallback
   ];
   private readonly DEFAULT_TIMEOUT_MS = 120000; // 120s budget
   private readonly PER_ATTEMPT_TIMEOUT_MS = 60000;
+
+  // In-memory cache for models that have exhausted their daily free-tier quota in this session
+  private static exhaustedModels: Map<string, number> = new Map();
 
   async executeStructured<T>(params: CampaignLLMParams<T>): Promise<CampaignLLMResult<T>> {
     const {
@@ -73,6 +77,14 @@ export class CampaignLLMGateway {
 
       const model = this.GOOGLE_MODELS[i];
       const isFallback = i > 0;
+
+      // Check if this model is already marked quota-exhausted for the current session
+      const quotaExpiry = CampaignLLMGateway.exhaustedModels.get(model);
+      if (quotaExpiry && quotaExpiry > Date.now()) {
+        console.log(`[CampaignLLMGateway] Skipping ${model} (daily quota exhausted until ${new Date(quotaExpiry).toLocaleTimeString()})`);
+        continue;
+      }
+
       let modelAttempt = 0;
       const maxRetriesForModel = 2;
 
@@ -89,15 +101,24 @@ export class CampaignLLMGateway {
           const abortController = new AbortController();
           const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
 
+          const isGemini3 = model.startsWith('gemini-3');
           const config: any = {
-            systemInstruction: enableGoogleSearchGrounding
+            systemInstruction: (enableGoogleSearchGrounding && !isGemini3)
               ? `${systemInstruction}\n\nIMPORTANT: Return ONLY a valid JSON object matching the requested schema. No conversational markdown wrap outside the JSON block.`
               : systemInstruction,
             temperature,
             abortSignal: abortController.signal
           };
+
           if (enableGoogleSearchGrounding) {
             config.tools = [{ googleSearch: {} }];
+            // Gemini 3.x natively supports Structured Outputs (application/json) alongside Search Grounding tools!
+            if (isGemini3) {
+              config.responseMimeType = 'application/json';
+              if (responseSchema) {
+                config.responseSchema = responseSchema;
+              }
+            }
           } else {
             config.responseMimeType = 'application/json';
             if (responseSchema) {
@@ -162,19 +183,30 @@ export class CampaignLLMGateway {
           const isRateLimit = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errCode === 429;
           const isTransient = errMsg.includes('503') || errMsg.includes('500') || errMsg.includes('UNAVAILABLE') || errMsg.includes('OVERLOADED');
           const isNotFound = errMsg.includes('404') || errMsg.includes('not found') || errMsg.includes('NOT_FOUND');
-          const isBadRequest = errMsg.includes('400') || errMsg.includes('INVALID_ARGUMENT');
+          const isToolMimeTypeError = errMsg.includes('Tool use with a response mime type') || errMsg.includes('response_mime_type');
+          const isBadRequest = (errMsg.includes('400') || errMsg.includes('INVALID_ARGUMENT')) && !isToolMimeTypeError;
 
           if (isAuthError) {
             console.error(`[CampaignLLMGateway] Authentication failure (401/403). Halting immediately to avoid masking invalid credentials: ${errMsg}`);
             throw new Error(`Authentication failure (401/403): Google API key invalid or unauthorized. Flag configuration immediately.`);
+          } else if (isToolMimeTypeError) {
+            console.warn(`[CampaignLLMGateway] Model ${model} does not support responseMimeType with tools. Will retry attempt without JSON MIME mode.`);
+            // Next loop attempt on this model will proceed if retries allow
+            continue;
           } else if (isBadRequest) {
             console.error(`[CampaignLLMGateway] 400 Invalid Argument / Schema Violation: ${errMsg}. Failing fast.`);
             throw new Error(`Invalid request or schema violation (400): ${errMsg}`);
           } else if (isRateLimit) {
+            const isDailyQuotaExhausted = errMsg.includes('GenerateRequestsPerDay') || errMsg.includes('free_tier_requests') || errMsg.includes('RetryInfo') || errMsg.includes('Please retry in');
+            if (isDailyQuotaExhausted) {
+              console.warn(`[CampaignLLMGateway] Daily free-tier quota exhausted for model ${model}. Caching exhaustion and moving to next model.`);
+              CampaignLLMGateway.exhaustedModels.set(model, Date.now() + 60 * 60 * 1000); // Cache for 1 hour
+              rotateGeminiClient();
+              break; // Break while loop to move immediately to next model without burning time
+            }
             console.log('[CampaignLLMGateway] 429 rate limit encountered. Rotating Gemini client and backing off...');
             rotateGeminiClient();
             await new Promise(r => setTimeout(r, 800 * modelAttempt));
-            // Will retry this model on next iteration of while loop
             continue;
           } else if (isTransient && modelAttempt < maxRetriesForModel) {
             console.log(`[CampaignLLMGateway] ${errCode || '503/500'} transient server error. Backing off 600ms before retry...`);
@@ -182,9 +214,8 @@ export class CampaignLLMGateway {
             continue;
           } else if (isNotFound) {
             console.log(`[CampaignLLMGateway] Model ${model} returned 404/not available. Advancing to next model in chain immediately.`);
-            break; // Break while loop to move to next model in for loop
+            break;
           } else {
-            // General or exhausted error for this model, break while loop to try next model
             break;
           }
         }

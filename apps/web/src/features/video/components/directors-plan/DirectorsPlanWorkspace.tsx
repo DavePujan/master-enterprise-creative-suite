@@ -39,15 +39,40 @@ export const DirectorsPlanWorkspace: React.FC<DirectorsPlanWorkspaceProps> = ({
   onLaunchVideoJob,
   brandGuidelines
 }) => {
-  // Canonical AdSpec State (defaults to realistic 18s commercial fixture if neither spec nor ID is provided)
+  // Canonical AdSpec State (defaults to staged/active AdSpec from Campaign Strategist, or fallback 18s fixture)
   const [adSpec, setAdSpec] = useState<AdSpec | null>(() => {
     if (initialAdSpec) return initialAdSpec;
     if (initialAdId) return null;
+    try {
+      const activeSessionSpec = typeof window !== 'undefined' ? sessionStorage.getItem('writopedia_active_adspec') : null;
+      if (activeSessionSpec) {
+        const parsed = JSON.parse(activeSessionSpec);
+        if (parsed?.schemaVersion && Array.isArray(parsed?.shots) && parsed.shots.length > 0) {
+          return parsed;
+        }
+      }
+      const stagedLocalSpec = typeof window !== 'undefined' ? localStorage.getItem('staged_canonical_adspec') : null;
+      if (stagedLocalSpec) {
+        const parsed = JSON.parse(stagedLocalSpec);
+        if (parsed?.schemaVersion && Array.isArray(parsed?.shots) && parsed.shots.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading staged canonical AdSpec in DirectorsPlanWorkspace:', e);
+    }
     return createDefaultAdSpecFixture(brandGuidelines?.name, brandGuidelines?.colors);
   });
   const [previousSpec, setPreviousSpec] = useState<AdSpec | null>(null);
   const [isLoading, setIsLoading] = useState(!initialAdSpec && !!initialAdId);
   const [error, setError] = useState<string | null>(null);
+
+  // Synchronize when initialAdSpec updates via props
+  useEffect(() => {
+    if (initialAdSpec) {
+      setAdSpec(initialAdSpec);
+    }
+  }, [initialAdSpec]);
 
   // Selected Shot Navigation
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);

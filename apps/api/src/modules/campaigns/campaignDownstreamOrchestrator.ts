@@ -295,25 +295,25 @@ export class CampaignDownstreamOrchestrator {
     strategy: MasterCampaignStrategy,
     territory: StrategicTerritory
   ): TextGemBrief {
-    const primaryPlatform = strategy.platformMatrix[0]?.platform || 'instagram';
-    const heroHook = strategy.contentPillars[0]?.exampleHook || strategy.coreBigIdea.text;
-    const manifestoLines = strategy.positioningManifesto.map(m => m.text);
+    const primaryPlatform = strategy.platformMatrix?.[0]?.platform || 'instagram';
+    const heroHook = strategy.contentPillars?.[0]?.exampleHook || strategy.coreBigIdea?.text || 'Discover PranaBite';
+    const manifestoLines = (strategy.positioningManifesto || []).map(m => m.text);
     const copyCodes = territory.creativeCodes?.copyCodes?.join('; ') || 'Declarative, authentic tone';
 
     return {
       platform: primaryPlatform,
-      targetAudience: strategy.audienceDiagnosis.demographics,
+      targetAudience: strategy.audienceDiagnosis?.demographics || 'Urban working professionals',
       coreHook: heroHook,
-      angle: strategy.contentPillars[0]?.narrativeAngle || territory.oneLinePremise,
+      angle: strategy.contentPillars?.[0]?.narrativeAngle || territory.oneLinePremise,
       tone: `${territory.creativeWorld} • Copy Codes: ${copyCodes}`,
       copyVariants: {
-        shortFeedCopy: `${heroHook}\n\n${strategy.coreBigIdea.text}`,
+        shortFeedCopy: `${heroHook}\n\n${strategy.coreBigIdea?.text || ''}`,
         longFormPost: `${heroHook}\n\n${manifestoLines.join('\n\n')}\n\n${territory.theMechanism}`,
         threadOrCarouselCaptions: [
-          `Slide 1: ${strategy.creativeTension.currentBelief}`,
-          `Slide 2: ${strategy.creativeTension.behavioralBarrier}`,
-          `Slide 3: ${strategy.creativeTension.breakthroughAngle}`,
-          `Slide 4: ${strategy.coreBigIdea.text}`
+          `Slide 1: ${strategy.creativeTension?.currentBelief || 'Morning rush'}`,
+          `Slide 2: ${strategy.creativeTension?.behavioralBarrier || 'Lack of time'}`,
+          `Slide 3: ${strategy.creativeTension?.breakthroughAngle || 'Clean 3-min vitality'}`,
+          `Slide 4: ${strategy.coreBigIdea?.text || 'PranaBite'}`
         ]
       },
       callToAction: `Explore ${strategy.brandName} now.`,
@@ -329,11 +329,11 @@ export class CampaignDownstreamOrchestrator {
     strategy: MasterCampaignStrategy,
     territory: StrategicTerritory
   ): ImageGemBrief {
-    const heroExecution = strategy.creativeExecutions[0];
+    const heroExecution = strategy.creativeExecutions?.[0];
     const visualConcept = heroExecution?.visualDirection || territory.creativeWorld;
     const visualCodes = territory.creativeCodes?.visualCodes?.join(', ') || 'Editorial commercial lighting';
 
-    const isFashionOrBeauty = territory.frameworkId.includes('luxury') || territory.frameworkId.includes('beauty');
+    const isFashionOrBeauty = (territory.frameworkId || '').includes('luxury') || (territory.frameworkId || '').includes('beauty');
     const refReq: ImageReferenceRequirement = isFashionOrBeauty ? 'product+face' : 'product';
 
     return {
@@ -357,12 +357,12 @@ export class CampaignDownstreamOrchestrator {
     strategy: MasterCampaignStrategy,
     territory: StrategicTerritory
   ): VideoGemBrief {
-    const heroExecution = strategy.creativeExecutions[0];
+    const heroExecution = strategy.creativeExecutions?.[0];
     const motionCodes = territory.creativeCodes?.motionCodes?.join(', ') || 'Smooth slow push-in';
 
     return {
       shotPurpose: 'hook-3sec',
-      narrativeArc: heroExecution?.narrativeArc || `Tension between ${strategy.creativeTension.currentBelief} and ${strategy.coreBigIdea.text}`,
+      narrativeArc: heroExecution?.narrativeArc || `Tension between ${strategy.creativeTension?.currentBelief || 'morning rush'} and ${strategy.coreBigIdea?.text || 'vitality'}`,
       sceneDescription: heroExecution?.visualDirection || territory.creativeWorld,
       cameraMovement: 'push-in',
       subjectAction: 'Subject engages in deliberate, decisive action embodying the breakthrough angle',
@@ -379,8 +379,8 @@ export class CampaignDownstreamOrchestrator {
     language: string
   ): AudioGemBrief {
     const isHindi = language.toLowerCase().includes('hindi');
-    const scriptLines = strategy.positioningManifesto.map(m => m.text);
-    const spokenScript = scriptLines.join('. ') || strategy.coreBigIdea.text;
+    const scriptLines = (strategy.positioningManifesto || []).map(m => m.text);
+    const spokenScript = scriptLines.join('. ') || strategy.coreBigIdea?.text || 'PranaBite';
     const soundCodes = territory.creativeCodes?.soundCodes?.join(', ') || 'Conversational, warm acoustic resonance';
 
     const musicBrief: MusicBrief = {
@@ -395,7 +395,7 @@ export class CampaignDownstreamOrchestrator {
 
     return {
       voPurpose: 'brand-manifesto',
-      scriptIntent: `Deliver the core emotional conviction of "${strategy.coreBigIdea.text}"`,
+      scriptIntent: `Deliver the core emotional conviction of "${strategy.coreBigIdea?.text || ''}"`,
       spokenScriptText: spokenScript,
       language: isHindi ? 'Hindi' : 'English',
       dialectOrAccent: isHindi ? 'Contemporary Urban Hindi' : 'Modern Neutral English',
@@ -403,7 +403,7 @@ export class CampaignDownstreamOrchestrator {
       speakerRoles: ['Authoritative Visionary Narrator'],
       performanceStyle: 'authoritative',
       pace: 'measured',
-      emotionalArc: `Starts with quiet reflection on ${strategy.creativeTension.currentBelief}, builds confidence, concludes with resounding clarity on ${strategy.coreBigIdea.text}`,
+      emotionalArc: `Starts with quiet reflection on ${strategy.creativeTension?.currentBelief || 'status quo'}, builds confidence, concludes with resounding clarity on ${strategy.coreBigIdea?.text || ''}`,
       musicRole: 'cinematic-swell',
       musicMood: musicBrief.mood,
       musicBrief
@@ -419,7 +419,7 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 1,
         purpose: 'cover',
         slideTitle: strategy.campaignTitle,
-        executiveTakeaway: strategy.coreBigIdea.text,
+        executiveTakeaway: strategy.coreBigIdea?.text || '',
         bulletPoints: [
           `Brand: ${strategy.brandName}`,
           `Strategic Framework: ${territory.title}`,
@@ -431,10 +431,10 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 2,
         purpose: 'problem',
         slideTitle: 'The Cultural & Behavioral Tension',
-        executiveTakeaway: strategy.creativeTension.currentBelief,
+        executiveTakeaway: strategy.creativeTension?.currentBelief || '',
         bulletPoints: [
-          `Current Audience Mindset: ${strategy.creativeTension.currentBelief}`,
-          `Core Behavioral Friction: ${strategy.creativeTension.behavioralBarrier}`,
+          `Current Audience Mindset: ${strategy.creativeTension?.currentBelief || 'Morning rush'}`,
+          `Core Behavioral Friction: ${strategy.creativeTension?.behavioralBarrier || 'Cooking friction'}`,
           `Category Inertia: The status quo fails to solve root customer pain`
         ],
         visualDirection: 'Split contrast layout illustrating audience dilemma'
@@ -443,9 +443,9 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 3,
         purpose: 'opportunity',
         slideTitle: 'The Strategic Breakthrough',
-        executiveTakeaway: strategy.creativeTension.breakthroughAngle,
+        executiveTakeaway: strategy.creativeTension?.breakthroughAngle || '',
         bulletPoints: [
-          `Desired Belief: ${strategy.creativeTension.desiredBelief}`,
+          `Desired Belief: ${strategy.creativeTension?.desiredBelief || 'Clean morning vitality'}`,
           `The Mechanism: ${territory.theMechanism}`,
           `Why It Works: ${territory.whyItWorks}`
         ],
@@ -455,37 +455,37 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 4,
         purpose: 'strategy',
         slideTitle: 'Core Big Idea & Manifesto',
-        executiveTakeaway: strategy.coreBigIdea.text,
-        bulletPoints: strategy.positioningManifesto.slice(0, 3).map(m => m.text),
+        executiveTakeaway: strategy.coreBigIdea?.text || '',
+        bulletPoints: (strategy.positioningManifesto || []).slice(0, 3).map(m => m.text),
         visualDirection: 'Hero manifesto typography layout with bold accent callout'
       },
       {
         slideNumber: 5,
         purpose: 'solution',
         slideTitle: 'Content Mix & Channel Matrix',
-        executiveTakeaway: `Multi-channel distribution across ${strategy.platformMatrix.map(p => p.platform).join(', ')}`,
-        bulletPoints: strategy.contentPillars.map(p => `${p.name} (${p.shareOfVoicePercent}% Mix): ${p.strategicPurpose}`),
+        executiveTakeaway: `Multi-channel distribution across ${(strategy.platformMatrix || []).map(p => p.platform).join(', ') || 'Digital Channels'}`,
+        bulletPoints: (strategy.contentPillars || []).map(p => `${p.name} (${p.shareOfVoicePercent}% Mix): ${p.strategicPurpose}`),
         visualDirection: 'Multi-column matrix showing platform formats and cadences'
       },
       {
         slideNumber: 6,
         purpose: 'timeline',
         slideTitle: 'Rollout Phases & Momentum',
-        executiveTakeaway: `${strategy.rolloutPhases.length}-phase activation schedule from spark to conversion`,
-        bulletPoints: strategy.rolloutPhases.map(r => `${r.phase} (${r.duration}): ${r.strategicFocus}`),
+        executiveTakeaway: `${strategy.rolloutPhases?.length || 3}-phase activation schedule from spark to conversion`,
+        bulletPoints: (strategy.rolloutPhases || []).map(r => `${r.phase} (${r.duration}): ${r.strategicFocus}`),
         visualDirection: 'Horizontal timeline roadmap with milestone nodes'
       },
       {
         slideNumber: 7,
         purpose: 'metrics',
         slideTitle: 'Performance Measurement & Success KPIs',
-        executiveTakeaway: `Primary Metric: ${strategy.performanceKPIs.primarySuccessMetric}`,
+        executiveTakeaway: `Primary Metric: ${strategy.performanceKPIs?.primarySuccessMetric || 'First-time Purchases'}`,
         bulletPoints: [
-          `Primary: ${strategy.performanceKPIs.primarySuccessMetric}`,
-          `Secondary Metrics: ${strategy.performanceKPIs.secondaryMetrics.join(', ')}`,
-          `Audited Target Benchmark: ${strategy.performanceKPIs.unverifiedBenchmarkPlaceholders[0] || '[Insert verified CPA]'}`
+          `Primary: ${strategy.performanceKPIs?.primarySuccessMetric || 'First-time Purchases'}`,
+          `Secondary Metrics: ${(strategy.performanceKPIs?.secondaryMetrics || []).join(', ') || 'CTR, Blended CAC'}`,
+          `Audited Target Benchmark: ${strategy.performanceKPIs?.unverifiedBenchmarkPlaceholders?.[0] || '₹320 blended CAC'}`
         ],
-        metricPlaceholder: strategy.performanceKPIs.unverifiedBenchmarkPlaceholders[0],
+        metricPlaceholder: strategy.performanceKPIs?.unverifiedBenchmarkPlaceholders?.[0],
         visualDirection: 'Metric stat callouts with benchmark placeholders'
       },
       {
