@@ -73,7 +73,7 @@ export const CurationSection: React.FC<CurationSectionProps> = ({ initialRequest
         console.error('Failed to subscribe to curation queue:', err);
         setLoading(false);
       },
-      { scope: 'all', intervalMs: 6000 }
+      { scope: 'all', intervalMs: 20000 }
     );
     return unsub;
   }, []);

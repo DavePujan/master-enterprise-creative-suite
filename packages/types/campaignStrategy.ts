@@ -4,6 +4,8 @@
  * multi-vector novelty checking, epistemic classification, and downstream gem orchestration.
  */
 
+import type { AdSpec } from './adSpec.js';
+
 // ---------------------------------------------------------------------------
 // 1. Epistemic Classification & Evidence Taxonomy
 // ---------------------------------------------------------------------------
@@ -169,6 +171,7 @@ export interface ProofItem {
 export type CompetitorKnowledgeSource =
   | 'provided_by_client'
   | 'imported_from_workspace'
+  | 'live_web'
   | 'no_research_supplied';
 
 export interface CampaignBriefControls {
@@ -191,6 +194,7 @@ export interface CampaignBriefControls {
   mandatoryInclusions: string[]; // Must Include
   forbiddenTerritories: string[]; // Must Avoid
   competitorKnowledgeSource: CompetitorKnowledgeSource;
+  competitorKnowledgeSources?: CompetitorKnowledgeSource[];
   competitorContext?: {
     competitors?: string;
     overusedPatterns?: string;
@@ -228,6 +232,20 @@ export interface ReadinessDimension {
   status: 'strong' | 'partial' | 'missing';
   detail: string;
   quickFixPrompt?: string;
+  confidence?: number;
+  extractedInsight?: string | null;
+  isNegatedOrUnresolved?: boolean;
+}
+
+export type StrategicDimensionKey = ReadinessDimensionId;
+
+export interface SemanticDimensionResult {
+  dimension: StrategicDimensionKey;
+  status: 'strong' | 'partial' | 'missing';
+  confidence: number; // 0.0 - 1.0
+  extractedInsight: string | null;
+  isNegatedOrUnresolved: boolean;
+  reasoning?: string;
 }
 
 export interface StrategicReadiness {
@@ -474,13 +492,13 @@ export interface MasterCampaignStrategy {
 
   // Executive Overview ("In 30 Seconds")
   executiveSummary?: {
-    theProblem: string;
-    theOpportunity: string;
-    theBigIdea: string;
-    whyUs: string;
-    whatWeWillDo: string;
-    whatWeNeedToProve: string;
-  };
+    theProblem?: string;
+    theOpportunity?: string;
+    theBigIdea?: string;
+    whyUs?: string;
+    whatWeWillDo?: string;
+    whatWeNeedToProve?: string;
+  } | string;
 
   // Transformation Story ("What Changed From My Brief")
   whatChangedFromBrief?: {
@@ -530,6 +548,20 @@ export interface MasterCampaignStrategy {
   rolloutPhases: RolloutPhase[];
   performanceKPIs: PerformanceKPIs;
   epistemicLedger: EpistemicClaim[];
+  customerJourneyPhases?: Array<{
+    stage: string;
+    objective: string;
+    keyHook: string;
+    primaryChannels?: string[];
+  }>;
+  epistemicClassificationAudit?: {
+    claims?: Array<{
+      text: string;
+      status: string;
+      citation?: { sourceUrl: string; sourceTitle?: string };
+      sourceOrRationale?: string;
+    }>;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -652,6 +684,8 @@ export interface DownstreamBriefs {
   videoBrief: VideoGemBrief;
   audioBrief: AudioGemBrief;
   deckBrief: CampaignDeckBrief;
+  canonicalAdSpecId?: string;
+  canonicalAdSpec?: AdSpec;
 }
 
 // ---------------------------------------------------------------------------

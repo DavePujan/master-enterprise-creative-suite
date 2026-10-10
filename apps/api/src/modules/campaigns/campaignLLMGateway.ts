@@ -21,6 +21,8 @@ export interface CampaignLLMParams<T> {
   semanticValidator?: (parsed: any) => { isValid: boolean; errors?: string[] };
   temperature?: number;
   timeoutMs?: number;
+  enableGoogleSearchGrounding?: boolean;
+  searchGrounding?: boolean;
 }
 
 export interface CampaignLLMResult<T> {
@@ -29,16 +31,22 @@ export interface CampaignLLMResult<T> {
   modelUsed: string;
   latencyMs: number;
   fallbackUsed: boolean;
+  citations?: Array<{ title: string; url: string }>;
 }
 
 export class CampaignLLMGateway {
   private readonly GOOGLE_MODELS = [
     'gemini-3.8-flash',
     'gemini-3.7-flash',
-    'gemini-2.5-flash'
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-2.5-flash' // Resilient legacy fallback
   ];
   private readonly DEFAULT_TIMEOUT_MS = 120000; // 120s budget
   private readonly PER_ATTEMPT_TIMEOUT_MS = 60000;
+
+  // In-memory cache for models that have exhausted their daily free-tier quota in this session
+  private static exhaustedModels: Map<string, number> = new Map();
 
   async executeStructured<T>(params: CampaignLLMParams<T>): Promise<CampaignLLMResult<T>> {
     const {
@@ -51,84 +59,165 @@ export class CampaignLLMGateway {
       temperature = 0.7,
       timeoutMs = this.DEFAULT_TIMEOUT_MS
     } = params;
+    const enableGoogleSearchGrounding = params.enableGoogleSearchGrounding ?? params.searchGrounding ?? false;
 
     const startTime = Date.now();
     const billing = getGeminiBillingContext();
     const globalDeadline = startTime + timeoutMs;
 
     console.log(
-      `[CampaignLLMGateway] [gen:${generationId.slice(0, 8)}] Starting stage: ${stage} (Billing Tier: ${billing.tier}, Key: ${billing.keySource})`
+      `[CampaignLLMGateway] [gen:${generationId.slice(0, 8)}] Starting stage: ${stage} (Billing Tier: ${billing.tier}, Grounding: ${enableGoogleSearchGrounding})`
     );
 
     let lastError: any = null;
 
-    // 1. Primary Chain: Google Gemini with model fallbacks
+    // 1. Primary Chain: Google Gemini with model fallbacks and intelligent error classification
     for (let i = 0; i < this.GOOGLE_MODELS.length; i++) {
       if (Date.now() >= globalDeadline) break;
 
       const model = this.GOOGLE_MODELS[i];
       const isFallback = i > 0;
-      const attemptStart = Date.now();
 
-      try {
-        console.log(
-          `[CampaignLLMGateway] Trying Google model: ${model}${isFallback ? ' (FALLBACK)' : ''}`
-        );
+      // Check if this model is already marked quota-exhausted for the current session
+      const quotaExpiry = CampaignLLMGateway.exhaustedModels.get(model);
+      if (quotaExpiry && quotaExpiry > Date.now()) {
+        console.log(`[CampaignLLMGateway] Skipping ${model} (daily quota exhausted until ${new Date(quotaExpiry).toLocaleTimeString()})`);
+        continue;
+      }
 
-        const ai = getServerAI();
-        const abortController = new AbortController();
-        const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
+      let modelAttempt = 0;
+      const maxRetriesForModel = 2;
 
-        const config: any = {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          temperature,
-          abortSignal: abortController.signal
-        };
-        if (responseSchema) {
-          config.responseSchema = responseSchema;
-        }
+      while (modelAttempt < maxRetriesForModel && Date.now() < globalDeadline) {
+        modelAttempt++;
+        const attemptStart = Date.now();
 
-        const response = await ai.models.generateContent({
-          model,
-          contents: userInput,
-          config
-        });
+        try {
+          console.log(
+            `[CampaignLLMGateway] Trying Google model: ${model} (attempt ${modelAttempt})${isFallback ? ' (FALLBACK)' : ''}`
+          );
 
-        clearTimeout(timeoutHandle);
-        const text = response.text;
-        if (!text || !text.trim()) {
-          throw new Error(`Empty response returned from Google model ${model}`);
-        }
+          const ai = getServerAI();
+          const abortController = new AbortController();
+          const timeoutHandle = setTimeout(() => abortController.abort(), this.PER_ATTEMPT_TIMEOUT_MS);
 
-        const parsed = this.cleanAndParseJSON(text);
+          const isGemini3 = model.startsWith('gemini-3');
+          const config: any = {
+            systemInstruction: (enableGoogleSearchGrounding && !isGemini3)
+              ? `${systemInstruction}\n\nIMPORTANT: Return ONLY a valid JSON object matching the requested schema. No conversational markdown wrap outside the JSON block.`
+              : systemInstruction,
+            temperature,
+            abortSignal: abortController.signal
+          };
 
-        if (semanticValidator) {
-          const validation = semanticValidator(parsed);
-          if (!validation.isValid) {
-            throw new Error(`Semantic validation failed: ${(validation.errors || []).join('; ')}`);
+          if (enableGoogleSearchGrounding) {
+            config.tools = [{ googleSearch: {} }];
+            // Gemini 3.x natively supports Structured Outputs (application/json) alongside Search Grounding tools!
+            if (isGemini3) {
+              config.responseMimeType = 'application/json';
+              if (responseSchema) {
+                config.responseSchema = responseSchema;
+              }
+            }
+          } else {
+            config.responseMimeType = 'application/json';
+            if (responseSchema) {
+              config.responseSchema = responseSchema;
+            }
           }
-        }
 
-        const latencyMs = Date.now() - attemptStart;
-        console.log(`[CampaignLLMGateway] Success with Google model ${model} (${latencyMs}ms)`);
+          const response = await ai.models.generateContent({
+            model,
+            contents: userInput,
+            config
+          });
 
-        return {
-          data: parsed as T,
-          provider: 'google',
-          modelUsed: model,
-          latencyMs,
-          fallbackUsed: isFallback
-        };
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = err?.message || String(err);
-        console.warn(`[CampaignLLMGateway] Google model ${model} failed: ${errMsg}`);
+          clearTimeout(timeoutHandle);
+          const text = response.text;
+          if (!text || !text.trim()) {
+            throw new Error(`Empty response returned from Google model ${model}`);
+          }
 
-        // Rotate key if quota or rate limit
-        if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-          console.log('[CampaignLLMGateway] Rate limit detected, rotating Gemini client...');
-          rotateGeminiClient();
+          const parsed = this.cleanAndParseJSON(text);
+
+          if (semanticValidator) {
+            const validation = semanticValidator(parsed);
+            if (!validation.isValid) {
+              throw new Error(`Semantic validation failed: ${(validation.errors || []).join('; ')}`);
+            }
+          }
+
+          // Extract optional Google Search grounding citations
+          let citations: Array<{ title: string; url: string }> | undefined = undefined;
+          const candidate = (response as any).candidates?.[0];
+          const groundingMeta = candidate?.groundingMetadata || (response as any).groundingMetadata;
+          const chunks = groundingMeta?.groundingChunks;
+          if (Array.isArray(chunks) && chunks.length > 0) {
+            citations = chunks
+              .map((chunk: any) => ({
+                title: chunk.web?.title || 'Web Citation',
+                url: chunk.web?.uri || chunk.web?.url || ''
+              }))
+              .filter((c: any) => Boolean(c.url));
+          }
+
+          const latencyMs = Date.now() - attemptStart;
+          console.log(`[CampaignLLMGateway] Success with Google model ${model} (${latencyMs}ms)`);
+
+          return {
+            data: parsed as T,
+            provider: 'google',
+            modelUsed: model,
+            latencyMs,
+            fallbackUsed: isFallback,
+            citations
+          };
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = err?.message || String(err);
+          const errCode = err?.status || err?.code || '';
+          console.warn(`[CampaignLLMGateway] Google model ${model} (attempt ${modelAttempt}) failed [code: ${errCode}]: ${errMsg}`);
+
+          // Intelligent Error Classification
+          const isAuthError = errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('PERMISSION_DENIED') || errCode === 401 || errCode === 403;
+          const isRateLimit = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errCode === 429;
+          const isTransient = errMsg.includes('503') || errMsg.includes('500') || errMsg.includes('UNAVAILABLE') || errMsg.includes('OVERLOADED');
+          const isNotFound = errMsg.includes('404') || errMsg.includes('not found') || errMsg.includes('NOT_FOUND');
+          const isToolMimeTypeError = errMsg.includes('Tool use with a response mime type') || errMsg.includes('response_mime_type');
+          const isBadRequest = (errMsg.includes('400') || errMsg.includes('INVALID_ARGUMENT')) && !isToolMimeTypeError;
+
+          if (isAuthError) {
+            console.error(`[CampaignLLMGateway] Authentication failure (401/403). Halting immediately to avoid masking invalid credentials: ${errMsg}`);
+            throw new Error(`Authentication failure (401/403): Google API key invalid or unauthorized. Flag configuration immediately.`);
+          } else if (isToolMimeTypeError) {
+            console.warn(`[CampaignLLMGateway] Model ${model} does not support responseMimeType with tools. Will retry attempt without JSON MIME mode.`);
+            // Next loop attempt on this model will proceed if retries allow
+            continue;
+          } else if (isBadRequest) {
+            console.error(`[CampaignLLMGateway] 400 Invalid Argument / Schema Violation: ${errMsg}. Failing fast.`);
+            throw new Error(`Invalid request or schema violation (400): ${errMsg}`);
+          } else if (isRateLimit) {
+            const isDailyQuotaExhausted = errMsg.includes('GenerateRequestsPerDay') || errMsg.includes('free_tier_requests') || errMsg.includes('RetryInfo') || errMsg.includes('Please retry in');
+            if (isDailyQuotaExhausted) {
+              console.warn(`[CampaignLLMGateway] Daily free-tier quota exhausted for model ${model}. Caching exhaustion and moving to next model.`);
+              CampaignLLMGateway.exhaustedModels.set(model, Date.now() + 60 * 60 * 1000); // Cache for 1 hour
+              rotateGeminiClient();
+              break; // Break while loop to move immediately to next model without burning time
+            }
+            console.log('[CampaignLLMGateway] 429 rate limit encountered. Rotating Gemini client and backing off...');
+            rotateGeminiClient();
+            await new Promise(r => setTimeout(r, 800 * modelAttempt));
+            continue;
+          } else if (isTransient && modelAttempt < maxRetriesForModel) {
+            console.log(`[CampaignLLMGateway] ${errCode || '503/500'} transient server error. Backing off 600ms before retry...`);
+            await new Promise(r => setTimeout(r, 600));
+            continue;
+          } else if (isNotFound) {
+            console.log(`[CampaignLLMGateway] Model ${model} returned 404/not available. Advancing to next model in chain immediately.`);
+            break;
+          } else {
+            break;
+          }
         }
       }
     }

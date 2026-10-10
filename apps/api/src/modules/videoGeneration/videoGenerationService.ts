@@ -215,6 +215,9 @@ export class VideoGenerationService {
     return this.generate(extendRequest, authContext);
   }
 
+  private completedJobCache = new Map<string, { job: VideoJob; cachedAt: number }>();
+  private readonly JOB_CACHE_TTL_MS = 60 * 1000; // 60s cache for completed immutable jobs
+
   async getJobHistory(workspaceId: string, limit = 20): Promise<VideoJob[]> {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
@@ -233,14 +236,23 @@ export class VideoGenerationService {
       return videoJobService.getActiveJobs().filter((j) => j.workspaceId === workspaceId).slice(0, limit);
     }
 
-    const jobs: VideoJob[] = [];
-    for (const row of data) {
-      const job = await videoJobService.getJobWithFallback(row.id, workspaceId);
-      if (job) {
-        jobs.push(job);
+    const now = Date.now();
+    const jobPromises = data.map(async (row) => {
+      // In-memory cache hit for completed video jobs eliminates redundant remote lookups
+      const cached = this.completedJobCache.get(row.id);
+      if (cached && now - cached.cachedAt < this.JOB_CACHE_TTL_MS) {
+        return cached.job;
       }
-    }
-    return jobs;
+
+      const job = await videoJobService.getJobWithFallback(row.id, workspaceId);
+      if (job && job.status === 'completed') {
+        this.completedJobCache.set(row.id, { job, cachedAt: now });
+      }
+      return job;
+    });
+
+    const resolvedJobs = await Promise.all(jobPromises);
+    return resolvedJobs.filter((j): j is VideoJob => Boolean(j));
   }
 
   getCapabilities(): Record<VideoEngineKey, VideoEngineCapability> {

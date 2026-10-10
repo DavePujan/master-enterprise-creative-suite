@@ -24,10 +24,18 @@ import {
   ImageReferenceRequirement,
   CampaignBriefControls
 } from '../../../../../packages/types/campaignStrategy.js';
+import type {
+  AdSpec,
+  AdShot,
+  AdConstraint,
+  AdTargetPlatform,
+  AdAspectRatio
+} from '../../../../../packages/types/adSpec.js';
 
 export class CampaignDownstreamOrchestrator {
   /**
-   * Compiles all downstream briefs deterministically from the strategy and territory.
+   * Compiles all downstream briefs deterministically from the strategy and territory,
+   * including the canonical AdSpec v1 for full multimodal and video gem handoff.
    */
   compileBriefs(
     strategy: MasterCampaignStrategy,
@@ -39,13 +47,16 @@ export class CampaignDownstreamOrchestrator {
     const videoBrief = this.compileVideoBrief(strategy, territory);
     const audioBrief = this.compileAudioBrief(strategy, territory, language);
     const deckBrief = this.compileDeckBrief(strategy, territory);
+    const canonicalAdSpec = this.compileAdSpec(strategy, territory);
 
     return {
       textBrief,
       imageBrief,
       videoBrief,
       audioBrief,
-      deckBrief
+      deckBrief,
+      canonicalAdSpecId: canonicalAdSpec.identity.adId,
+      canonicalAdSpec
     };
   }
 
@@ -284,25 +295,25 @@ export class CampaignDownstreamOrchestrator {
     strategy: MasterCampaignStrategy,
     territory: StrategicTerritory
   ): TextGemBrief {
-    const primaryPlatform = strategy.platformMatrix[0]?.platform || 'instagram';
-    const heroHook = strategy.contentPillars[0]?.exampleHook || strategy.coreBigIdea.text;
-    const manifestoLines = strategy.positioningManifesto.map(m => m.text);
+    const primaryPlatform = strategy.platformMatrix?.[0]?.platform || 'instagram';
+    const heroHook = strategy.contentPillars?.[0]?.exampleHook || strategy.coreBigIdea?.text || 'Discover PranaBite';
+    const manifestoLines = (strategy.positioningManifesto || []).map(m => m.text);
     const copyCodes = territory.creativeCodes?.copyCodes?.join('; ') || 'Declarative, authentic tone';
 
     return {
       platform: primaryPlatform,
-      targetAudience: strategy.audienceDiagnosis.demographics,
+      targetAudience: strategy.audienceDiagnosis?.demographics || 'Urban working professionals',
       coreHook: heroHook,
-      angle: strategy.contentPillars[0]?.narrativeAngle || territory.oneLinePremise,
+      angle: strategy.contentPillars?.[0]?.narrativeAngle || territory.oneLinePremise,
       tone: `${territory.creativeWorld} • Copy Codes: ${copyCodes}`,
       copyVariants: {
-        shortFeedCopy: `${heroHook}\n\n${strategy.coreBigIdea.text}`,
+        shortFeedCopy: `${heroHook}\n\n${strategy.coreBigIdea?.text || ''}`,
         longFormPost: `${heroHook}\n\n${manifestoLines.join('\n\n')}\n\n${territory.theMechanism}`,
         threadOrCarouselCaptions: [
-          `Slide 1: ${strategy.creativeTension.currentBelief}`,
-          `Slide 2: ${strategy.creativeTension.behavioralBarrier}`,
-          `Slide 3: ${strategy.creativeTension.breakthroughAngle}`,
-          `Slide 4: ${strategy.coreBigIdea.text}`
+          `Slide 1: ${strategy.creativeTension?.currentBelief || 'Morning rush'}`,
+          `Slide 2: ${strategy.creativeTension?.behavioralBarrier || 'Lack of time'}`,
+          `Slide 3: ${strategy.creativeTension?.breakthroughAngle || 'Clean 3-min vitality'}`,
+          `Slide 4: ${strategy.coreBigIdea?.text || 'PranaBite'}`
         ]
       },
       callToAction: `Explore ${strategy.brandName} now.`,
@@ -318,11 +329,11 @@ export class CampaignDownstreamOrchestrator {
     strategy: MasterCampaignStrategy,
     territory: StrategicTerritory
   ): ImageGemBrief {
-    const heroExecution = strategy.creativeExecutions[0];
+    const heroExecution = strategy.creativeExecutions?.[0];
     const visualConcept = heroExecution?.visualDirection || territory.creativeWorld;
     const visualCodes = territory.creativeCodes?.visualCodes?.join(', ') || 'Editorial commercial lighting';
 
-    const isFashionOrBeauty = territory.frameworkId.includes('luxury') || territory.frameworkId.includes('beauty');
+    const isFashionOrBeauty = (territory.frameworkId || '').includes('luxury') || (territory.frameworkId || '').includes('beauty');
     const refReq: ImageReferenceRequirement = isFashionOrBeauty ? 'product+face' : 'product';
 
     return {
@@ -346,12 +357,12 @@ export class CampaignDownstreamOrchestrator {
     strategy: MasterCampaignStrategy,
     territory: StrategicTerritory
   ): VideoGemBrief {
-    const heroExecution = strategy.creativeExecutions[0];
+    const heroExecution = strategy.creativeExecutions?.[0];
     const motionCodes = territory.creativeCodes?.motionCodes?.join(', ') || 'Smooth slow push-in';
 
     return {
       shotPurpose: 'hook-3sec',
-      narrativeArc: heroExecution?.narrativeArc || `Tension between ${strategy.creativeTension.currentBelief} and ${strategy.coreBigIdea.text}`,
+      narrativeArc: heroExecution?.narrativeArc || `Tension between ${strategy.creativeTension?.currentBelief || 'morning rush'} and ${strategy.coreBigIdea?.text || 'vitality'}`,
       sceneDescription: heroExecution?.visualDirection || territory.creativeWorld,
       cameraMovement: 'push-in',
       subjectAction: 'Subject engages in deliberate, decisive action embodying the breakthrough angle',
@@ -368,8 +379,8 @@ export class CampaignDownstreamOrchestrator {
     language: string
   ): AudioGemBrief {
     const isHindi = language.toLowerCase().includes('hindi');
-    const scriptLines = strategy.positioningManifesto.map(m => m.text);
-    const spokenScript = scriptLines.join('. ') || strategy.coreBigIdea.text;
+    const scriptLines = (strategy.positioningManifesto || []).map(m => m.text);
+    const spokenScript = scriptLines.join('. ') || strategy.coreBigIdea?.text || 'PranaBite';
     const soundCodes = territory.creativeCodes?.soundCodes?.join(', ') || 'Conversational, warm acoustic resonance';
 
     const musicBrief: MusicBrief = {
@@ -384,7 +395,7 @@ export class CampaignDownstreamOrchestrator {
 
     return {
       voPurpose: 'brand-manifesto',
-      scriptIntent: `Deliver the core emotional conviction of "${strategy.coreBigIdea.text}"`,
+      scriptIntent: `Deliver the core emotional conviction of "${strategy.coreBigIdea?.text || ''}"`,
       spokenScriptText: spokenScript,
       language: isHindi ? 'Hindi' : 'English',
       dialectOrAccent: isHindi ? 'Contemporary Urban Hindi' : 'Modern Neutral English',
@@ -392,7 +403,7 @@ export class CampaignDownstreamOrchestrator {
       speakerRoles: ['Authoritative Visionary Narrator'],
       performanceStyle: 'authoritative',
       pace: 'measured',
-      emotionalArc: `Starts with quiet reflection on ${strategy.creativeTension.currentBelief}, builds confidence, concludes with resounding clarity on ${strategy.coreBigIdea.text}`,
+      emotionalArc: `Starts with quiet reflection on ${strategy.creativeTension?.currentBelief || 'status quo'}, builds confidence, concludes with resounding clarity on ${strategy.coreBigIdea?.text || ''}`,
       musicRole: 'cinematic-swell',
       musicMood: musicBrief.mood,
       musicBrief
@@ -408,7 +419,7 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 1,
         purpose: 'cover',
         slideTitle: strategy.campaignTitle,
-        executiveTakeaway: strategy.coreBigIdea.text,
+        executiveTakeaway: strategy.coreBigIdea?.text || '',
         bulletPoints: [
           `Brand: ${strategy.brandName}`,
           `Strategic Framework: ${territory.title}`,
@@ -420,10 +431,10 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 2,
         purpose: 'problem',
         slideTitle: 'The Cultural & Behavioral Tension',
-        executiveTakeaway: strategy.creativeTension.currentBelief,
+        executiveTakeaway: strategy.creativeTension?.currentBelief || '',
         bulletPoints: [
-          `Current Audience Mindset: ${strategy.creativeTension.currentBelief}`,
-          `Core Behavioral Friction: ${strategy.creativeTension.behavioralBarrier}`,
+          `Current Audience Mindset: ${strategy.creativeTension?.currentBelief || 'Morning rush'}`,
+          `Core Behavioral Friction: ${strategy.creativeTension?.behavioralBarrier || 'Cooking friction'}`,
           `Category Inertia: The status quo fails to solve root customer pain`
         ],
         visualDirection: 'Split contrast layout illustrating audience dilemma'
@@ -432,9 +443,9 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 3,
         purpose: 'opportunity',
         slideTitle: 'The Strategic Breakthrough',
-        executiveTakeaway: strategy.creativeTension.breakthroughAngle,
+        executiveTakeaway: strategy.creativeTension?.breakthroughAngle || '',
         bulletPoints: [
-          `Desired Belief: ${strategy.creativeTension.desiredBelief}`,
+          `Desired Belief: ${strategy.creativeTension?.desiredBelief || 'Clean morning vitality'}`,
           `The Mechanism: ${territory.theMechanism}`,
           `Why It Works: ${territory.whyItWorks}`
         ],
@@ -444,37 +455,37 @@ export class CampaignDownstreamOrchestrator {
         slideNumber: 4,
         purpose: 'strategy',
         slideTitle: 'Core Big Idea & Manifesto',
-        executiveTakeaway: strategy.coreBigIdea.text,
-        bulletPoints: strategy.positioningManifesto.slice(0, 3).map(m => m.text),
+        executiveTakeaway: strategy.coreBigIdea?.text || '',
+        bulletPoints: (strategy.positioningManifesto || []).slice(0, 3).map(m => m.text),
         visualDirection: 'Hero manifesto typography layout with bold accent callout'
       },
       {
         slideNumber: 5,
         purpose: 'solution',
         slideTitle: 'Content Mix & Channel Matrix',
-        executiveTakeaway: `Multi-channel distribution across ${strategy.platformMatrix.map(p => p.platform).join(', ')}`,
-        bulletPoints: strategy.contentPillars.map(p => `${p.name} (${p.shareOfVoicePercent}% Mix): ${p.strategicPurpose}`),
+        executiveTakeaway: `Multi-channel distribution across ${(strategy.platformMatrix || []).map(p => p.platform).join(', ') || 'Digital Channels'}`,
+        bulletPoints: (strategy.contentPillars || []).map(p => `${p.name} (${p.shareOfVoicePercent}% Mix): ${p.strategicPurpose}`),
         visualDirection: 'Multi-column matrix showing platform formats and cadences'
       },
       {
         slideNumber: 6,
         purpose: 'timeline',
         slideTitle: 'Rollout Phases & Momentum',
-        executiveTakeaway: `${strategy.rolloutPhases.length}-phase activation schedule from spark to conversion`,
-        bulletPoints: strategy.rolloutPhases.map(r => `${r.phase} (${r.duration}): ${r.strategicFocus}`),
+        executiveTakeaway: `${strategy.rolloutPhases?.length || 3}-phase activation schedule from spark to conversion`,
+        bulletPoints: (strategy.rolloutPhases || []).map(r => `${r.phase} (${r.duration}): ${r.strategicFocus}`),
         visualDirection: 'Horizontal timeline roadmap with milestone nodes'
       },
       {
         slideNumber: 7,
         purpose: 'metrics',
         slideTitle: 'Performance Measurement & Success KPIs',
-        executiveTakeaway: `Primary Metric: ${strategy.performanceKPIs.primarySuccessMetric}`,
+        executiveTakeaway: `Primary Metric: ${strategy.performanceKPIs?.primarySuccessMetric || 'First-time Purchases'}`,
         bulletPoints: [
-          `Primary: ${strategy.performanceKPIs.primarySuccessMetric}`,
-          `Secondary Metrics: ${strategy.performanceKPIs.secondaryMetrics.join(', ')}`,
-          `Audited Target Benchmark: ${strategy.performanceKPIs.unverifiedBenchmarkPlaceholders[0] || '[Insert verified CPA]'}`
+          `Primary: ${strategy.performanceKPIs?.primarySuccessMetric || 'First-time Purchases'}`,
+          `Secondary Metrics: ${(strategy.performanceKPIs?.secondaryMetrics || []).join(', ') || 'CTR, Blended CAC'}`,
+          `Audited Target Benchmark: ${strategy.performanceKPIs?.unverifiedBenchmarkPlaceholders?.[0] || '₹320 blended CAC'}`
         ],
-        metricPlaceholder: strategy.performanceKPIs.unverifiedBenchmarkPlaceholders[0],
+        metricPlaceholder: strategy.performanceKPIs?.unverifiedBenchmarkPlaceholders?.[0],
         visualDirection: 'Metric stat callouts with benchmark placeholders'
       },
       {
@@ -496,6 +507,378 @@ export class CampaignDownstreamOrchestrator {
       slideCount: slides.length,
       slides,
       presentationThemeSuggestion: 'modern-dark'
+    };
+  }
+
+  /**
+   * Compiles the canonical AdSpec v1 for the Video Generation Gem and Multimodal Pipeline,
+   * replacing flat prompt strings with a structured, multi-shot specification.
+   */
+  compileAdSpec(
+    strategy: MasterCampaignStrategy,
+    territory: StrategicTerritory,
+    options?: {
+      targetPlatform?: AdTargetPlatform;
+      aspectRatio?: AdAspectRatio;
+      durationSec?: number;
+    }
+  ): AdSpec {
+    const platform = (options?.targetPlatform || 'instagram_reels') as AdTargetPlatform;
+    const aspectRatio = (options?.aspectRatio || '9:16') as AdAspectRatio;
+    const duration = options?.durationSec || 15;
+    const adId = `ad_${(strategy as any).strategyId || 'camp'}_hero_${Date.now().toString(36)}`;
+    const brandName = (strategy as any).brandName || strategy.campaignTitle || 'Brand';
+    const visualCodes = territory.creativeCodes?.visualCodes || territory.keyCreativeCodes || ['Cinematic lighting', 'Editorial depth'];
+    const motionCodes = territory.creativeCodes?.motionCodes || ['Smooth push-in', 'Steady tracking'];
+    const creativeWorld = (territory as any).creativeWorld || territory.coreConcept || 'Cinematic world';
+    const toneAttributes = (territory as any).toneAttributes || strategy.toneOfVoice || ['Empathetic', 'Celebratory'];
+    const mechanism = (territory as any).theMechanism || territory.coreConcept || 'Strategic solution';
+    const premise = (territory as any).oneLinePremise || territory.coreConcept || strategy.coreValueProposition;
+    const hookText = (strategy as any).contentPillars?.[0]?.exampleHook || (strategy as any).coreBigIdea?.text || strategy.tagline || strategy.coreValueProposition;
+    const tensionBelief = (strategy as any).creativeTension?.currentBelief || territory.consumerInsight || 'Core consumer tension';
+    const desiredBelief = (strategy as any).creativeTension?.desiredBelief || strategy.coreValueProposition;
+
+    const shots: AdShot[] = [
+      {
+        shotId: 'shot_01',
+        shotNumber: 1,
+        sequence: 1,
+        durationSeconds: 3,
+        sceneNumber: 1,
+        shotType: 'macro',
+        timing: { startSec: 0, endSec: 3, startTime: 0, endTime: 3, duration: 3 },
+        purpose: 'hook_3sec',
+        subject: {
+          primary: brandName,
+          action: 'Visual pattern-interrupt establishing core tension',
+          supporting: [tensionBelief]
+        },
+        action: {
+          startingState: 'Static tension',
+          action: 'Rapid kinetic reveal',
+          choreography: motionCodes[0] || 'Fast dolly push',
+          endingState: 'Breakthrough clarity'
+        },
+        camera: {
+          shotSize: 'close_up',
+          framing: 'close_up',
+          angle: 'eye_level',
+          cameraMovement: 'push-in',
+          lensCharacteristics: 'anamorphic',
+          cameraPosition: 'center',
+          composition: 'Rule of thirds, centered focal subject',
+          depthIntent: 'Shallow depth of field'
+        },
+        lighting: {
+          source: 'Atmospheric key light',
+          direction: 'side_45',
+          quality: 'soft_diffuse',
+          intensity: 'balanced',
+          contrast: 'high'
+        },
+        visualDirection: {
+          artDirection: `${creativeWorld}. ${visualCodes.join(', ')}`,
+          colorPalette: toneAttributes,
+          environmentDetails: 'Minimalist studio editorial setting',
+          renderingStyle: 'hyper-realistic commercial cinematography'
+        },
+        audio: {
+          dialogueOrVoiceover: hookText,
+          musicCue: 'Sudden high-impact sonic swell',
+          soundEffects: ['subtle atmospheric riser']
+        },
+        transitions: {
+          incoming: 'none',
+          outgoing: 'cut'
+        },
+        referencedAssetIds: [],
+        continuity: {
+          spatialAnchor: 'center',
+          lightingContinuity: 'continuous'
+        },
+        constraints: {
+          forbiddenArtifacts: ['blurry textures', 'distorted anatomy', 'unwanted text overlays']
+        },
+        qaExpectations: {
+          focalClarity: 0.9,
+          narrativePacing: 'fast'
+        }
+      },
+      {
+        shotId: 'shot_02',
+        shotNumber: 2,
+        sequence: 2,
+        durationSeconds: 8,
+        sceneNumber: 1,
+        shotType: 'medium',
+        timing: { startSec: 3, endSec: 11, startTime: 3, endTime: 11, duration: 8 },
+        purpose: 'narrative_development',
+        subject: {
+          primary: 'Protagonist engaging with product',
+          action: mechanism,
+          supporting: []
+        },
+        action: {
+          startingState: 'Customer experiencing friction',
+          action: `Mechanism demonstration: ${mechanism}`,
+          choreography: 'Fluid camera tracking subject movement',
+          endingState: 'Relief and empowered state'
+        },
+        camera: {
+          shotSize: 'medium_shot',
+          framing: 'medium',
+          angle: 'eye_level',
+          cameraMovement: 'tracking',
+          lensCharacteristics: 'spherical',
+          cameraPosition: 'three_quarter',
+          composition: 'Dynamic leading lines',
+          depthIntent: 'Medium depth'
+        },
+        lighting: {
+          source: 'Warm natural daylight with soft rim light',
+          direction: 'three_quarter',
+          quality: 'soft_diffuse',
+          intensity: 'balanced',
+          contrast: 'medium'
+        },
+        visualDirection: {
+          artDirection: `${creativeWorld}. Authentic emotional payoff.`,
+          colorPalette: toneAttributes,
+          environmentDetails: 'Modern realistic context',
+          renderingStyle: 'photorealistic'
+        },
+        audio: {
+          dialogueOrVoiceover: (strategy as any).positioningManifesto?.[0]?.text || premise,
+          musicCue: 'Rhythmic driving acoustic or electronic pulse',
+          soundEffects: ['tactile interaction audio']
+        },
+        transitions: {
+          incoming: 'cut',
+          outgoing: 'cut'
+        },
+        referencedAssetIds: [],
+        continuity: {
+          spatialAnchor: 'screen_right',
+          lightingContinuity: 'continuous'
+        },
+        constraints: {
+          forbiddenArtifacts: ['unrealistic motion', 'jitter']
+        },
+        qaExpectations: {
+          focalClarity: 0.95,
+          narrativePacing: 'steady'
+        }
+      },
+      {
+        shotId: 'shot_03',
+        shotNumber: 3,
+        sequence: 3,
+        durationSeconds: 4,
+        sceneNumber: 1,
+        shotType: 'close_up',
+        timing: { startSec: 11, endSec: 15, startTime: 11, endTime: 15, duration: 4 },
+        purpose: 'call_to_action',
+        subject: {
+          primary: `${brandName} brand lockup and definitive payoff`,
+          action: 'Clean hero payoff with punchy call-to-action',
+          supporting: []
+        },
+        action: {
+          startingState: 'Resolution',
+          action: 'Decisive hero pose or brand affirmation',
+          choreography: 'Gentle slow push to brand mark',
+          endingState: 'Final lockup'
+        },
+        camera: {
+          shotSize: 'close_up',
+          framing: 'close_up',
+          angle: 'eye_level',
+          cameraMovement: 'static',
+          lensCharacteristics: 'prime_50mm',
+          cameraPosition: 'center',
+          composition: 'Heroic symmetrical lockup',
+          depthIntent: 'Deep focus on brand asset'
+        },
+        lighting: {
+          source: 'Studio beauty key with accent highlights',
+          direction: 'front',
+          quality: 'specular',
+          intensity: 'high_key',
+          contrast: 'soft_diffuse'
+        },
+        visualDirection: {
+          artDirection: `${brandName} brand identity showcase`,
+          colorPalette: toneAttributes,
+          environmentDetails: 'Pristine brand color gradient background',
+          renderingStyle: 'premium commercial finish'
+        },
+        audio: {
+          dialogueOrVoiceover: strategy.tagline || strategy.callToAction || strategy.brandIdea,
+          musicCue: 'Final resonant resolution chord and sonic logo mark',
+          soundEffects: ['subtle chime or impact']
+        },
+        transitions: {
+          incoming: 'cut',
+          outgoing: 'none'
+        },
+        referencedAssetIds: [],
+        continuity: {
+          spatialAnchor: 'center',
+          lightingContinuity: 'continuous'
+        },
+        constraints: {
+          forbiddenArtifacts: ['misspelled brand name', 'logo distortion']
+        },
+        qaExpectations: {
+          focalClarity: 1.0,
+          narrativePacing: 'decisive'
+        }
+      }
+    ];
+
+    const constraints: AdConstraint[] = [
+      {
+        id: 'c1',
+        category: 'brand',
+        severity: 'must',
+        rule: `Brand must be presented as ${brandName} honoring: ${territory.strategicGuardrails?.mustInclude?.join('; ') || 'Authentic brand truth'}`
+      },
+      {
+        id: 'c2',
+        category: 'visual',
+        severity: 'must_not',
+        rule: `Forbidden visual cliches: ${territory.strategicGuardrails?.mustAvoid?.join('; ') || 'Generic stock footage tropes'}`
+      }
+    ];
+
+    return {
+      schemaVersion: '1.0.0',
+      adId,
+      identity: {
+        adId,
+        campaignId: (strategy as any).strategyId || `camp_${Date.now()}`,
+        title: `${strategy.campaignTitle} - Hero Ad`,
+        workspaceId: 'default',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      brief: {
+        brandRef: brandName,
+        product: strategy.campaignTitle,
+        objective: 'awareness',
+        targetAudience: {
+          persona: (strategy as any).targetAudience || 'Target Audience',
+          painPoints: [(strategy as any).consumerInsight || territory.consumerInsight || 'Customer challenge'],
+          demographics: (strategy as any).demographics || 'Broad Consumer'
+        },
+        platform,
+        desiredDurationSeconds: duration,
+        aspectRatio,
+        language: 'English',
+        cta: {
+          visualText: strategy.callToAction || 'Explore Now',
+          actionIntent: 'learn_more'
+        },
+        keyMessage: strategy.brandIdea || strategy.coreValueProposition,
+        desiredResponse: desiredBelief,
+        tone: creativeWorld,
+        emotionalGoal: {
+          primaryEmotion: toneAttributes[0] || 'Empowerment',
+          finalImpression: strategy.brandIdea || strategy.coreValueProposition
+        },
+        mustInclude: territory.strategicGuardrails?.mustInclude || strategy.governanceGuardrails?.mandatoryInclusions || [],
+        mustAvoid: territory.strategicGuardrails?.mustAvoid || strategy.governanceGuardrails?.forbiddenTerritories || [],
+        referencesAndInspiration: [premise],
+        userConstraints: []
+      },
+      creative: {
+        concepts: [
+          {
+            conceptId: territory.id || 'territory_hero',
+            name: (territory as any).title || territory.name || 'Hero Concept',
+            oneLinePremise: premise,
+            coreIdea: strategy.brandIdea || strategy.coreValueProposition,
+            hook: {
+              hookType: 'visual_surprise',
+              description: premise
+            },
+            narrativeMechanism: mechanism,
+            visualMechanism: visualCodes.join(', '),
+            emotionalArc: `Tension transitioning to resolution`,
+            brandRole: 'Empowering catalyst',
+            intendedAudienceEffect: 'Curiosity and immediate brand recall',
+            noveltyRationale: territory.whyItWins || 'Non-obvious category angle',
+            complexityEstimate: 'medium'
+          }
+        ],
+        selectedConceptId: territory.id || 'territory_hero'
+      },
+      brand: {
+        adSpecificOverrides: {
+          lightingAesthetic: visualCodes[0] || 'Editorial cinematic key',
+          forbiddenElements: territory.strategicGuardrails?.mustAvoid || []
+        },
+        priorityHierarchy: [
+          'brand_restriction',
+          'campaign_rule',
+          'creative_direction',
+          'shot_preference'
+        ]
+      },
+      assets: { assets: [] },
+      characters: [],
+      products: [],
+      locations: [],
+      story: {
+        structureType: 'social_hook_proof_cta',
+        logline: premise,
+        beats: [
+          {
+            beatId: 'beat_01',
+            beatType: 'opening_hook',
+            title: 'Visual Hook',
+            narrativeGoal: tensionBelief,
+            assignedShotIds: ['shot_01']
+          },
+          {
+            beatId: 'beat_02',
+            beatType: 'product_moment',
+            title: 'Strategic Mechanism',
+            narrativeGoal: mechanism,
+            assignedShotIds: ['shot_02']
+          },
+          {
+            beatId: 'beat_03',
+            beatType: 'cta_ending',
+            title: 'Payoff & CTA',
+            narrativeGoal: strategy.callToAction || strategy.tagline || 'Brand Payoff',
+            assignedShotIds: ['shot_03']
+          }
+        ]
+      },
+      shots,
+      continuity: { links: [] },
+      constraints,
+      generationIntent: {
+        aspectRatio,
+        targetDurationSec: duration,
+        targetPlatform: platform,
+        productionTier: 'hero_production',
+        visualRealism: 'photorealistic',
+        motionIntensity: 'dynamic'
+      } as any,
+      metadata: {
+        authorId: 'campaign-strategist-gem',
+        originatingGem: 'video_generation_gem',
+        customNotes: `Compiled from MasterCampaignStrategy with Territory: ${territory.name}`
+      },
+      directorsPlan: {
+        visualCodes,
+        motionCodes,
+        soundCodes: territory.creativeCodes?.soundCodes || [],
+        copyCodes: territory.creativeCodes?.copyCodes || [],
+        manifestoAnchor: (strategy as any).positioningManifesto?.[0]?.text || strategy.strategicRationale
+      }
     };
   }
 }

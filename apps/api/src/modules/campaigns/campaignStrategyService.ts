@@ -29,6 +29,9 @@ import { campaignDownstreamOrchestrator } from './campaignDownstreamOrchestrator
 import { campaignNoveltyEngine } from './campaignNoveltyEngine.js';
 import { campaignRepository } from './campaignRepository.js';
 import { campaignLLMGateway } from './campaignLLMGateway.js';
+import { videoAdProjectRepository } from '../adDirector/repositories/videoAdProjectRepository.js';
+import { historyRepository } from '../../repositories/historyRepository.js';
+import type { AdSpec } from '../../../../../packages/types/adSpec.js';
 
 export interface DiscoveryServiceRequest {
   sessionId: string;
@@ -96,7 +99,8 @@ export class CampaignStrategyService {
     questions: AdaptiveQuestion[];
     recommendedFrameworks: string[];
   }> {
-    const requestHash = `disc_${request.workspaceId}_${this.computeHash({
+    const requestHash = `disc_v2_${request.workspaceId}_${this.computeHash({
+      v: 'v2_semantic',
       title: request.campaignTitle,
       brief: request.briefDescription,
       audience: request.targetAudience,
@@ -180,6 +184,8 @@ export class CampaignStrategyService {
     masterStrategy: MasterCampaignStrategy;
     downstreamBriefs: DownstreamBriefs;
     criticReport: any;
+    adSpec?: AdSpec;
+    projectId?: string;
   }> {
     const {
       generationId,
@@ -300,7 +306,40 @@ export class CampaignStrategyService {
         fingerprint
       });
 
-      // 6. Capture Credits Atomically
+      // 6. In-line Video Project Persistence for Canonical AdSpec v1
+      let projectId: string | undefined;
+      const canonicalAdSpec = downstreamBriefs.canonicalAdSpec;
+      if (canonicalAdSpec) {
+        try {
+          const projectTitle = campaignTitle || selectedTerritory.title || 'Campaign Video Project';
+          const projectResult = await videoAdProjectRepository.createProject(workspaceId, projectTitle, userId, canonicalAdSpec);
+          projectId = projectResult?.project?.id;
+        } catch (persistErr) {
+          console.warn('[CampaignStrategyService] Video project persistence fallback:', persistErr);
+        }
+      }
+
+      // 6b. Persist to Global Execution History (history_logs) for cross-session cloud recovery
+      await historyRepository.addHistory({
+        workspaceId,
+        userId,
+        jobId: rootStrategyId,
+        gemId: 'campaign-strategist-y',
+        title: `Campaign Strategy: ${campaignTitle}`,
+        prompt: briefDescription || campaignTitle,
+        resultSummary: {
+          type: 'campaign-strategy',
+          strategyId: rootStrategyId,
+          versionId: versionRecord.versionId,
+          campaignTitle,
+          frameworkId: selectedTerritory.frameworkId,
+          bigIdea: masterStrategy.coreBigIdea,
+          territory: selectedTerritory.title,
+          status: 'ready'
+        }
+      }).catch((hErr) => console.warn('[CampaignStrategyService] Failed writing to history_logs:', hErr));
+
+      // 7. Capture Credits Atomically
       if (!holdId.startsWith('mock_hold_')) {
         await creditService.captureCredits(holdId, `strat_${generationId}`);
       }
@@ -311,7 +350,9 @@ export class CampaignStrategyService {
         versionNumber: parentVersionId ? 2 : 1,
         masterStrategy,
         downstreamBriefs,
-        criticReport
+        criticReport,
+        adSpec: canonicalAdSpec,
+        projectId
       };
     } catch (err: any) {
       console.error('[CampaignStrategyService] Synthesis failed, releasing credit hold:', err?.message || err);

@@ -84,3 +84,5 @@ zzz_video.md
 /playwright/.cache/
 /playwright/.auth/
 .github/
+.playwright-mcp/
+homepage.png

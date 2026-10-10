@@ -830,3 +830,5 @@ export interface AdSpecDelta {
   newValues: Record<string, any>;
   timestamp: string;
 }
+
+export type { AdBrief } from './adDirector.js';

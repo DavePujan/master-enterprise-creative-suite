@@ -126,11 +126,12 @@ export const IMAGE_MODEL_DEFINITIONS: ImageModelDefinition[] = [
         implementation: "unsupported",
       },
       productReference: {
-        status: "prompt",
-        badgeLabel: "Prompt Guided",
-        source: "prompt-only",
-        reason: "Product attributes and materials are guided through structured prompt engineering",
-        implementation: "prompt-context",
+        status: "reference",
+        badgeLabel: "Reference Input",
+        source: "provider-api",
+        parameter: "image_urls",
+        reason: "Supported via Fal GPT Image 2 edit endpoint (openai/gpt-image-2/edit) with reference image_urls",
+        implementation: "provider-image-urls",
       },
       ingredients: {
         status: "prompt",
@@ -148,20 +149,21 @@ export const IMAGE_MODEL_DEFINITIONS: ImageModelDefinition[] = [
       },
       generation: {
         textToImage: true,
-        imageToImage: false,
-        editing: false,
+        imageToImage: true,
+        editing: true,
       },
       references: {
-        supported: false,
-        mechanism: "none",
+        supported: true,
+        maxImages: 3,
+        mechanism: "image_urls",
       },
       // Backward-compatible accessors
       aspectRatios: ["1:1", "16:9", "9:16", "4:3"],
-      supportsReferenceImages: false,
-      supportsImageEditing: false,
+      supportsReferenceImages: true,
+      supportsImageEditing: true,
       supportsLogoOverlay: true,
       supportsFaceReference: "unsupported",
-      supportsProductReference: "inspirational",
+      supportsProductReference: "supported",
       supportsIngredientsInput: "supported",
       supportedResolutions: ["1024x1024", "1536x1024", "1024x1536", "2048x1152"],
     },
@@ -215,6 +217,90 @@ export const IMAGE_MODEL_DEFINITIONS: ImageModelDefinition[] = [
         source: "unsupported",
         reason: "FLUX Schnell text-to-image endpoint has no reference image input for product preservation",
         implementation: "unsupported",
+      },
+      ingredients: {
+        status: "prompt",
+        badgeLabel: "Prompt Guided",
+        source: "prompt-only",
+        reason: "Ingredients described in text prompt; no native structured ingredient schema exists",
+        implementation: "prompt-context",
+      },
+      style: {
+        status: "prompt",
+        badgeLabel: "Prompt Guided",
+        source: "prompt-only",
+        reason: "Prompt controls visual treatment, atmosphere, and lighting",
+        implementation: "prompt-context",
+      },
+      generation: {
+        textToImage: true,
+        imageToImage: false,
+        editing: false,
+      },
+      references: {
+        supported: false,
+        mechanism: "none",
+      },
+      // Backward-compatible accessors
+      aspectRatios: ["1:1", "16:9", "9:16", "4:3"],
+      supportsReferenceImages: false,
+      supportsImageEditing: false,
+      supportsLogoOverlay: true,
+      supportsFaceReference: "unsupported",
+      supportsProductReference: "unsupported",
+      supportsIngredientsInput: "supported",
+      supportedResolutions: ["square_hd", "landscape_16_9", "portrait_16_9", "landscape_4_3"],
+    },
+  },
+  {
+    key: "flux-dev",
+    provider: "fal",
+    modelId: "fal-ai/flux/dev",
+    label: "Fal FLUX Dev",
+    description: "High-detail commercial advertising rendering",
+    quality: "premium",
+    credits: 3,
+    humanTouch: 30,
+    status: "enabled",
+    capabilities: {
+      aspectRatio: {
+        status: "native",
+        badgeLabel: "Provider Native",
+        source: "provider-api",
+        parameter: "image_size",
+        values: ["1:1", "16:9", "9:16", "4:3"],
+        reason: "Provider exposes image_size presets (square_hd, landscape_16_9, portrait_16_9, landscape_4_3)",
+        implementation: "provider-image-size",
+      },
+      resolution: {
+        status: "native",
+        badgeLabel: "Provider Native",
+        source: "provider-api",
+        parameter: "image_size",
+        values: ["square_hd", "landscape_16_9", "portrait_16_9", "landscape_4_3"],
+        reason: "Fixed high-definition presets governed by image_size parameter",
+        implementation: "provider-image-size",
+      },
+      logoOverlay: {
+        status: "application",
+        badgeLabel: "Application Layer",
+        source: "application",
+        reason: "Real vector/PNG logo is deterministically composited onto generated clean background by application layer",
+        implementation: "canvas-deterministic-layer",
+      },
+      faceReference: {
+        status: "unsupported",
+        badgeLabel: "Unavailable",
+        source: "unsupported",
+        reason: "FLUX Dev text-to-image endpoint does not expose facial identity conditioning parameters",
+        implementation: "unsupported",
+      },
+      productReference: {
+        status: "prompt",
+        badgeLabel: "Prompt Guided",
+        source: "prompt-only",
+        reason: "Guided via descriptive prompt engineering; endpoint does not take image_urls",
+        implementation: "prompt-context",
       },
       ingredients: {
         status: "prompt",
@@ -565,6 +651,8 @@ export interface NormalizedImageRequest {
     data?: string;
   }>;
   referenceImages?: string[];
+  references?: AssetReference[];
+  engine?: RenderEngine;
   guidelines?: BrandGuidelines;
   numImages?: number;
   seed?: number;
@@ -596,3 +684,146 @@ export interface NormalizedImageResult {
     latencyMs?: number;
   };
 }
+
+// ============================================================================
+// Canonical Ecommerce Bundle & Multi-Asset Engine Registry Architecture
+// ============================================================================
+
+export type AssetReferenceSource =
+  | { kind: "url"; url: string }
+  | { kind: "data_uri"; dataUri: string };
+
+export interface AssetReference {
+  id: string;
+  type: "product" | "face" | "brand";
+  role: string;
+  source: AssetReferenceSource;
+  instructions?: string;
+}
+
+export type RenderEngine = "fast" | "quality" | "premium";
+
+export interface EngineRegistryEntry {
+  engine: RenderEngine;
+  modelKey: string;
+  provider: "fal" | "google";
+  modelId: string;
+  label: string;
+  description: string;
+  creditsPerAsset: number;
+  supportsImageEdit: boolean;
+  maxReferenceImages: number;
+}
+
+export const ENGINE_REGISTRY: Record<RenderEngine, EngineRegistryEntry> = {
+  fast: {
+    engine: "fast",
+    modelKey: "flux-schnell",
+    provider: "fal",
+    modelId: "fal-ai/flux/schnell",
+    label: "Fast",
+    description: "Ultra-fast photorealistic preview composition",
+    creditsPerAsset: 2,
+    supportsImageEdit: false,
+    maxReferenceImages: 0,
+  },
+  quality: {
+    engine: "quality",
+    modelKey: "flux-dev",
+    provider: "fal",
+    modelId: "fal-ai/flux/dev",
+    label: "Quality",
+    description: "High-detail commercial advertising rendering",
+    creditsPerAsset: 3,
+    supportsImageEdit: false,
+    maxReferenceImages: 0,
+  },
+  premium: {
+    engine: "premium",
+    modelKey: "fal-studio",
+    provider: "fal",
+    modelId: "openai/gpt-image-2",
+    label: "Premium",
+    description: "Commercial grade high-fidelity visual engine with reference editing",
+    creditsPerAsset: 4,
+    supportsImageEdit: true,
+    maxReferenceImages: 3,
+  },
+};
+
+export interface BundleRoleSpec {
+  role: "Hero" | "Closeup" | "Lifestyle" | "Offer" | "Alternate";
+  title: string;
+  description: string;
+  aspectRatio: "1:1" | "16:9" | "3:4";
+  sizeDirective: string;
+}
+
+export const ECOMMERCE_BUNDLE_ROLES: BundleRoleSpec[] = [
+  {
+    role: "Hero",
+    title: "Hero Banner",
+    description: "Grand overarching banner displaying the key branding product, epic cinematic lighting",
+    aspectRatio: "16:9",
+    sizeDirective: "16:9",
+  },
+  {
+    role: "Closeup",
+    title: "Macro Closeup",
+    description: "Macro-focus shot highlighting rich product textures, delicate organic details, or glossy material finish",
+    aspectRatio: "1:1",
+    sizeDirective: "1:1",
+  },
+  {
+    role: "Lifestyle",
+    title: "Lifestyle Context",
+    description: "Lifestyle/ambient scene featuring the product active in a real contemporary scenario with target demographic",
+    aspectRatio: "3:4",
+    sizeDirective: "3:4",
+  },
+  {
+    role: "Offer",
+    title: "Offer / Deal Slate",
+    description: "Commercial backdrop with ample breathing room for promotional text and digital discount tags",
+    aspectRatio: "1:1",
+    sizeDirective: "1:1",
+  },
+  {
+    role: "Alternate",
+    title: "Alternate Mood",
+    description: "Creative stylistic or alternative color-mood variation sharing the unified brand aesthetic palette",
+    aspectRatio: "1:1",
+    sizeDirective: "1:1",
+  },
+];
+
+/**
+ * Resolves any user-facing or legacy engine string to the authoritative EngineRegistryEntry.
+ * Never silently overrides or fails to fallback to an unapproved model.
+ */
+export function resolveCanonicalEngine(input?: string | null): EngineRegistryEntry {
+  if (!input) return ENGINE_REGISTRY.quality;
+  const normalized = input.trim().toLowerCase();
+
+  if (normalized === "fast" || normalized.includes("schnell")) {
+    return ENGINE_REGISTRY.fast;
+  }
+  if (
+    normalized === "premium" ||
+    normalized.includes("gpt-image-2") ||
+    normalized === "fal-studio"
+  ) {
+    return ENGINE_REGISTRY.premium;
+  }
+  if (
+    normalized === "quality" ||
+    normalized.includes("dev") ||
+    normalized.includes("pro") ||
+    normalized === "default"
+  ) {
+    return ENGINE_REGISTRY.quality;
+  }
+
+  return ENGINE_REGISTRY.quality;
+}
+

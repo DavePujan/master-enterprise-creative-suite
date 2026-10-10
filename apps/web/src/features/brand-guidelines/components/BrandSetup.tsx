@@ -794,8 +794,6 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
                     authError={authError}
                     setAuthError={setAuthError}
                     navigateTo={navigateTo}
-                    titleText="Verify Credentials"
-                    subText=""
                   />
                 </div>
               ) : (
@@ -882,8 +880,6 @@ export const BrandSetup: React.FC<BrandSetupProps> = ({
                   authError={authError}
                   setAuthError={setAuthError}
                   navigateTo={navigateTo}
-                  titleText="Verify Your Credentials"
-                  subText=""
                 />
               </motion.div>
             </div>

@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { BrandGuidelines } from '@shared-types/brand.js';
+import type { RenderEngine, AssetReference } from '@shared-types/imageGeneration.js';
+import { ENGINE_REGISTRY } from '@shared-types/imageGeneration.js';
 import { generateFastPrompt } from '@web/infrastructure/ai/promptBuilders.js';
 import { resizeImageIfNeeded, compressBase64Image } from '@utils/image.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
@@ -32,6 +34,7 @@ import { triggerGlobalCreditGate } from '@web/features/billing/context/CreditGat
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuth } from '@web/features/auth/hooks/useAuth.js';
+import { getCurrentAccessToken } from '@web/infrastructure/supabase/auth.js';
 import { submitHumanTouchRequest } from '@web/infrastructure/repositories/humanTouchRepository.js';
 
 interface AssetDetail {
@@ -91,8 +94,19 @@ export function CampaignDeckWorkspace({
   
   const [concept, setConcept] = useState('');
   const [commerceMode, setCommerceMode] = useState<'e-commerce' | 'quick-commerce'>('e-commerce');
-  const [engine, setEngine] = useState<'openai-gpt-image-2' | 'default'>('openai-gpt-image-2');
+  const [engine, setEngine] = useState<RenderEngine>('premium');
   const [customFalKey, setCustomFalKey] = useState(() => localStorage.getItem('FAL_API_KEY') || '');
+  
+  // Audited Billing Ledger for atomic bundle transparency
+  const [billingLedger, setBillingLedger] = useState<{
+    bundleId: string;
+    totalReserved: number;
+    successfulCount: number;
+    failedCount: number;
+    totalConsumed: number;
+    totalReleased: number;
+    availableBalance: number;
+  } | null>(null);
   
   // Brand override logo state
   const [customLogo, setCustomLogo] = useState<string | null>(null);
@@ -241,7 +255,7 @@ export function CampaignDeckWorkspace({
     }
   };
 
-  // Launch the campaign execution logic
+  // Launch the backend-governed bundle execution logic
   const handleGenerateCampaign = async () => {
     if (!concept.trim()) {
       setGeneralError("Please supply a product concept description to configure the campaign deck.");
@@ -261,122 +275,117 @@ export function CampaignDeckWorkspace({
     });
 
     try {
-      // Step 1: Request 5 cohesive prompts from our server endpoint
-      const promptRes = await fetch("/api/campaign/prompts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          concept: concept,
-          commerceMode: commerceMode,
-          guidelines: brandGuidelines,
-          referenceContexts: {
-            hasProduct: !!productContext,
-            hasFace: !!faceContext,
-            hasLogo: !!customLogo || !!brandGuidelines.logo
-          }
-        })
-      });
+      // Build typed AssetReference contract
+      const references: AssetReference[] = [];
 
-      if (!promptRes.ok) {
-        const errPayload = await promptRes.text();
-        throw new Error(`Cohesive planning process failed: ${errPayload}`);
+      if (productContext && productContext.data) {
+        references.push({
+          id: productContext.id || `product_${Date.now()}`,
+          type: 'product',
+          role: 'primary_product',
+          source: productContext.data.startsWith('http')
+            ? { kind: 'url', url: productContext.data }
+            : { kind: 'data_uri', dataUri: productContext.data },
+          instructions: 'Preserve product packaging, proportions, logo, and colors exactly.'
+        });
       }
 
-      const campaignBrief: CampaignData = await promptRes.json();
-      setCampaign(campaignBrief);
+      if (faceContext && faceContext.data) {
+        references.push({
+          id: faceContext.id || `face_${Date.now()}`,
+          type: 'face',
+          role: 'demographic_model',
+          source: faceContext.data.startsWith('http')
+            ? { kind: 'url', url: faceContext.data }
+            : { kind: 'data_uri', dataUri: faceContext.data },
+          instructions: `Target demographic styling: ${brandGuidelines.visualEthnicityStyle || 'Indian'}`
+        });
+      }
 
-      // Save initial briefing outline to campaign state
+      if (customLogo) {
+        references.push({
+          id: 'brand_logo',
+          type: 'brand',
+          role: 'brand_logo',
+          source: customLogo.startsWith('http')
+            ? { kind: 'url', url: customLogo }
+            : { kind: 'data_uri', dataUri: customLogo },
+          instructions: 'Brand corporate logo'
+        });
+      }
+
+      // Generate idempotent key for atomic execution
+      const idempotencyKey = crypto.randomUUID();
+
+      // Dispatch to backend bundle orchestrator
+      const bundleRes = await apiClient.post<any>("/api/campaign/bundle/generate", {
+        concept: concept.trim(),
+        commerceMode,
+        engine,
+        guidelines: brandGuidelines,
+        references,
+      }, {
+        headers: { "Idempotency-Key": idempotencyKey }
+      });
+
+      // Update audited billing ledger and campaign state
+      setBillingLedger(bundleRes.billingLedger);
+      setCampaign({
+        campaign_title: bundleRes.campaign_title,
+        aesthetic: bundleRes.aesthetic,
+        assets: bundleRes.assets,
+      });
+
+      // Update asset status map
       const roles: (keyof CampaignData['assets'])[] = ['Hero', 'Closeup', 'Lifestyle', 'Offer', 'Alternate'];
-      
-      // Step 2: Spawn parallel async render queries to the rendering system
-      const renderPromises = roles.map(async (role) => {
-        const item = campaignBrief.assets[role];
-        
-        try {
-          const renderData = await apiClient.post<any>("/api/campaign/render", {
-            prompt: item.prompt,
-            size: role === 'Hero' ? '16:9' : (role === 'Lifestyle' ? '3:4' : '1:1'),
-            engine: engine,
-            falKey: customFalKey,
-            guidelines: brandGuidelines
-          });
+      const updatedStatuses: any = {};
 
-          // Save completed asset images individually to global assets
-          // Call proxy to get real persistent cloud links if we uploaded to storage inside express
+      for (const role of roles) {
+        const item = bundleRes.assets[role];
+        updatedStatuses[role] = item?.status === 'success' ? 'success' : 'failed';
+
+        if (item?.imageUrl) {
           onSaveCampaignAsset(
-            `${role} Asset - ${campaignBrief.campaign_title}`,
-            renderData.url,
+            `${role} Asset - ${bundleRes.campaign_title}`,
+            item.imageUrl,
             'image'
           );
-
-          setCampaign(prev => {
-            if (!prev) return prev;
-            const updatedAssets = { ...prev.assets };
-            updatedAssets[role] = {
-              ...updatedAssets[role],
-              imageUrl: renderData.url,
-              isFallback: renderData.isFallback,
-              warning: renderData.warning,
-              rendering: false
-            };
-            return { ...prev, assets: updatedAssets };
-          });
-
-          setAssetStatuses(prev => ({ ...prev, [role]: 'success' }));
-        } catch (err: any) {
-          console.error(`Asset rendering error [${role}]:`, err);
-
-          if (err?.status === 402 || err?.code === 'INSUFFICIENT_CREDITS' || err?.message?.includes('Insufficient credits')) {
-            triggerGlobalCreditGate({
-              service: 'Visual Asset Render',
-              action: 'render',
-              requiredCredits: err?.data?.requiredCredits || err?.requiredCredits || 2,
-              availableCredits: err?.data?.availableCredits
-            });
-          }
-          
-          setCampaign(prev => {
-            if (!prev) return prev;
-            const updatedAssets = { ...prev.assets };
-            updatedAssets[role] = {
-              ...updatedAssets[role],
-              error: err.message || "Failed to render visual asset",
-              rendering: false
-            };
-            return { ...prev, assets: updatedAssets };
-          });
-
-          setAssetStatuses(prev => ({ ...prev, [role]: 'failed' }));
         }
-      });
+      }
+      setAssetStatuses(updatedStatuses);
 
-      // Synchronize in parallel, non-blocking
-      await Promise.all(renderPromises);
-
-      // Once all assets completed, trigger parent log synchronizers
-      setCampaign(currentCampaign => {
-        if (currentCampaign) {
-          const activeResult = {
-            type: 'campaign-deck',
-            concept: concept,
-            commerceMode: commerceMode,
-            engine: engine,
-            data: currentCampaign
-          };
-          // Save in parental logs for persistence and automatic database syncing
-          onSaveHistory(
-            activeResult,
-            'bundles-campaigns',
-            `Campaign: ${currentCampaign.campaign_title}`
-          );
-        }
-        return currentCampaign;
-      });
+      // Save persistent history
+      onSaveHistory(
+        {
+          type: 'campaign-deck',
+          concept,
+          commerceMode,
+          engine,
+          data: {
+            campaign_title: bundleRes.campaign_title,
+            aesthetic: bundleRes.aesthetic,
+            assets: bundleRes.assets,
+          },
+          billingLedger: bundleRes.billingLedger,
+        },
+        'bundles-campaigns',
+        `Campaign: ${bundleRes.campaign_title}`
+      );
 
       setStep('deck');
     } catch (err: any) {
-      console.error(err);
-      setGeneralError(err.message || "Something went wrong. Please check your credentials and connection.");
+      console.error("[CampaignDeckWorkspace] Bundle generation error:", err);
+
+      if (err?.status === 402 || err?.code === 'INSUFFICIENT_CREDITS' || err?.message?.includes('Insufficient credits')) {
+        triggerGlobalCreditGate({
+          service: 'Ecommerce Bundle Orchestrator',
+          action: 'bundle_generate',
+          requiredCredits: err?.data?.requiredCredits || err?.requiredCredits || 15,
+          availableCredits: err?.data?.availableCredits
+        });
+      }
+
+      setGeneralError(err.message || "Failed to generate campaign bundle. Please verify your balance and connection.");
       setStep('setup');
     }
   };
@@ -398,12 +407,27 @@ export function CampaignDeckWorkspace({
     });
 
     try {
+      // Pass reference context if present
+      const references: AssetReference[] = [];
+      if (productContext && productContext.data) {
+        references.push({
+          id: productContext.id || `product_${Date.now()}`,
+          type: 'product',
+          role: 'primary_product',
+          source: productContext.data.startsWith('http')
+            ? { kind: 'url', url: productContext.data }
+            : { kind: 'data_uri', dataUri: productContext.data },
+          instructions: 'Preserve product packaging, proportions, logo, and colors exactly.'
+        });
+      }
+
       const renderData = await apiClient.post<any>("/api/campaign/render", {
         prompt: refinementPrompt,
         size: refinementRole === 'Hero' ? '16:9' : (refinementRole === 'Lifestyle' ? '3:4' : '1:1'),
-        engine: engine,
+        engine,
         falKey: customFalKey,
-        guidelines: brandGuidelines
+        guidelines: brandGuidelines,
+        references,
       });
 
       onSaveCampaignAsset(
@@ -432,7 +456,8 @@ export function CampaignDeckWorkspace({
             concept: concept,
             commerceMode: commerceMode,
             engine: engine,
-            data: updatedCampaign
+            data: updatedCampaign,
+            billingLedger,
           },
           'bundles-campaigns',
           `Campaign: ${updatedCampaign.campaign_title}`
@@ -448,7 +473,7 @@ export function CampaignDeckWorkspace({
         triggerGlobalCreditGate({
           service: 'Visual Asset Render',
           action: 'render',
-          requiredCredits: err?.data?.requiredCredits || err?.requiredCredits || 2,
+          requiredCredits: err?.data?.requiredCredits || err?.requiredCredits || 3,
           availableCredits: err?.data?.availableCredits
         });
       }
@@ -488,56 +513,63 @@ export function CampaignDeckWorkspace({
     return res.blob();
   };
 
-  // Export full Campaign Deck as a robust zip package
+  // Export full Campaign Deck as a robust, SSRF-safe zip package
   const handleExportZipBundle = async () => {
     if (!campaign) return;
     setIsZipping(true);
 
-    try {
-      const zip = new JSZip();
-      const folderName = `${campaign.campaign_title.toLowerCase().replace(/\s+/g, '-')}-bundle`;
-      const imgFolder = zip.folder(`${folderName}/assets`);
-      
-      let markdownContent = `# ${campaign.campaign_title}\n\n`;
-      markdownContent += `### Unified Campaign Aesthetic Spec\n> *${campaign.aesthetic}*\n\n`;
-      markdownContent += `**Commerce Alignment Mode**: ${commerceMode === 'quick-commerce' ? 'Quick Commerce (Rapid read pop-framing)' : 'E-commerce Editorial'}\n`;
-      markdownContent += `**Engine Pipeline**: ${engine}\n`;
-      markdownContent += `**Associated Corporate Profile**: ${brandGuidelines.name}\n\n`;
-      markdownContent += `---\n\n## Multi-Asset Campaign Specs\n\n`;
+    const roles: (keyof CampaignData['assets'])[] = ['Hero', 'Closeup', 'Lifestyle', 'Offer', 'Alternate'];
+    const exportAssets = roles.map(role => ({
+      role,
+      title: campaign.assets[role]?.title || role,
+      description: campaign.assets[role]?.description || '',
+      prompt: campaign.assets[role]?.prompt || '',
+      imageUrl: campaign.assets[role]?.imageUrl,
+    }));
 
-      const roles: (keyof CampaignData['assets'])[] = ['Hero', 'Closeup', 'Lifestyle', 'Offer', 'Alternate'];
-      
-      for (const role of roles) {
-        const item = campaign.assets[role];
-        markdownContent += `### ${role} Deliverable\n`;
-        markdownContent += `- **Creative Title**: ${item.title}\n`;
-        markdownContent += `- **Deliverable Role**: ${role}\n`;
-        markdownContent += `- **Target Purpose**: ${item.description}\n`;
-        markdownContent += `- **Visual Prompt Written**: \`\`\`${item.prompt}\`\`\`\n`;
-        
-        if (item.imageUrl) {
-          try {
-            const blob = await fetchImageAsBlob(item.imageUrl);
-            const fileName = `${role.toLowerCase()}-deliverable.jpg`;
-            imgFolder?.file(fileName, blob);
-            markdownContent += `- **Image Export Link**: Located inside \`assets/${fileName}\`\n`;
-          } catch (err) {
-            console.warn(`Failed packaging ${role} image:`, err);
-            markdownContent += `- **Image Export Link**: Offline fallback URL (${item.imageUrl})\n`;
+    const doExport = async (allowPartial: boolean) => {
+      const token = await getCurrentAccessToken();
+      const response = await fetch("/api/campaign/bundle/export-zip", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          bundleTitle: campaign.campaign_title,
+          aesthetic: campaign.aesthetic,
+          commerceMode,
+          engine: ENGINE_REGISTRY[engine]?.label || engine,
+          brandName: brandGuidelines.name,
+          assets: exportAssets,
+          allowPartial,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorJson = await response.json().catch(() => null);
+        if (errorJson && errorJson.partial && !allowPartial) {
+          const proceed = window.confirm(
+            `Incomplete Package Alert:\n\n${errorJson.message}\n\nDeliverables missing: ${(errorJson.failedRoles || []).join(', ')}\n\nWould you like to export the partial package with available deliverables?`
+          );
+          if (proceed) {
+            return doExport(true);
           }
-        } else {
-          markdownContent += `- **Image Export Link**: (Render Failed / Not Completed)\n`;
+          return;
         }
-        markdownContent += `\n---\n\n`;
+        throw new Error(errorJson?.error || `ZIP export failed with status ${response.status}`);
       }
-      
-      zip.file(`${folderName}/campaign-spec.md`, markdownContent);
-      
-      const content = await zip.generateAsync({ type: "blob" });
-      saveAs(content, `${folderName}-marketing-pack.zip`);
-    } catch (err) {
+
+      const blob = await response.blob();
+      const folderSlug = campaign.campaign_title.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+      saveAs(blob, `${folderSlug}-marketing-pack.zip`);
+    };
+
+    try {
+      await doExport(false);
+    } catch (err: any) {
       console.error("Failed executing ZIP exporter package:", err);
-      alert("ZIP compilation failed. Please copy prompt text manually or check your connections.");
+      alert(`ZIP export failed: ${err.message || 'Please check your connection.'}`);
     } finally {
       setIsZipping(false);
     }
@@ -661,11 +693,12 @@ export function CampaignDeckWorkspace({
                     </label>
                     <select
                       value={engine}
-                      onChange={(e) => setEngine(e.target.value as any)}
+                      onChange={(e) => setEngine(e.target.value as RenderEngine)}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 rounded-sm text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
                     >
-                      <option value="openai-gpt-image-2">Premium</option>
-                      <option value="default">Standard</option>
+                      <option value="premium">Premium (GPT Image 2 — 4 Credits)</option>
+                      <option value="quality">Quality (FLUX Dev — 3 Credits)</option>
+                      <option value="fast">Fast (FLUX Schnell — 2 Credits)</option>
                     </select>
                   </div>
 
@@ -972,6 +1005,21 @@ export function CampaignDeckWorkspace({
                   <span className="font-bold not-italic text-[10px] bg-slate-100 dark:bg-slate-850 px-1 py-0.5 rounded-xs tracking-wider uppercase text-slate-500 mr-1.5">Creative Spec</span>
                   "{campaign.aesthetic}"
                 </p>
+                {billingLedger && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono">
+                    <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-xs font-semibold">
+                      Credits: {billingLedger.totalConsumed} of {billingLedger.totalReserved} billed
+                    </span>
+                    {billingLedger.totalReleased > 0 && (
+                      <span className="bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-xs font-bold">
+                        ({billingLedger.totalReleased} refunded)
+                      </span>
+                    )}
+                    <span className="text-slate-400">
+                      • Balance: {billingLedger.availableBalance}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3">

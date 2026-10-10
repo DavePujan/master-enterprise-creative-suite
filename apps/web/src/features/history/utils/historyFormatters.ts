@@ -58,6 +58,7 @@ export function getGemIcon(gemId?: string): React.ComponentType<{ size?: number;
  */
 export function getGemName(gemId?: string): string {
   if (!gemId) return 'Creative Tool';
+  if (gemId === 'campaign-strategist-y') return 'Campaign Strategy';
   const found = GENERIC_GEMS.find(g => g.id === gemId);
   if (found) return found.name;
 
@@ -79,6 +80,13 @@ export function getGemName(gemId?: string): string {
 export function getCreativeDisplayTitle(item: HistoryItem): string {
   if (item.title && item.title.trim() && item.title.trim() !== 'Creative Generation' && item.title.trim() !== 'Creative Output') {
     return item.title.trim();
+  }
+
+  if (item.result?.campaignTitle) {
+    return `Campaign: ${item.result.campaignTitle}`;
+  }
+  if (item.result?.masterStrategy?.coreBigIdea) {
+    return `Strategy: ${item.result.masterStrategy.coreBigIdea}`;
   }
 
   if (item.prompt && item.prompt.trim()) {
@@ -155,6 +163,14 @@ export function extractHistoryMedia(item: HistoryItem): ExtractedHistoryMedia | 
       url: typeof res.data === 'string' ? res.data : undefined,
       model: res.model,
       credits: res.credits
+    };
+  }
+
+  if (res.type === 'campaign-strategy' || item.gemId === 'campaign-strategist-y') {
+    return {
+      type: 'doc',
+      model: 'Campaign Strategist 2.0',
+      credits: 5
     };
   }
 

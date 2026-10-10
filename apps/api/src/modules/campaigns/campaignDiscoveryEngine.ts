@@ -11,10 +11,14 @@ import {
   DiscoveryAnswer,
   StrategicReadiness,
   ReadinessDimension,
-  CampaignBriefControls
+  CampaignBriefControls,
+  StrategicDimensionKey,
+  SemanticDimensionResult
 } from '../../../../../packages/types/campaignStrategy.js';
 import { campaignLLMGateway } from './campaignLLMGateway.js';
 import { rankFrameworksForBrief } from './campaignFrameworkLibrary.js';
+
+export const NEGATION_PATTERNS = /\b(don'?t\s+know|haven'?t|cannot|can't|not\s+sure|unknown|unclear|tbd|to\s+be\s+decided|none|no\s+idea|not\s+identified|no\s+clue|haven'?t\s+decided|undecided|not\s+yet|zero|missing)\b/i;
 
 export interface DiscoveryEvaluationRequest {
   generationId: string;
@@ -63,97 +67,152 @@ export class CampaignDiscoveryEngine {
     const topFrameworkNames = matchedFrameworks.slice(0, 3).map(f => f.name);
 
     // 2. Perform dimension-based Strategic Readiness evaluation
-    const answeredDimensions = new Set<string>();
-    for (const ans of priorAnswers) {
-      const lower = (ans.questionText + ' ' + ans.answer).toLowerCase();
-      if (lower.includes('audience') || lower.includes('customer') || lower.includes('who')) answeredDimensions.add('audience');
-      if (lower.includes('problem') || lower.includes('barrier') || lower.includes('hesitation') || lower.includes('friction')) answeredDimensions.add('barrier');
-      if (lower.includes('competitor') || lower.includes('alternative') || lower.includes('differentiator') || lower.includes('cliché')) answeredDimensions.add('competitive');
-      if (lower.includes('metric') || lower.includes('kpi') || lower.includes('goal') || lower.includes('outcome')) answeredDimensions.add('objective');
-      if (lower.includes('proof') || lower.includes('evidence') || lower.includes('testimonial') || lower.includes('demo')) answeredDimensions.add('proof');
-      if (lower.includes('channel') || lower.includes('platform') || lower.includes('format')) answeredDimensions.add('channel');
-      if (lower.includes('constraint') || lower.includes('avoid') || lower.includes('must') || lower.includes('rule')) answeredDimensions.add('constraints');
-    }
+    // Uses semantic analysis + negation detection to prevent false positives like "I don't know who our audience is yet"
+    const semanticResults = await this.evaluateSemanticDimensions(
+      generationId,
+      priorAnswers,
+      { campaignTitle, briefDescription, targetAudience, brandName, industry, objective }
+    );
 
     const dimensions: ReadinessDimension[] = [
       // 1. Business Objective
       {
         id: 'objective',
         label: 'Business Objective & Metrics',
-        status: (controls?.businessOutcome?.primaryOutcome || objective) ? 'strong' : (answeredDimensions.has('objective') ? 'partial' : 'missing'),
-        detail: controls?.businessOutcome?.targetKPI
+        status: semanticResults.objective?.isNegated
+          ? 'missing'
+          : (controls?.businessOutcome?.primaryOutcome || objective || semanticResults.objective?.status === 'strong')
+          ? 'strong'
+          : (semanticResults.objective?.status === 'partial' ? 'partial' : 'missing'),
+        detail: semanticResults.objective?.extractedValue || (controls?.businessOutcome?.targetKPI
           ? `KPI: ${controls.businessOutcome.targetKPI} (${controls.businessOutcome.timeHorizon || 'Flexible'})`
-          : (objective ? `Primary objective: ${objective}` : 'Awaiting concrete conversion or reach target.'),
+          : (objective ? `Primary objective: ${objective}` : 'Awaiting concrete conversion or reach target.')),
         quickFixPrompt: 'What is the #1 measurable metric that decides if this campaign succeeds?'
       },
       // 2. Audience Understanding
       {
         id: 'audience',
         label: 'Audience Context & Mindset',
-        status: targetAudience.length > 15 ? 'strong' : (targetAudience || answeredDimensions.has('audience') ? 'partial' : 'missing'),
-        detail: targetAudience || 'Target audience demographic or psychographic segment needed.',
+        status: (semanticResults.audience?.isNegated || NEGATION_PATTERNS.test(targetAudience))
+          ? 'missing'
+          : semanticResults.audience?.status === 'strong'
+          ? 'strong'
+          : (targetAudience.length > 20 && !NEGATION_PATTERNS.test(targetAudience))
+          ? 'strong'
+          : (targetAudience.length > 5 && !NEGATION_PATTERNS.test(targetAudience) || semanticResults.audience?.status === 'partial')
+          ? 'partial'
+          : 'missing',
+        detail: (semanticResults.audience?.isNegated || NEGATION_PATTERNS.test(targetAudience))
+          ? `Audience intentionally undefined or pending scoping: "${targetAudience}"`
+          : (semanticResults.audience?.extractedValue || targetAudience || 'Target audience demographic or psychographic segment needed.'),
         quickFixPrompt: 'Who is the exact customer segment we must move, and what is their default routine?'
       },
       // 3. Brand Grounding & Maturity
       {
         id: 'brand',
         label: 'Brand Grounding & Maturity',
-        status: (brandName && brandName !== 'Brand') ? 'strong' : 'partial',
-        detail: controls?.brandMaturity
+        status: semanticResults.brand?.isNegated
+          ? 'missing'
+          : (brandName && brandName !== 'Brand')
+          ? 'strong'
+          : (semanticResults.brand?.status || 'partial'),
+        detail: semanticResults.brand?.extractedValue || (controls?.brandMaturity
           ? `${brandName} (${controls.brandMaturity.replace(/_/g, ' ')}) in ${industry}`
-          : `${brandName} grounded in ${industry}`,
+          : `${brandName} grounded in ${industry}`),
         quickFixPrompt: 'What is the undeniable core truth of this brand that competitors cannot replicate?'
       },
       // 4. Competitive Context
       {
         id: 'competitive',
         label: 'Competitive White Space Context',
-        status: (controls?.competitorContext?.competitors || answeredDimensions.has('competitive'))
-          ? 'strong'
-          : (controls?.competitorKnowledgeSource === 'imported_from_workspace' ? 'strong' : controls?.competitorKnowledgeSource === 'no_research_supplied' ? 'partial' : 'missing'),
-        detail: controls?.competitorContext?.competitors
-          ? `Competing against: ${controls.competitorContext.competitors}`
-          : controls?.competitorKnowledgeSource === 'imported_from_workspace'
-          ? `Grounded in workspace brand guidelines and category positioning for ${brandName}.`
-          : (controls?.competitorKnowledgeSource === 'no_research_supplied' ? 'No client research supplied; strategist will model category baselines.' : 'Key competitor patterns undefined.'),
+        status: (() => {
+          if (semanticResults.competitive?.isNegated) return 'missing';
+          const sources = controls?.competitorKnowledgeSources && controls.competitorKnowledgeSources.length > 0
+            ? controls.competitorKnowledgeSources
+            : [controls?.competitorKnowledgeSource || 'no_research_supplied'];
+          if (sources.includes('live_web') || sources.includes('imported_from_workspace') || (sources.includes('provided_by_client') && controls?.competitorContext?.competitors) || semanticResults.competitive?.status === 'strong') {
+            return 'strong';
+          }
+          if (sources.includes('no_research_supplied') || semanticResults.competitive?.status === 'partial') {
+            return 'partial';
+          }
+          return 'missing';
+        })(),
+        detail: (() => {
+          const sources = controls?.competitorKnowledgeSources && controls.competitorKnowledgeSources.length > 0
+            ? controls.competitorKnowledgeSources
+            : [controls?.competitorKnowledgeSource || 'no_research_supplied'];
+          const parts: string[] = [];
+          if (sources.includes('live_web')) {
+            parts.push('Live web research active: Grounding search queries and source citations enabled.');
+          }
+          if (sources.includes('provided_by_client') && controls?.competitorContext?.competitors) {
+            parts.push(`Competing against: ${controls.competitorContext.competitors}`);
+          }
+          if (sources.includes('imported_from_workspace')) {
+            parts.push(`Grounded in workspace brand guidelines and category positioning for ${brandName}.`);
+          }
+          if (parts.length > 0) return parts.join(' • ');
+          if (semanticResults.competitive?.extractedValue) return semanticResults.competitive.extractedValue;
+          if (sources.includes('no_research_supplied')) return 'No client research supplied; strategist will model category baselines.';
+          return 'Key competitor patterns undefined.';
+        })(),
         quickFixPrompt: 'What are competitors constantly over-promising or repeating that customers are tired of hearing?'
       },
       // 5. Behavioral Barrier & Tension
       {
         id: 'barrier',
         label: 'Customer Behavioral Barrier',
-        status: answeredDimensions.has('barrier') ? 'strong' : (briefDescription.length > 200 ? 'partial' : 'missing'),
-        detail: answeredDimensions.has('barrier') ? 'Customer friction identified in discovery.' : 'Underlying friction or skepticism preventing customer action.',
+        status: semanticResults.barrier?.isNegated
+          ? 'missing'
+          : (semanticResults.barrier?.status === 'strong')
+          ? 'strong'
+          : (semanticResults.barrier?.status === 'partial' || briefDescription.length > 200)
+          ? 'partial'
+          : 'missing',
+        detail: semanticResults.barrier?.extractedValue || (semanticResults.barrier?.status === 'strong' ? 'Customer friction identified in discovery.' : 'Underlying friction or skepticism preventing customer action.'),
         quickFixPrompt: 'Why does the customer currently hesitate, distrust, or delay buying from us?'
       },
       // 6. Proof & Verifiable Evidence
       {
         id: 'proof',
         label: 'Proof & Substantiation',
-        status: (controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some(p => p.type === 'none_yet'))
+        status: semanticResults.proof?.isNegated
+          ? 'missing'
+          : (controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some(p => p.type === 'none_yet'))
           ? 'strong'
-          : (answeredDimensions.has('proof') ? 'partial' : 'missing'),
-        detail: (controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some(p => p.type === 'none_yet'))
+          : (semanticResults.proof?.status === 'strong')
+          ? 'strong'
+          : (semanticResults.proof?.status === 'partial' ? 'partial' : 'missing'),
+        detail: semanticResults.proof?.extractedValue || ((controls?.proofAvailability && controls.proofAvailability.length > 0 && !controls.proofAvailability.some(p => p.type === 'none_yet'))
           ? `Available proof assets: ${controls.proofAvailability.map(p => p.type.replace(/_/g, ' ')).join(', ')}`
-          : 'Zero verified proof supplied; claims must rely on explicit client guarantee.',
+          : 'Zero verified proof supplied; claims must rely on explicit client guarantee.'),
         quickFixPrompt: 'Do we have tangible case studies, customer reviews, product teardowns, or demo proof?'
       },
       // 7. Distribution Channels & Budget
       {
         id: 'channel',
         label: 'Distribution Channels & Budget',
-        status: (controls?.budgetReality || answeredDimensions.has('channel')) ? 'strong' : 'partial',
-        detail: controls?.budgetReality
+        status: semanticResults.channel?.isNegated
+          ? 'missing'
+          : (controls?.budgetReality || semanticResults.channel?.status === 'strong')
+          ? 'strong'
+          : (semanticResults.channel?.status === 'partial' ? 'partial' : 'missing'),
+        detail: semanticResults.channel?.extractedValue || (controls?.budgetReality
           ? `Budget reality: ${controls.budgetReality.replace(/_/g, ' ')} (${controls.timelineHorizon?.replace(/_/g, ' ') || 'Flexible'})`
-          : 'Platform mix and budget constraints.',
+          : 'Platform mix and budget constraints.'),
         quickFixPrompt: 'Which platforms must carry this campaign and what is the media investment reality?'
       },
       // 8. Strategic Guardrails & Constraints
       {
         id: 'constraints',
         label: 'Strategic Guardrails (Must Include / Must Avoid)',
-        status: (controls?.mandatoryInclusions?.length || controls?.forbiddenTerritories?.length || answeredDimensions.has('constraints')) ? 'strong' : 'partial',
-        detail: `Must include: ${controls?.mandatoryInclusions?.length || 0} items • Must avoid: ${controls?.forbiddenTerritories?.length || 0} boundaries`,
+        status: semanticResults.constraints?.isNegated
+          ? 'missing'
+          : (controls?.mandatoryInclusions?.length || controls?.forbiddenTerritories?.length || semanticResults.constraints?.status === 'strong')
+          ? 'strong'
+          : (semanticResults.constraints?.status === 'partial' ? 'partial' : 'missing'),
+        detail: semanticResults.constraints?.extractedValue || `Must include: ${controls?.mandatoryInclusions?.length || 0} items • Must avoid: ${controls?.forbiddenTerritories?.length || 0} boundaries`,
         quickFixPrompt: 'Are there explicit corporate constraints, banned topics, or mandatory product messages?'
       }
     ];
@@ -281,6 +340,151 @@ Return JSON matching this exact structure:
       questions: result.data.questions || [],
       recommendedFrameworks: topFrameworkNames
     };
+  }
+
+  /**
+   * Semantically evaluates user answers against strategic dimensions,
+   * detecting negation (e.g., "I don't know who our audience is yet") to prevent
+   * false positives from naive keyword matching.
+   */
+  private async evaluateSemanticDimensions(
+    generationId: string,
+    priorAnswers: DiscoveryAnswer[],
+    context: {
+      campaignTitle: string;
+      briefDescription: string;
+      targetAudience: string;
+      brandName: string;
+      industry: string;
+      objective: string;
+    }
+  ): Promise<Record<StrategicDimensionKey, SemanticDimensionResult>> {
+    const result: Record<StrategicDimensionKey, SemanticDimensionResult> = {
+      objective: { status: 'missing', confidence: 0 },
+      audience: { status: 'missing', confidence: 0 },
+      brand: { status: 'missing', confidence: 0 },
+      competitive: { status: 'missing', confidence: 0 },
+      barrier: { status: 'missing', confidence: 0 },
+      proof: { status: 'missing', confidence: 0 },
+      channel: { status: 'missing', confidence: 0 },
+      constraints: { status: 'missing', confidence: 0 }
+    };
+
+    // Check initial brief fields for direct negation
+    if (context.targetAudience && NEGATION_PATTERNS.test(context.targetAudience)) {
+      result.audience = { status: 'missing', confidence: 0.95, isNegated: true, extractedValue: context.targetAudience };
+    }
+    if (context.objective && NEGATION_PATTERNS.test(context.objective)) {
+      result.objective = { status: 'missing', confidence: 0.95, isNegated: true, extractedValue: context.objective };
+    }
+
+    if (!priorAnswers || priorAnswers.length === 0) {
+      return result;
+    }
+
+    const combinedText = [
+      `Target Audience: ${context.targetAudience}`,
+      `Core Brief: ${context.briefDescription}`,
+      ...priorAnswers.map(a => `Q: ${a.questionText}\nA: ${a.answer}`)
+    ].join('\n\n');
+
+    // Attempt high-accuracy LLM semantic dimension extraction
+    try {
+      const evaluationPrompt = `
+Analyze the user's discovery interview answers for a creative campaign strategy.
+Campaign Title: ${context.campaignTitle}
+Brand: ${context.brandName} (${context.industry})
+
+User Discovery Interview:
+${combinedText}
+
+Evaluate whether each of these 8 strategic dimensions is resolved, partially resolved, or missing/negated:
+- objective: business KPI, conversion, revenue target
+- audience: specific customer segment, persona, mindset, demographic
+- brand: distinctive assets, heritage, identity, tone
+- competitive: key rivals, white space, category cliches
+- barrier: customer hesitation, friction, skepticism
+- proof: empirical data, reviews, awards, teardowns, demos
+- channel: media platforms, formats, distribution budget
+- constraints: forbidden claims, mandatory inclusions, compliance
+
+CRITICAL EVALUATION RULES:
+1. NEGATION RULE: If the user states they DO NOT know, haven't decided, or lack info (e.g. "I don't know who our audience is yet", "Our biggest problem is we haven't identified the customer"), mark status as "missing", isNegated: true, with confidence: 0.95. NEVER mark it as strong or partial!
+2. Mark "strong" ONLY if substantive, concrete specifics are given.
+3. Mark "partial" if hinted at or ambiguous.
+4. Mark "missing" if absent or explicitly unknown.
+
+Return JSON in this format:
+{
+  "dimensions": {
+    "objective": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "audience": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "brand": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "competitive": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "barrier": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "proof": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "channel": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean },
+    "constraints": { "status": "strong" | "partial" | "missing", "confidence": number, "extractedValue": "string", "isNegated": boolean }
+  }
+}
+`;
+
+      const response = await campaignLLMGateway.executeStructured<{
+        dimensions: Record<StrategicDimensionKey, SemanticDimensionResult>;
+      }>({
+        generationId,
+        stage: 'discovery',
+        systemInstruction: 'You are an elite campaign discovery auditor. Evaluate strategic readiness strictly. Detect negations and unmapped dimensions accurately. Always return valid JSON.',
+        userInput: evaluationPrompt,
+        temperature: 0.2
+      });
+
+      if (response.data && response.data.dimensions) {
+        for (const [key, dim] of Object.entries(response.data.dimensions)) {
+          const k = key as StrategicDimensionKey;
+          if (result[k]) {
+            result[k] = {
+              status: dim.status || 'missing',
+              confidence: typeof dim.confidence === 'number' ? dim.confidence : 0.8,
+              extractedValue: dim.extractedValue,
+              isNegated: !!dim.isNegated
+            };
+          }
+        }
+        return result;
+      }
+    } catch (err) {
+      console.warn('[CampaignDiscoveryEngine] LLM semantic evaluation fell back to deterministic heuristic:', err);
+    }
+
+    // Deterministic fallback with negation guard
+    for (const ans of priorAnswers) {
+      const lower = ans.answer.toLowerCase();
+      const isNegated = NEGATION_PATTERNS.test(lower);
+
+      const checkDim = (key: StrategicDimensionKey, keywords: string[]) => {
+        const matches = keywords.some(k => lower.includes(k) || ans.questionText.toLowerCase().includes(k));
+        if (matches) {
+          if (isNegated) {
+            result[key] = { status: 'missing', confidence: 0.9, isNegated: true, extractedValue: ans.answer };
+          } else if (ans.answer.trim().length > 30) {
+            result[key] = { status: 'strong', confidence: 0.85, isNegated: false, extractedValue: ans.answer };
+          } else {
+            result[key] = { status: 'partial', confidence: 0.6, isNegated: false, extractedValue: ans.answer };
+          }
+        }
+      };
+
+      checkDim('audience', ['audience', 'customer', 'demographic', 'who']);
+      checkDim('barrier', ['problem', 'barrier', 'hesitation', 'friction', 'skepticism']);
+      checkDim('competitive', ['competitor', 'alternative', 'rival', 'differentiator', 'cliché']);
+      checkDim('objective', ['metric', 'kpi', 'goal', 'outcome', 'revenue', 'conversion']);
+      checkDim('proof', ['proof', 'evidence', 'testimonial', 'demo', 'case study', 'data']);
+      checkDim('channel', ['channel', 'platform', 'format', 'placement', 'tiktok', 'youtube', 'meta']);
+      checkDim('constraints', ['constraint', 'avoid', 'forbidden', 'must', 'rule', 'compliance']);
+    }
+
+    return result;
   }
 }
 

@@ -51,11 +51,15 @@ export function subscribeHumanTouchQueue(
   options?: HumanTouchQueueOptions
 ): () => void {
   let isCancelled = false;
+  let isFetching = false;
   const scope = options?.scope === 'all' ? 'all' : 'workspace';
-  const intervalMs = options?.intervalMs || 8000;
+  const intervalMs = options?.intervalMs ?? 25000;
 
   const fetchQueue = () => {
-    if (isCancelled) return;
+    if (isCancelled || isFetching) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+
+    isFetching = true;
     apiClient.get<{ success: boolean; requests: any[] }>(`/api/human-touch/queue?scope=${scope}`)
       .then((res) => {
         if (!isCancelled && Array.isArray(res?.requests)) {
@@ -68,6 +72,9 @@ export function subscribeHumanTouchQueue(
           console.warn('[HumanTouchRepository] API fetch error:', err?.message);
           if (onError) onError(err);
         }
+      })
+      .finally(() => {
+        isFetching = false;
       });
   };
 
@@ -77,9 +84,23 @@ export function subscribeHumanTouchQueue(
   // Background polling for real-time queue updates
   const intervalId = setInterval(fetchQueue, intervalMs);
 
+  // Resume immediately when user focuses back on the tab
+  const handleVisibilityChange = () => {
+    if (typeof document !== 'undefined' && !document.hidden && !isCancelled) {
+      fetchQueue();
+    }
+  };
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+
   return () => {
     isCancelled = true;
     clearInterval(intervalId);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }
   };
 }
 

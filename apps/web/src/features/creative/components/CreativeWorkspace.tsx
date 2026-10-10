@@ -522,6 +522,7 @@ export const CreativeWorkspace: React.FC<CreativeWorkspaceProps> = (props) => {
       {/* Render AI Director's Plan when active on Video Gem */}
       {selectedGem.type === 'video' && videoMode === 'director_plan' ? (
         <DirectorsPlanWorkspace
+          initialAdSpec={(selectedGem as any).initialAdSpec}
           userCredits={props.credits ?? 50}
           brandGuidelines={brandGuidelines}
           onLaunchVideoJob={async (_snapshot, modelId) => {

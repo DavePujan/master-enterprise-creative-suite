@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { CheckCircle2, AlertCircle, Loader2, ArrowRight, RotateCcw, KeyRound, Eye, EyeOff, Mail } from 'lucide-react';
-import { exchangeAuthCode } from '../../../infrastructure/supabase/auth.js';
+import { exchangeAuthCode, validatePasswordSecurity } from '../../../infrastructure/supabase/auth.js';
 
 export interface AuthCallbackViewProps {
   checkVerification: () => Promise<boolean>;
@@ -167,8 +167,9 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword.length < 6) {
-      setErrorMessage("Password must be at least 6 characters.");
+    const check = validatePasswordSecurity(newPassword);
+    if (!check.valid) {
+      setErrorMessage(check.error || "Password must be at least 8 characters.");
       return;
     }
 
@@ -341,7 +342,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
                   Set New Password
                 </h2>
                 <p className="text-sm text-slate-400 font-light">
-                  Please choose a new password for your Writopedia account (at least 6 characters).
+                  Please choose a new password for your Writopedia account.
                 </p>
               </div>
 
@@ -353,7 +354,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
               )}
 
               <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
                   New Password
                 </label>
                 <div className="relative">
@@ -362,8 +363,9 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="At least 6 characters"
-                    className="w-full text-xs pl-3 pr-9 py-2.5 bg-slate-900 border border-slate-800 rounded-sm focus:border-rose-500 focus:outline-none text-white"
+                    placeholder="At least 8 characters"
+                    autoComplete="new-password"
+                    className="w-full text-xs pl-3 pr-9 py-2.5 bg-slate-900 border border-slate-800 rounded-sm focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500/50 text-white"
                   />
                   <button
                     type="button"
@@ -374,6 +376,9 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
                     {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-400 pt-0.5">
+                  Password must be at least 8 characters.
+                </p>
               </div>
 
               <button

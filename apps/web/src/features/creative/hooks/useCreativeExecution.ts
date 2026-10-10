@@ -203,6 +203,7 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
   const selectedGemRef = useRef(selectedGem);
   selectedGemRef.current = selectedGem;
   const pollIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const hasHydratedVideoRef = useRef(false);
 
   // Clean up all background intervals and audio on unmount
   useEffect(() => {
@@ -496,8 +497,10 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     pollIntervalsRef.current.set(gemId, interval);
   }, [addToHistory, saveAsset, updateGemState]);
 
-  // Re-hydrate active/recent video generation on mount or reload
+  // Re-hydrate active/recent video generation strictly once on mount
   useEffect(() => {
+    if (hasHydratedVideoRef.current) return;
+    hasHydratedVideoRef.current = true;
     let isCancelled = false;
 
     videoClient.getRecentJobs(3)
@@ -546,7 +549,7 @@ export function useCreativeExecution(options: UseCreativeExecutionOptions) {
     return () => {
       isCancelled = true;
     };
-  }, [startVideoJobPolling, updateGemState]);
+  }, []);
 
   // Main Execution Routine: Isolated per Target Gem
   const executeGenerate = async (targetGemOverride?: Gem) => {
