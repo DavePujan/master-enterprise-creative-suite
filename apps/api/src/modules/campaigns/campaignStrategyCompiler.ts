@@ -92,9 +92,16 @@ CAMPAIGN BRIEF & CONTROLS:
 - Geographic Scale: ${controls?.geographicScale || 'National'}
 - Available Proof: ${controls?.proofAvailability?.map(p => p.type).join(', ') || 'None specified'}
 - Must Include (MANDATORY): ${controls?.mandatoryInclusions?.join(', ') || 'None'}
-- Must Avoid (STRICTLY FORBIDDEN): ${controls?.forbiddenTerritories?.join(', ') || 'None'}
-- Competitor Knowledge Source: ${controls?.competitorKnowledgeSource || 'no_research_supplied'}
-- Competitor Context: ${controls?.competitorKnowledgeSource === 'imported_from_workspace' ? `Workspace brand guidelines & stored assets for ${brandName}` : controls?.competitorContext?.competitors || 'Standard category players'}
+- Competitor Knowledge Sources: ${(controls?.competitorKnowledgeSources || [controls?.competitorKnowledgeSource || 'no_research_supplied']).join(', ')}
+- Competitor Context: ${(() => {
+    const sources = controls?.competitorKnowledgeSources || [controls?.competitorKnowledgeSource || 'no_research_supplied'];
+    const parts: string[] = [];
+    if (sources.includes('live_web')) parts.push('Live Google Search Grounding active');
+    if (sources.includes('provided_by_client') && controls?.competitorContext?.competitors) parts.push(`Client Competitors: ${controls.competitorContext.competitors}`);
+    if (sources.includes('imported_from_workspace')) parts.push(`Workspace brand guidelines & stored assets for ${brandName}`);
+    if (controls?.competitorContext?.overusedPatterns) parts.push(`Category Clichés to Avoid: ${controls.competitorContext.overusedPatterns}`);
+    return parts.length > 0 ? parts.join(' | ') : 'Standard category baselines';
+  })()}
 
 APPROVED STRATEGIC ROUTE (TERRITORY):
 - Title: ${selectedTerritory.title}

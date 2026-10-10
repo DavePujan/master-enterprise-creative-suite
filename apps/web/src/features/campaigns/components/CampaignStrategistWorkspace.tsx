@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Sparkles, ArrowRight, Compass, ShieldAlert, Layers, Globe, FileCode, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, ArrowRight, Compass, ShieldAlert, Layers, Globe, FileCode, CheckCircle2, History, X, Clock, ChevronRight, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CampaignStrategyProvider, useCampaignStrategy } from '../context/CampaignStrategyContext.js';
 import { StrategyJourneyHeader } from './header/StrategyJourneyHeader.js';
@@ -9,6 +9,8 @@ import { TerritoryStage } from './stages/TerritoryStage.js';
 import { StrategyStage } from './stages/StrategyStage.js';
 import { ActivationStage } from './stages/ActivationStage.js';
 import { apiClient } from '@web/infrastructure/api/apiClient.js';
+import { CampaignProcessLoader, playCompletionChime } from './shared/CampaignProcessLoader.js';
+import { SavedStrategiesModal } from './modals/SavedStrategiesModal.js';
 import type { StrategicTerritory, MasterCampaignStrategy, DownstreamBriefs } from '../../../../../../packages/types/campaignStrategy.js';
 import type { AdSpec } from '../../../../../../packages/types/adSpec.js';
 
@@ -38,20 +40,96 @@ export interface CampaignStrategistWorkspaceProps {
   setSelectedLanguage?: (val: string) => void;
   setAudioGenerationType?: (val: 'voiceover' | 'music') => void;
   setMusicMood?: (val: string) => void;
+  currentActiveResult?: any;
+  onClearActiveResult?: () => void;
 }
 
 const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProps> = ({
   brandGuidelines,
+  onSaveCampaignAsset,
+  onSaveHistory,
   credits,
   setCredits,
+  productContext,
+  setProductContext,
+  faceContext,
+  setFaceContext,
+  setHumanTouchItem,
   onSelectGem,
-  setPrompt
+  setPrompt,
+  setAspectRatio,
+  setSelectedLanguage,
+  setAudioGenerationType,
+  setMusicMood,
+  currentActiveResult,
+  onClearActiveResult
 }) => {
   const [state, dispatch] = useCampaignStrategy();
   const { journeyStep, brief, discovery, territories, strategy, activation, loading, error } = state;
   const [isGeneratingAlternative, setIsGeneratingAlternative] = useState(false);
   const [isStressTesting, setIsStressTesting] = useState(false);
   const [isPatching, setIsPatching] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [savedStrategies, setSavedStrategies] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // 0. Auto-rehydrate active campaign loaded from history or external trigger
+  useEffect(() => {
+    if (!currentActiveResult) return;
+
+    if (
+      currentActiveResult.type === 'campaign-strategy' ||
+      currentActiveResult.masterStrategy ||
+      currentActiveResult.strategyId ||
+      currentActiveResult.data?.masterStrategy
+    ) {
+      const data = currentActiveResult.data || currentActiveResult;
+      const masterStrategy = data.masterStrategy || data.strategy;
+      const targetStep = data.journeyStep || (masterStrategy ? '04_build_strategy' : '01_brief');
+
+      dispatch({
+        type: 'REHYDRATE_STATE',
+        payload: {
+          journeyStep: targetStep,
+          brief: data.brief || {
+            ...state.brief,
+            campaignTitle: data.campaignTitle || state.brief.campaignTitle,
+            briefDescription: data.briefDescription || state.brief.briefDescription,
+            targetAudience: data.targetAudience || state.brief.targetAudience,
+            selectedGoal: data.objective || state.brief.selectedGoal,
+            controls: data.controls || state.brief.controls
+          },
+          discovery: data.discovery || state.discovery,
+          territories: data.territories ? {
+            ...state.territories,
+            ...data.territories,
+            selectedTerritoryId: data.selectedTerritory?.id || data.territories?.selectedTerritoryId || state.territories.selectedTerritoryId
+          } : (data.selectedTerritory ? {
+            ...state.territories,
+            items: [data.selectedTerritory],
+            selectedTerritoryId: data.selectedTerritory.id
+          } : state.territories),
+          strategy: {
+            ...state.strategy,
+            masterStrategy: masterStrategy || null,
+            activeTab: 'executive'
+          },
+          activation: {
+            ...state.activation,
+            downstreamBriefs: data.downstreamBriefs || null,
+            activeBriefTab: 'adspec'
+          }
+        }
+      });
+
+      if (data.canonicalAdSpec) {
+        localStorage.setItem('staged_canonical_adspec', JSON.stringify(data.canonicalAdSpec));
+        sessionStorage.setItem('writopedia_active_adspec', JSON.stringify(data.canonicalAdSpec));
+      }
+
+      onClearActiveResult?.();
+    }
+  }, [currentActiveResult, onClearActiveResult]);
 
   // 1. Stage 1 -> Stage 2: Adaptive Discovery
   const handleStartDiscovery = async () => {
@@ -156,28 +234,38 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
       });
 
       const synthPayload: any = synthRes;
-      const masterStrategy = synthPayload.strategy || synthPayload.data?.strategy;
+      const masterStrategy = synthPayload.strategy || synthPayload.data?.strategy || synthPayload.masterStrategy;
 
       if (masterStrategy) {
         dispatch({ type: 'SET_MASTER_STRATEGY', payload: masterStrategy });
         setCredits(prev => Math.max(0, prev - 5));
 
-        // Compile and persist canonical AdSpec v1 to backend project repository
-        const adSpecRes = await apiClient.post<{ adSpec: AdSpec; projectId?: string }>('/api/campaign/strategy/adspec', {
-          strategy: masterStrategy,
-          territory,
-          persistToProject: true
-        });
+        // Consume canonical AdSpec v1 returned directly by the optimized single-pass synthesis
+        let canonicalAdSpec = synthPayload.adSpec || synthPayload.data?.adSpec;
+        let projectId = synthPayload.projectId || synthPayload.data?.projectId;
 
-        const adSpecPayload: any = adSpecRes;
-        const canonicalAdSpec = adSpecPayload.adSpec || adSpecPayload.data?.adSpec;
+        // Graceful fallback to secondary compilation endpoint only if not present in primary payload
+        if (!canonicalAdSpec) {
+          try {
+            const adSpecRes = await apiClient.post<{ adSpec: AdSpec; projectId?: string }>('/api/campaign/strategy/adspec', {
+              strategy: masterStrategy,
+              territory,
+              persistToProject: true
+            });
+            const adSpecPayload: any = adSpecRes;
+            canonicalAdSpec = adSpecPayload.adSpec || adSpecPayload.data?.adSpec;
+            projectId = adSpecPayload?.projectId;
+          } catch (persistErr) {
+            console.warn('Fallback AdSpec compilation error:', persistErr);
+          }
+        }
 
         const returnedBriefs = synthPayload.downstreamBriefs || synthPayload.data?.downstreamBriefs;
         if (returnedBriefs) {
           const downstream: DownstreamBriefs = {
             ...returnedBriefs,
             canonicalAdSpec: canonicalAdSpec || returnedBriefs.canonicalAdSpec,
-            canonicalAdSpecId: adSpecPayload?.projectId || returnedBriefs.canonicalAdSpecId
+            canonicalAdSpecId: projectId || returnedBriefs.canonicalAdSpecId
           };
           dispatch({ type: 'SET_DOWNSTREAM_BRIEFS', payload: downstream });
         }
@@ -186,6 +274,37 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
           localStorage.setItem('staged_canonical_adspec', JSON.stringify(canonicalAdSpec));
           sessionStorage.setItem('writopedia_active_adspec', JSON.stringify(canonicalAdSpec));
         }
+
+        // Save to Creative History (frontend state + cloud history sync)
+        if (onSaveHistory) {
+          onSaveHistory(
+            {
+              type: 'campaign-strategy',
+              strategyId: synthPayload.strategyId,
+              versionId: synthPayload.versionId,
+              versionNumber: synthPayload.versionNumber || 1,
+              campaignTitle: brief.campaignTitle,
+              objective: brief.selectedGoal,
+              targetAudience: brief.targetAudience,
+              selectedTerritory: territory,
+              masterStrategy,
+              downstreamBriefs: returnedBriefs || synthPayload.downstreamBriefs,
+              canonicalAdSpec,
+              brief,
+              discovery,
+              territories: {
+                items: territories.items,
+                selectedTerritoryId: territory.id,
+                directionVariant: territories.directionVariant
+              }
+            },
+            'campaign-strategist-y',
+            `Campaign Strategy: ${brief.campaignTitle}`
+          );
+        }
+
+        // Trigger pleasant Web Audio API completion chime
+        playCompletionChime();
 
         dispatch({ type: 'SET_JOURNEY_STEP', payload: '04_build_strategy' });
       }
@@ -284,10 +403,146 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
     a.click();
   };
 
+  const fetchWorkspaceStrategies = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const res: any = await apiClient.get('/api/campaign/strategy/workspace-history');
+      const list = res.history || res.data?.history || [];
+      setSavedStrategies(list);
+    } catch (err) {
+      console.warn('Failed to fetch workspace strategies:', err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleOpenHistoryModal = () => {
+    setShowHistoryModal(true);
+    fetchWorkspaceStrategies();
+  };
+
+  const handleLoadSavedStrategy = async (stratId: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    try {
+      let stratData: any = null;
+      try {
+        const res: any = await apiClient.get(`/api/campaign/strategy/${stratId}`);
+        stratData = res.strategy || res.data?.strategy;
+      } catch (networkErr) {
+        console.warn('API get strategy by id returned error, utilizing local fallback:', networkErr);
+      }
+
+      // Resilient fallback to item in savedStrategies if network returned null
+      if (!stratData) {
+        const local = savedStrategies.find(s => s.id === stratId);
+        if (local) {
+          stratData = {
+            ...local,
+            campaign_strategy_versions: local.versions && local.versions.length > 0 ? local.versions : [{
+              version_number: local.version_number || 1,
+              selected_territory: {
+                id: `terr_${local.id}`,
+                name: local.territory_name || local.title,
+                premise: local.territory_premise || 'Strategic route synthesized.'
+              },
+              master_strategy: {
+                bigIdea: `${local.title}: High-conviction campaign positioning.`,
+                executiveSummary: { coreConcept: local.territory_name || local.title }
+              }
+            }]
+          };
+        }
+      }
+
+      if (stratData) {
+        const versions = stratData.campaign_strategy_versions || stratData.versions || [];
+        const latestVer = versions[versions.length - 1] || versions[0] || {};
+        const territory = latestVer.selected_territory || latestVer.selectedTerritory || {
+          id: `terr_${stratData.id}`,
+          name: stratData.territory_name || stratData.title,
+          premise: stratData.territory_premise || 'Strategic route synthesized.'
+        };
+        const masterStrategy = latestVer.master_strategy || latestVer.masterStrategy || {
+          bigIdea: `${stratData.title}: High-conviction campaign positioning.`,
+          executiveSummary: { coreConcept: territory.name }
+        };
+        const downstreamBriefs = latestVer.downstream_briefs || latestVer.downstreamBriefs || null;
+
+        dispatch({
+          type: 'REHYDRATE_STATE',
+          payload: {
+            journeyStep: downstreamBriefs?.canonicalAdSpec ? '05_activate' : '04_build_strategy',
+            brief: {
+              ...state.brief,
+              campaignTitle: stratData.title || state.brief.campaignTitle
+            },
+            territories: {
+              ...state.territories,
+              selectedTerritoryId: territory.id,
+              items: territory ? [territory] : state.territories.items
+            },
+            strategy: {
+              ...state.strategy,
+              masterStrategy,
+              activeTab: 'executive'
+            },
+            activation: {
+              ...state.activation,
+              downstreamBriefs
+            }
+          }
+        });
+        setShowHistoryModal(false);
+      } else {
+        dispatch({ type: 'SET_ERROR', payload: 'Selected strategy details could not be found' });
+      }
+    } catch (err: any) {
+      dispatch({ type: 'SET_ERROR', payload: err?.message || 'Failed to load strategy' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
+  const handleResetCampaign = () => {
+    if (window.confirm('Start a new campaign? Any unsaved edits in this session draft will be cleared.')) {
+      dispatch({ type: 'RESET_CAMPAIGN' });
+    }
+  };
+
+  const loaderStage: 'discovery' | 'territories' | 'synthesis' =
+    journeyStep === '01_brief' ? 'discovery' :
+    journeyStep === '02_discovery' ? 'territories' :
+    'synthesis';
+
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 overflow-y-auto">
       {/* 5-Step Journey Navigation Bar */}
-      <StrategyJourneyHeader onDismissError={() => dispatch({ type: 'SET_ERROR', payload: null })} />
+      <StrategyJourneyHeader
+        onDismissError={() => dispatch({ type: 'SET_ERROR', payload: null })}
+        onOpenHistory={handleOpenHistoryModal}
+        onNewCampaign={handleResetCampaign}
+      />
+
+      {/* Animated Strategic Preloader with Progress Status Labels */}
+      {loading && (
+        <CampaignProcessLoader
+          stage={loaderStage}
+          campaignTitle={brief.campaignTitle}
+          onCancel={() => dispatch({ type: 'SET_LOADING', payload: false })}
+        />
+      )}
+
+      {/* Saved Workspace Strategies Manager */}
+      <SavedStrategiesModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        savedStrategies={savedStrategies}
+        isLoading={isLoadingHistory}
+        onLoadStrategy={handleLoadSavedStrategy}
+        onRefreshStrategies={fetchWorkspaceStrategies}
+        hasUnsavedDraft={Boolean(state.strategy.masterStrategy || state.brief.briefDescription)}
+      />
 
       {/* Main Workspace Layout */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 p-6 max-w-7xl mx-auto w-full">
@@ -305,6 +560,7 @@ const CampaignStrategistWorkspaceInner: React.FC<CampaignStrategistWorkspaceProp
                 onLockTerritory={handleLockTerritory}
                 onGenerateAlternative={handleGenerateAlternative}
                 isGeneratingAlternative={isGeneratingAlternative}
+                isLocking={loading}
               />
             )}
             {journeyStep === '04_build_strategy' && (

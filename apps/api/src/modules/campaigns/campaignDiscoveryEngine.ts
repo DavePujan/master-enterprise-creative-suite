@@ -125,22 +125,38 @@ export class CampaignDiscoveryEngine {
       {
         id: 'competitive',
         label: 'Competitive White Space Context',
-        status: semanticResults.competitive?.isNegated
-          ? 'missing'
-          : (controls?.competitorContext?.competitors || semanticResults.competitive?.status === 'strong')
-          ? 'strong'
-          : (controls?.competitorKnowledgeSource === 'live_web' || controls?.competitorKnowledgeSource === 'imported_from_workspace')
-          ? 'strong'
-          : (controls?.competitorKnowledgeSource === 'no_research_supplied' || semanticResults.competitive?.status === 'partial')
-          ? 'partial'
-          : 'missing',
-        detail: controls?.competitorKnowledgeSource === 'live_web'
-          ? 'Live web research active: Grounding search queries and source citations enabled.'
-          : (semanticResults.competitive?.extractedValue || (controls?.competitorContext?.competitors
-          ? `Competing against: ${controls.competitorContext.competitors}`
-          : controls?.competitorKnowledgeSource === 'imported_from_workspace'
-          ? `Grounded in workspace brand guidelines and category positioning for ${brandName}.`
-          : (controls?.competitorKnowledgeSource === 'no_research_supplied' ? 'No client research supplied; strategist will model category baselines.' : 'Key competitor patterns undefined.'))),
+        status: (() => {
+          if (semanticResults.competitive?.isNegated) return 'missing';
+          const sources = controls?.competitorKnowledgeSources && controls.competitorKnowledgeSources.length > 0
+            ? controls.competitorKnowledgeSources
+            : [controls?.competitorKnowledgeSource || 'no_research_supplied'];
+          if (sources.includes('live_web') || sources.includes('imported_from_workspace') || (sources.includes('provided_by_client') && controls?.competitorContext?.competitors) || semanticResults.competitive?.status === 'strong') {
+            return 'strong';
+          }
+          if (sources.includes('no_research_supplied') || semanticResults.competitive?.status === 'partial') {
+            return 'partial';
+          }
+          return 'missing';
+        })(),
+        detail: (() => {
+          const sources = controls?.competitorKnowledgeSources && controls.competitorKnowledgeSources.length > 0
+            ? controls.competitorKnowledgeSources
+            : [controls?.competitorKnowledgeSource || 'no_research_supplied'];
+          const parts: string[] = [];
+          if (sources.includes('live_web')) {
+            parts.push('Live web research active: Grounding search queries and source citations enabled.');
+          }
+          if (sources.includes('provided_by_client') && controls?.competitorContext?.competitors) {
+            parts.push(`Competing against: ${controls.competitorContext.competitors}`);
+          }
+          if (sources.includes('imported_from_workspace')) {
+            parts.push(`Grounded in workspace brand guidelines and category positioning for ${brandName}.`);
+          }
+          if (parts.length > 0) return parts.join(' • ');
+          if (semanticResults.competitive?.extractedValue) return semanticResults.competitive.extractedValue;
+          if (sources.includes('no_research_supplied')) return 'No client research supplied; strategist will model category baselines.';
+          return 'Key competitor patterns undefined.';
+        })(),
         quickFixPrompt: 'What are competitors constantly over-promising or repeating that customers are tired of hearing?'
       },
       // 5. Behavioral Barrier & Tension

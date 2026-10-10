@@ -54,6 +54,7 @@ export class CampaignRepository {
    */
   async createStrategy(params: SaveStrategyParams): Promise<{ id: string }> {
     const supabase = getSupabaseAdmin();
+    const now = new Date().toISOString();
     if (!supabase) {
       const id = `mem-strat-${Date.now()}`;
       this.memoryStrategies.set(id, {
@@ -63,7 +64,8 @@ export class CampaignRepository {
         title: params.title,
         framework_id: params.frameworkId,
         status: 'active',
-        created_at: new Date().toISOString()
+        created_at: now,
+        updated_at: now
       });
       return { id };
     }
@@ -86,8 +88,12 @@ export class CampaignRepository {
       this.memoryStrategies.set(id, {
         id,
         workspace_id: params.workspaceId,
+        user_id: params.userId,
         title: params.title,
-        framework_id: params.frameworkId
+        framework_id: params.frameworkId,
+        status: 'active',
+        created_at: now,
+        updated_at: now
       });
       return { id };
     }
@@ -100,15 +106,22 @@ export class CampaignRepository {
    */
   async saveVersion(params: SaveVersionParams): Promise<{ versionId: string }> {
     const supabase = getSupabaseAdmin();
+    const now = new Date().toISOString();
     if (!supabase) {
       const versionId = `mem-ver-${Date.now()}`;
       const existing = this.memoryVersions.get(params.campaignStrategyId) || [];
       existing.push({
         id: versionId,
         ...params,
-        created_at: new Date().toISOString()
+        selected_territory: params.selectedTerritory,
+        created_at: now
       });
       this.memoryVersions.set(params.campaignStrategyId, existing);
+      const root = this.memoryStrategies.get(params.campaignStrategyId);
+      if (root) {
+        root.updated_at = now;
+        root.current_version_id = versionId;
+      }
       return { versionId };
     }
 
@@ -130,13 +143,26 @@ export class CampaignRepository {
     if (error) {
       console.warn('CampaignRepository.saveVersion DB insert failed, falling back to memory store:', error.message);
       const versionId = `mem-ver-${Date.now()}`;
+      const existing = this.memoryVersions.get(params.campaignStrategyId) || [];
+      existing.push({
+        id: versionId,
+        ...params,
+        selected_territory: params.selectedTerritory,
+        created_at: now
+      });
+      this.memoryVersions.set(params.campaignStrategyId, existing);
+      const root = this.memoryStrategies.get(params.campaignStrategyId);
+      if (root) {
+        root.updated_at = now;
+        root.current_version_id = versionId;
+      }
       return { versionId };
     }
 
     // Update root record current_version_id
     await supabase
       .from('campaign_strategies')
-      .update({ current_version_id: data.id, updated_at: new Date().toISOString() })
+      .update({ current_version_id: data.id, updated_at: now })
       .eq('id', params.campaignStrategyId);
 
     return { versionId: data.id };
@@ -230,60 +256,274 @@ export class CampaignRepository {
    * Loads a strategy by ID with its current version.
    */
   async getStrategyById(strategyId: string, workspaceId: string): Promise<any | null> {
+    const normalizeStrategy = (row: any) => {
+      if (!row) return null;
+      const vers = (row.campaign_strategy_versions || row.versions || []).map((v: any) => ({
+        ...v,
+        selected_territory: v.selected_territory || v.selectedTerritory,
+        selectedTerritory: v.selected_territory || v.selectedTerritory,
+        master_strategy: v.master_strategy || v.masterStrategy,
+        masterStrategy: v.master_strategy || v.masterStrategy,
+        downstream_briefs: v.downstream_briefs || v.downstreamBriefs,
+        downstreamBriefs: v.downstream_briefs || v.downstreamBriefs
+      }));
+      return {
+        ...row,
+        campaign_strategy_versions: vers,
+        versions: vers
+      };
+    };
+
     const supabase = getSupabaseAdmin();
-    if (!supabase) {
-      const strat = this.memoryStrategies.get(strategyId);
-      const vers = this.memoryVersions.get(strategyId) || [];
-      return strat ? { ...strat, versions: vers } : null;
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('campaign_strategies')
+          .select(`
+            *,
+            campaign_strategy_versions!campaign_strategy_versions_campaign_strategy_id_fkey(*)
+          `)
+          .eq('id', strategyId)
+          .single();
+
+        if (data && !error) {
+          return normalizeStrategy(data);
+        }
+      } catch (err) {
+        // Fall back to memory
+      }
     }
 
-    const { data, error } = await supabase
-      .from('campaign_strategies')
-      .select(`
-        *,
-        campaign_strategy_versions(*)
-      `)
-      .eq('id', strategyId)
-      .eq('workspace_id', workspaceId)
-      .single();
+    const strat = this.memoryStrategies.get(strategyId);
+    if (strat) {
+      const vers = this.memoryVersions.get(strategyId) || [];
+      return normalizeStrategy({ ...strat, versions: vers });
+    }
 
-    if (error) return null;
-    return data;
+    return null;
   }
 
   /**
-   * Lists active strategies for a workspace.
+   * Lists active strategies for a workspace, enriched with version numbers, stage progress (out of 5), and territory details.
    */
-  async listWorkspaceStrategies(workspaceId: string, limit = 20): Promise<any[]> {
-    const supabase = getSupabaseAdmin();
-    if (!supabase) {
+  async listWorkspaceStrategies(workspaceId: string, limit = 50): Promise<any[]> {
+    const mapRow = (s: any) => {
+      const vers = s.campaign_strategy_versions || s.versions || [];
+      const latestVer = vers.length > 0
+        ? [...vers].sort((a: any, b: any) => (b.version_number || 0) - (a.version_number || 0))[0]
+        : null;
+      const territory = latestVer?.selected_territory || latestVer?.selectedTerritory;
+      const territoryName = territory?.name || territory?.title || territory?.angle || null;
+      const territoryPremise = territory?.premise || territory?.description || null;
+
+      // Calculate journey stage status out of 5
+      const hasDownstream = Boolean(
+        latestVer?.downstream_briefs?.canonicalAdSpec ||
+        latestVer?.downstreamBriefs?.canonicalAdSpec ||
+        latestVer?.downstream_briefs?.channelBriefs?.length ||
+        latestVer?.downstreamBriefs?.channelBriefs?.length
+      );
+      const hasMaster = Boolean(latestVer?.master_strategy || latestVer?.masterStrategy);
+      const stageNumber = hasDownstream ? 5 : hasMaster ? 4 : territory ? 3 : 1;
+      const stageLabel = stageNumber === 5 ? 'Stage 5/5 · Activation Ready' :
+                         stageNumber === 4 ? 'Stage 4/5 · Master Strategy' :
+                         stageNumber === 3 ? 'Stage 3/5 · Strategic Routes' :
+                         'Stage 1/5 · Brief & Scope';
+
+      // Defensive date resolution: Guarantee valid ISO timestamp (never undefined/null)
+      let resolvedDate = s.updated_at || s.created_at;
+      if (!resolvedDate || isNaN(new Date(resolvedDate).getTime())) {
+        const match = String(s.id).match(/\d{12,14}/);
+        if (match) {
+          resolvedDate = new Date(Number(match[0])).toISOString();
+        } else {
+          resolvedDate = new Date().toISOString();
+        }
+      }
+
+      return {
+        id: s.id,
+        workspace_id: s.workspace_id,
+        title: s.title || 'Untitled Strategy',
+        status: s.status || 'active',
+        stage_number: stageNumber,
+        stage_total: 5,
+        stage_label: stageLabel,
+        framework_id: s.framework_id || null,
+        created_at: s.created_at || resolvedDate,
+        updated_at: resolvedDate,
+        current_version_id: s.current_version_id || latestVer?.id || null,
+        version_number: latestVer?.version_number || 1,
+        version_count: Math.max(1, vers.length),
+        territory_name: territoryName,
+        territory_premise: territoryPremise,
+        versions: vers
+      };
+    };
+
+    const getMemoryStrategies = () => {
       return Array.from(this.memoryStrategies.values())
         .filter(s => s.workspace_id === workspaceId)
+        .map(s => {
+          const versions = this.memoryVersions.get(s.id) || [];
+          return mapRow({ ...s, versions });
+        })
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
         .slice(0, limit);
+    };
+
+    const supabase = getSupabaseAdmin();
+    if (!supabase) {
+      return getMemoryStrategies();
     }
 
-    const { data, error } = await supabase
-      .from('campaign_strategies')
-      .select('id, title, status, framework_id, created_at, updated_at')
-      .eq('workspace_id', workspaceId)
-      .order('updated_at', { ascending: false })
-      .limit(limit);
+    try {
+      const { data, error } = await supabase
+        .from('campaign_strategies')
+        .select(`
+          id,
+          workspace_id,
+          title,
+          status,
+          framework_id,
+          created_at,
+          updated_at,
+          current_version_id,
+          campaign_strategy_versions!campaign_strategy_versions_campaign_strategy_id_fkey (
+            id,
+            version_number,
+            selected_territory,
+            master_strategy,
+            downstream_briefs,
+            created_at
+          )
+        `)
+        .eq('workspace_id', workspaceId)
+        .order('updated_at', { ascending: false })
+        .limit(limit);
 
-    if (error || !data || data.length === 0) {
-      const mem = Array.from(this.memoryStrategies.values())
-        .filter(s => s.workspace_id === workspaceId)
-        .slice(0, limit);
-      if (mem.length > 0) return mem;
-      return [];
+      if (error || !data || data.length === 0) {
+        const mem = getMemoryStrategies();
+        if (mem.length > 0) return mem;
+        return [];
+      }
+
+      return data.map(mapRow);
+    } catch {
+      return getMemoryStrategies();
     }
-    return data || [];
   }
 
   /**
    * Alias for listWorkspaceStrategies for API parity.
    */
-  async getWorkspaceStrategies(workspaceId: string, limit = 20): Promise<any[]> {
+  async getWorkspaceStrategies(workspaceId: string, limit = 50): Promise<any[]> {
     return this.listWorkspaceStrategies(workspaceId, limit);
+  }
+
+  /**
+   * Updates strategy metadata such as title or status.
+   */
+  async updateStrategy(
+    strategyId: string,
+    workspaceId: string,
+    updates: { title?: string; status?: string }
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    const memStrat = this.memoryStrategies.get(strategyId);
+    if (memStrat && memStrat.workspace_id === workspaceId) {
+      if (updates.title !== undefined) memStrat.title = updates.title;
+      if (updates.status !== undefined) memStrat.status = updates.status;
+      memStrat.updated_at = now;
+    }
+
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return !!memStrat;
+
+    try {
+      const { error } = await supabase
+        .from('campaign_strategies')
+        .update({
+          ...(updates.title !== undefined ? { title: updates.title } : {}),
+          ...(updates.status !== undefined ? { status: updates.status } : {}),
+          updated_at: now
+        })
+        .eq('id', strategyId)
+        .eq('workspace_id', workspaceId);
+
+      if (error) {
+        return !!memStrat;
+      }
+      return true;
+    } catch {
+      return !!memStrat;
+    }
+  }
+
+  /**
+   * Clones a strategy and its latest version.
+   */
+  async duplicateStrategy(strategyId: string, workspaceId: string, userId: string): Promise<any | null> {
+    const original = await this.getStrategyById(strategyId, workspaceId);
+    if (!original) return null;
+
+    const newTitle = `${original.title || 'Untitled Strategy'} (Copy)`;
+    const newStrategy = await this.createStrategy({
+      workspaceId,
+      userId,
+      title: newTitle,
+      frameworkId: original.framework_id || 'GENERAL'
+    });
+
+    const versions = original.campaign_strategy_versions || original.versions || [];
+    if (versions.length > 0) {
+      const latest = versions[versions.length - 1];
+      await this.saveVersion({
+        campaignStrategyId: newStrategy.id,
+        versionNumber: 1,
+        selectedTerritory: latest.selected_territory || latest.selectedTerritory,
+        masterStrategy: latest.master_strategy || latest.masterStrategy,
+        downstreamBriefs: latest.downstream_briefs || latest.downstreamBriefs,
+        epistemicLedger: latest.epistemic_ledger || latest.epistemicLedger || [],
+        criticReport: latest.critic_report || latest.criticReport || {},
+        createdBy: userId
+      });
+    }
+
+    return await this.getStrategyById(newStrategy.id, workspaceId);
+  }
+
+  /**
+   * Deletes a strategy and cascades to its versions and memory entries.
+   */
+  async deleteStrategy(strategyId: string, workspaceId: string): Promise<boolean> {
+    const hadMem = this.memoryStrategies.has(strategyId);
+    this.memoryStrategies.delete(strategyId);
+    this.memoryVersions.delete(strategyId);
+
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return hadMem;
+
+    try {
+      await supabase
+        .from('campaign_strategy_versions')
+        .delete()
+        .eq('campaign_strategy_id', strategyId);
+
+      const { error } = await supabase
+        .from('campaign_strategies')
+        .delete()
+        .eq('id', strategyId)
+        .eq('workspace_id', workspaceId);
+
+      if (error) {
+        return hadMem;
+      }
+      return true;
+    } catch (err) {
+      console.warn('CampaignRepository.deleteStrategy error:', err);
+      return hadMem;
+    }
   }
 
   /**

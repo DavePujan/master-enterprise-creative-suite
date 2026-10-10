@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bookmark, Sliders, ChevronDown, ChevronUp, Plus, Trash2, X, ArrowRight, Loader2, Globe } from 'lucide-react';
+import { Bookmark, Sliders, ChevronDown, ChevronUp, Plus, Trash2, X, ArrowRight, Loader2, Globe, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useCampaignStrategy } from '../../context/CampaignStrategyContext.js';
 import type {
@@ -267,11 +267,16 @@ export const BriefStage: React.FC<BriefStageProps> = ({ onStartDiscovery, brandN
               </div>
             </div>
 
-            {/* Competitor Knowledge Source with live_web */}
+            {/* Competitor Knowledge Source with multi-select for top 3 and mutually exclusive last option */}
             <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                Competitor Knowledge Grounding & Live Research
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+                  Competitor Knowledge Grounding & Live Research
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Select one or more sources (or choose "No Research Supplied")
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {[
                   { id: 'live_web', label: 'Live Web Grounding (Google Search)', desc: 'Grounds competitive analysis in real-time Google Search with source citations' },
@@ -279,31 +284,95 @@ export const BriefStage: React.FC<BriefStageProps> = ({ onStartDiscovery, brandN
                   { id: 'imported_from_workspace', label: 'Workspace Brand Documents', desc: 'Grounds analysis in brand guidelines and stored workspace assets' },
                   { id: 'no_research_supplied', label: 'No Research Supplied', desc: 'Applies universal category defense invariants without claiming competitor intel' }
                 ].map((src) => {
-                  const isSelected = controls.competitorKnowledgeSource === src.id;
+                  const activeSources: CompetitorKnowledgeSource[] =
+                    controls.competitorKnowledgeSources && controls.competitorKnowledgeSources.length > 0
+                      ? controls.competitorKnowledgeSources
+                      : [controls.competitorKnowledgeSource || 'no_research_supplied'];
+
+                  const isSelected = activeSources.includes(src.id as CompetitorKnowledgeSource);
+
+                  const handleToggle = () => {
+                    if (src.id === 'no_research_supplied') {
+                      // Clicking "No Research Supplied" clears all others
+                      dispatch({
+                        type: 'UPDATE_CONTROLS',
+                        payload: {
+                          competitorKnowledgeSource: 'no_research_supplied',
+                          competitorKnowledgeSources: ['no_research_supplied']
+                        }
+                      });
+                      return;
+                    }
+
+                    // Toggling one of the top 3 options
+                    const nonNoneSources = activeSources.filter(s => s !== 'no_research_supplied');
+                    let nextSources: CompetitorKnowledgeSource[];
+
+                    if (nonNoneSources.includes(src.id as CompetitorKnowledgeSource)) {
+                      // Deselect
+                      nextSources = nonNoneSources.filter(s => s !== src.id);
+                      if (nextSources.length === 0) {
+                        nextSources = ['no_research_supplied'];
+                      }
+                    } else {
+                      // Select & add to active sources
+                      nextSources = [...nonNoneSources, src.id as CompetitorKnowledgeSource];
+                    }
+
+                    const primarySource: CompetitorKnowledgeSource =
+                      nextSources.includes('live_web')
+                        ? 'live_web'
+                        : (nextSources.find(s => s !== 'no_research_supplied') || 'no_research_supplied');
+
+                    dispatch({
+                      type: 'UPDATE_CONTROLS',
+                      payload: {
+                        competitorKnowledgeSource: primarySource,
+                        competitorKnowledgeSources: nextSources
+                      }
+                    });
+                  };
+
                   return (
                     <div
                       key={src.id}
-                      onClick={() => dispatch({ type: 'UPDATE_CONTROLS', payload: { competitorKnowledgeSource: src.id as CompetitorKnowledgeSource } })}
-                      className={`p-2 rounded border cursor-pointer transition-all ${
+                      onClick={handleToggle}
+                      className={`p-2.5 rounded-lg border cursor-pointer transition-all select-none relative ${
                         isSelected
-                          ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20'
-                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                          ? 'border-rose-500 bg-rose-50/60 dark:bg-rose-950/25 shadow-xs ring-1 ring-rose-500/30'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
-                      <div className="font-semibold text-slate-900 dark:text-slate-100 text-[11px] flex items-center justify-between">
-                        <span>{src.label}</span>
-                        {src.id === 'live_web' && <Globe size={11} className="text-emerald-500" />}
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 text-[11px] flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] transition-colors ${
+                            isSelected
+                              ? 'bg-rose-500 text-white'
+                              : 'border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-transparent'
+                          }`}>
+                            <Check size={10} strokeWidth={3} />
+                          </div>
+                          <span>{src.label}</span>
+                        </div>
+                        {src.id === 'live_web' && (
+                          <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-mono">
+                            <Globe size={11} className="text-emerald-500 animate-pulse" />
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{src.desc}</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 pl-5 leading-normal">{src.desc}</p>
                     </div>
                   );
                 })}
               </div>
 
-              {controls.competitorKnowledgeSource !== 'no_research_supplied' && (
+              {/* Show context inputs if any research source is active (except purely no_research_supplied) */}
+              {(controls.competitorKnowledgeSources?.some(s => s !== 'no_research_supplied') ?? (controls.competitorKnowledgeSource !== 'no_research_supplied')) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-0.5">Competitor Names</label>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-0.5">
+                      Competitor Names {controls.competitorKnowledgeSources?.includes('provided_by_client') && <span className="text-rose-500">*</span>}
+                    </label>
                     <input
                       type="text"
                       value={controls.competitorContext.competitors}
@@ -313,8 +382,8 @@ export const BriefStage: React.FC<BriefStageProps> = ({ onStartDiscovery, brandN
                           competitorContext: { ...controls.competitorContext, competitors: e.target.value }
                         }
                       })}
-                      placeholder="e.g. Brand X, Competitor Y"
-                      className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded"
+                      placeholder="e.g. Brand X, Competitor Y, Challenger Z"
+                      className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded focus:border-rose-500 focus:outline-hidden"
                     />
                   </div>
                   <div>
@@ -328,8 +397,8 @@ export const BriefStage: React.FC<BriefStageProps> = ({ onStartDiscovery, brandN
                           competitorContext: { ...controls.competitorContext, overusedPatterns: e.target.value }
                         }
                       })}
-                      placeholder="e.g. Cheesy stock handshakes, fake testimonials"
-                      className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded"
+                      placeholder="e.g. Cheesy stock handshakes, generic fireworks, fake urgency"
+                      className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded focus:border-rose-500 focus:outline-hidden"
                     />
                   </div>
                 </div>

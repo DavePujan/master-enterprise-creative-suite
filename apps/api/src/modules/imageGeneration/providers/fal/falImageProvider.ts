@@ -53,9 +53,19 @@ export class FalImageProvider implements ImageProvider {
     const startTime = Date.now();
 
     const payload = this.buildModelPayload(request, model);
-    const falEndpoint = `https://queue.fal.run/${model.modelId}`;
+    const hasRefs = Boolean(
+      (payload as any).image_urls && (payload as any).image_urls.length > 0
+    );
+    const targetModelId =
+      model.modelId === "openai/gpt-image-2" && hasRefs
+        ? "openai/gpt-image-2/edit"
+        : model.modelId;
+    const falEndpoint = `https://queue.fal.run/${targetModelId}`;
 
-    console.log(`[FalImageProvider] Submitting to ${falEndpoint} with payload keys:`, Object.keys(payload));
+    console.log(
+      `[FalImageProvider] Submitting to ${falEndpoint} (operation: ${hasRefs ? "reference_edit" : "text_to_image"}) with payload keys:`,
+      Object.keys(payload)
+    );
 
     const submitRes = await fetch(falEndpoint, {
       method: "POST",

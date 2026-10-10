@@ -56,19 +56,41 @@ export function normalizeSupabaseUser(supaUser: any): NormalizedUser {
   };
 }
 
+const roleCache = new Map<string, { isAdmin: boolean; timestamp: number }>();
+const roleInFlight = new Map<string, Promise<boolean>>();
+const ROLE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+
 async function fetchUserAdminRole(userId: string): Promise<boolean> {
-  const supabase = getSupabaseClient();
-  if (!supabase) return false;
-  try {
-    const { data: roleRow, error } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .maybeSingle();
-    return Boolean(!error && (roleRow?.role === 'admin' || roleRow?.role === 'superadmin'));
-  } catch {
-    return false;
+  const cached = roleCache.get(userId);
+  if (cached && Date.now() - cached.timestamp < ROLE_CACHE_TTL_MS) {
+    return cached.isAdmin;
   }
+
+  if (roleInFlight.has(userId)) {
+    return roleInFlight.get(userId)!;
+  }
+
+  const promise = (async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+    try {
+      const { data: roleRow, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .maybeSingle();
+      const isAdmin = Boolean(!error && (roleRow?.role === 'admin' || roleRow?.role === 'superadmin'));
+      roleCache.set(userId, { isAdmin, timestamp: Date.now() });
+      return isAdmin;
+    } catch {
+      return false;
+    } finally {
+      roleInFlight.delete(userId);
+    }
+  })();
+
+  roleInFlight.set(userId, promise);
+  return promise;
 }
 
 export function useAuth() {

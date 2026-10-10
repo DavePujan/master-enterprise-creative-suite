@@ -99,57 +99,68 @@ Implement a batch rendering endpoint that verifies and reserves credits for all 
 
 ---
 
-## Finding 03 — Parallel Rendering Creates Provider Risk
+## Finding 03 — Bundle Lacks Backend Concurrency Control and Queue Semantics
 
 ### Original Audit Claim
 "Five image-generation requests are launched concurrently."
 
+### Corrected Architectural Assessment
+The bundle lacks backend-controlled concurrency and queue semantics; browser-side `Promise.all(5)` makes provider load, retries, billing, and partial completion fragile to control.
+
 ### Verdict
-VERIFIED
+VERIFIED (RE-FRAMED)
 
 ### Severity
-MEDIUM
+HIGH
 
 ### Confidence
 HIGH
 
 ### Affected Files
 - `apps/web/src/features/campaigns/components/CampaignDeckWorkspace.tsx`
+- `apps/api/src/modules/campaigns/bundleOrchestratorService.ts`
 
 ### Relevant Symbols
 - `handleGenerateCampaign`
 - `Promise.all(renderPromises)`
 
 ### Evidence
-The application maps over the 5 roles, immediately triggering `apiClient.post` for each without any delay, and uses `Promise.all(renderPromises)` to await them.
+The frontend previously mapped over the 5 roles and triggered `apiClient.post` for each simultaneously, awaiting them with `Promise.all(renderPromises)` in the browser without retry policies, concurrency governors, or centralized status management.
 
 ### Execution / Data Flow
-5 simultaneous outbound requests to the backend image rendering pipeline.
+Browser ├── request 1 ├── request 2 ├── request 3 ├── request 4 └── request 5
 
 ### Verification Analysis
-Proves the claim. Depending on the backend provider (e.g., fal.ai or OpenAI), this can easily trigger rate limits (`429`).
+Modern Fal AI documentation confirms that Fal natively supports high-concurrency workloads, autoscaling infrastructure, and queue-based execution. Concurrency itself is not inherently invalid. Rather, the true architectural problem is **where concurrency and queue state are controlled**. Orchestrating 5 concurrent rendering jobs from React state creates:
+1. Browser dependency on 5 persistent open connections.
+2. Uncoordinated credit billing and absence of atomic rollback.
+3. Inability to recover if the user closes the browser or tab.
+4. Absence of worker-level concurrency limits (e.g., concurrency = 2) or bounded retries.
 
 ### Security / Reliability / Performance Impact
-High risk of intermittent failures due to provider throttling.
+Fragile client-driven batch lifecycle, susceptible to network blips and incomplete bundle states.
 
 ### Original Audit Accuracy
-Correct.
+Partially correct directionally, but overstated/simplistic in reasoning ("Promise.all automatically causes 429s"). Concurrency is supported by modern providers; the defect is lack of backend-governed job orchestration.
 
-### Recommended Future Fix
-Throttle the render loop (e.g., using a concurrency limit of 2) or use a backend queue.
+### Remediation Fix
+Move bundle execution to backend orchestrator `POST /api/campaign/bundle/generate` using a backend worker queue with configurable concurrency (concurrency = 2), per-asset error tracking, and atomic settlement.
 
 ---
 
-## Finding 04 — Engine Selection Mismatch
+## Finding 04 — Engine Selection Mismatch & Provider Identifier Coupling
 
 ### Original Audit Claim
 "The UI can expose an engine that the backend does not actually resolve to a corresponding provider adapter."
 
+### Corrected Assessment
+The frontend's engine identifier was not reliably mapped to the backend/provider model registry. The selected premium engine was silently overridden, and provider-specific model IDs were tightly coupled to the UI.
+
 ### Verdict
-VERIFIED
+VERIFIED (FACTUALLY CORRECTED)
 
 ### Severity
-LOW
+HIGH
 
 ### Confidence
 HIGH
@@ -157,26 +168,34 @@ HIGH
 ### Affected Files
 - `apps/web/src/features/campaigns/components/CampaignDeckWorkspace.tsx`
 - `apps/api/src/modules/campaigns/campaignRoutes.ts`
-- `apps/api/src/infrastructure/fal/falClient.ts`
+- `packages/types/imageGeneration.ts`
 
 ### Relevant Symbols
 - `<select value={engine}>` (UI)
 - `POST /render` (Backend)
+- `resolveCanonicalEngine`
 
 ### Evidence
-The UI exposes `openai-gpt-image-2` as the "Premium" engine. However, in `campaignRoutes.ts`, if the engine string is not `schnell`, `dev`, `pro`, `banana`, or `gemini`, it falls back to `fal-studio`. Even if it reached `falClient.ts`, it routes `openai-gpt-image-2` to `https://queue.fal.run/openai/gpt-image-2` which is an invalid model identifier on Fal AI.
+The UI exposed `openai-gpt-image-2` as the "Premium" engine. However, in `campaignRoutes.ts`, if the engine string was not `schnell`, `dev`, `pro`, `banana`, or `gemini`, it fell back to `fal-studio`.
 
-### Execution / Data Flow
-User selects "Premium" → `engine="openai-gpt-image-2"` sent → backend sets `modelKey="fal-studio"` (silently overriding) OR routes to an invalid fal.run URL.
+### Important Provider Correction
+The original audit claim stating that *"openai/gpt-image-2 is an invalid model identifier on Fal AI"* is **factually outdated**. Current Fal AI documentation confirms that GPT Image 2 is actively exposed on Fal via `openai/gpt-image-2` (text-to-image) and `openai/gpt-image-2/edit` (image reference editing with `image_urls`).
+The true defect is **model routing and coupling**:
+`UI identifier ("openai-gpt-image-2") ≠ backend route parser ≠ provider model registry ("fal-studio")`
+The UI exposed raw provider names instead of canonical product tiers, and the backend silently overrode them.
 
-### Verification Analysis
-Proves the claim. The engine identifiers are completely desynced between frontend expectations and backend support.
+### Security / Reliability / Performance Impact
+Unpredictable model routing, silent fallback behavior, and broken contracts between UI options and backend execution.
 
 ### Original Audit Accuracy
-Correct.
+The audit was factually wrong about GPT Image 2 being invalid on Fal, but correct that the engine selection pipeline suffered from severe identifier mismatch and silent overrides.
 
-### Recommended Future Fix
-Align frontend model dropdown options with actual supported backend models.
+### Remediation Fix
+Introduce a canonical internal engine registry:
+- `fast`: `fal-ai/flux/schnell` (2 credits)
+- `quality`: `fal-ai/flux/dev` (3 credits)
+- `premium`: `openai/gpt-image-2` (4 credits, supports image reference editing)
+Frontend selects canonical internal keys (`fast`, `quality`, `premium`). Backend owns provider mapping cleanly and handles backward compatibility.
 
 ---
 

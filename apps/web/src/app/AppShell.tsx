@@ -567,6 +567,8 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
                   setSelectedLanguage={setSelectedLanguage}
                   setAudioGenerationType={setAudioGenerationType}
                   setMusicMood={setMusicMood}
+                  currentActiveResult={result}
+                  onClearActiveResult={() => setResult(null)}
                 />
               ) : (
                 <CreativeWorkspace {...props} />

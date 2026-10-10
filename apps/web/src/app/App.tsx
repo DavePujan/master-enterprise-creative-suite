@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../features/auth/hooks/useAuth.js';
 import { savePreferences, loadPreferences, resolveIsDark, applyThemeToDocument } from '@web/lib/preferences.js';
 import type { Gem } from '@shared-types/creative.js';
@@ -171,6 +171,45 @@ export function App() {
     ''
   );
 
+  // Memoized Asset Saving to prevent re-instantiating callback references
+  const saveAsset = useCallback(async (asset: any) => {
+    setAssets(prev => [asset, ...prev]);
+    if (user) {
+      try {
+        await saveUserAsset(user.uid, asset.id || `asset-${Date.now()}`, asset.name, asset.data, asset.type || 'image');
+      } catch (e) {
+        console.error("Failed to sync asset to cloud:", e);
+      }
+    }
+  }, [user]);
+
+  const handleSaveAssetForCreative = useCallback(async (name: string, dataUrl: string, type: 'image' | 'doc' | 'video' | 'audio') => {
+    await saveAsset({
+      id: `asset-${Date.now()}`,
+      name,
+      data: dataUrl,
+      type
+    });
+  }, [saveAsset]);
+
+  const handleAddToHistoryForCreative = useCallback(async (res: any, specificGemId?: string, specificPrompt?: string) => {
+    const entry: HistoryItem = {
+      id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      gemId: specificGemId || selectedGem.id,
+      prompt: specificPrompt || '',
+      result: res,
+      timestamp: Date.now()
+    };
+    setHistory(prev => [entry, ...prev].slice(0, 50));
+    if (user) {
+      try {
+        await addUserHistoryItem(user.uid, entry.id, entry);
+      } catch (e) {
+        console.error("Failed to sync history item to cloud:", e);
+      }
+    }
+  }, [selectedGem.id, user]);
+
   // Initialize Creative Execution Hook
   const creativeExecution = useCreativeExecution({
     user,
@@ -180,31 +219,8 @@ export function App() {
     setCredits,
     assets,
     bakeLogoOnGeneration,
-    saveAsset: async (name, dataUrl, type) => {
-      await saveAsset({
-        id: `asset-${Date.now()}`,
-        name,
-        data: dataUrl,
-        type
-      });
-    },
-    addToHistory: async (res, specificGemId, specificPrompt) => {
-      const entry: HistoryItem = {
-        id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        gemId: specificGemId || selectedGem.id,
-        prompt: specificPrompt || creativeExecution.prompt,
-        result: res,
-        timestamp: Date.now()
-      };
-      setHistory(prev => [entry, ...prev].slice(0, 50));
-      if (user) {
-        try {
-          await addUserHistoryItem(user.uid, entry.id, entry);
-        } catch (e) {
-          console.error("Failed to sync history item to cloud:", e);
-        }
-      }
-    }
+    saveAsset: handleSaveAssetForCreative,
+    addToHistory: handleAddToHistoryForCreative
   });
 
   // Theme & Dark Mode Sync with OS media query listener
@@ -352,7 +368,7 @@ export function App() {
         });
       },
       undefined,
-      { scope: 'workspace', intervalMs: 8000 }
+      { scope: 'workspace', intervalMs: 30000 }
     );
 
     // If Admin user, also subscribe to the global operational desk queue
@@ -364,7 +380,7 @@ export function App() {
           setAdminCurationRequests(queue);
         },
         undefined,
-        { scope: 'all', intervalMs: 8000 }
+        { scope: 'all', intervalMs: 30000 }
       );
     }
 
@@ -534,17 +550,6 @@ export function App() {
 
   const handleClearHistory = async () => {
     setHistory([]);
-  };
-
-  const saveAsset = async (asset: any) => {
-    setAssets(prev => [asset, ...prev]);
-    if (user) {
-      try {
-        await saveUserAsset(user.uid, asset.id || `asset-${Date.now()}`, asset.name, asset.data, asset.type || 'image');
-      } catch (e) {
-        console.error("Failed to sync asset to cloud:", e);
-      }
-    }
   };
 
   const handleLogout = async () => {

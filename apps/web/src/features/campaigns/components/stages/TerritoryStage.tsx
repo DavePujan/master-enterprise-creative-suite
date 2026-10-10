@@ -8,12 +8,14 @@ interface TerritoryStageProps {
   onLockTerritory: (territory: StrategicTerritory) => void;
   onGenerateAlternative: (directionPrompt: string) => Promise<void>;
   isGeneratingAlternative?: boolean;
+  isLocking?: boolean;
 }
 
 export const TerritoryStage: React.FC<TerritoryStageProps> = ({
   onLockTerritory,
   onGenerateAlternative,
-  isGeneratingAlternative = false
+  isGeneratingAlternative = false,
+  isLocking = false
 }) => {
   const [state, dispatch] = useCampaignStrategy();
   const { territories } = state;
@@ -95,7 +97,7 @@ export const TerritoryStage: React.FC<TerritoryStageProps> = ({
             <button
               key={p}
               type="button"
-              disabled={isGeneratingAlternative}
+              disabled={isGeneratingAlternative || isLocking}
               onClick={() => onGenerateAlternative(p)}
               className="text-[10px] font-semibold px-2.5 py-1 bg-white dark:bg-slate-950/80 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-400 dark:hover:border-rose-500/60 border border-slate-200 dark:border-slate-800 rounded-md transition-all cursor-pointer disabled:opacity-50"
             >
@@ -110,11 +112,12 @@ export const TerritoryStage: React.FC<TerritoryStageProps> = ({
             value={customDirection}
             onChange={(e) => setCustomDirection(e.target.value)}
             placeholder="Or specify custom direction angle (e.g. emphasize humorous self-deprecation)..."
-            className="flex-1 text-[11px] px-2.5 py-1.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+            disabled={isLocking}
+            className="flex-1 text-[11px] px-2.5 py-1.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-50"
           />
           <button
             type="button"
-            disabled={isGeneratingAlternative || !customDirection.trim()}
+            disabled={isGeneratingAlternative || !customDirection.trim() || isLocking}
             onClick={() => {
               if (customDirection.trim()) {
                 onGenerateAlternative(customDirection.trim());
@@ -188,14 +191,24 @@ export const TerritoryStage: React.FC<TerritoryStageProps> = ({
                 <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800">
                   <button
                     type="button"
+                    disabled={isLocking}
                     onClick={() => {
                       dispatch({ type: 'SELECT_TERRITORY', payload: territory.id });
                       onLockTerritory(territory);
                     }}
-                    className="w-full py-2 bg-slate-900 hover:bg-rose-600 dark:bg-rose-500 dark:hover:bg-rose-600 text-white text-xs font-bold uppercase tracking-wider rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-98"
+                    className="w-full py-2 bg-slate-900 hover:bg-rose-600 dark:bg-rose-500 dark:hover:bg-rose-600 text-white text-xs font-bold uppercase tracking-wider rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Lock Route & Synthesize (5 cr)
-                    <Sparkles size={12} />
+                    {isLocking && isSelected ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        Locking Route & Synthesizing...
+                      </>
+                    ) : (
+                      <>
+                        Lock Route & Synthesize (5 cr)
+                        <Sparkles size={12} />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -234,13 +247,21 @@ export const TerritoryStage: React.FC<TerritoryStageProps> = ({
                   <td className="p-3 text-right">
                     <button
                       type="button"
+                      disabled={isLocking}
                       onClick={() => {
                         dispatch({ type: 'SELECT_TERRITORY', payload: t.id });
                         onLockTerritory(t);
                       }}
-                      className="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded text-[10px] font-bold uppercase cursor-pointer transition-all"
+                      className="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded text-[10px] font-bold uppercase cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                     >
-                      Lock (5 cr)
+                      {isLocking && territories.selectedTerritoryId === t.id ? (
+                        <>
+                          <Loader2 size={10} className="animate-spin" />
+                          Locking...
+                        </>
+                      ) : (
+                        'Lock (5 cr)'
+                      )}
                     </button>
                   </td>
                 </tr>

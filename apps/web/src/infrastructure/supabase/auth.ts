@@ -95,17 +95,63 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return { user: data.user, session: data.session };
 }
 
+/**
+ * Screening blocklist of common or compromised passwords
+ */
+export const COMMON_PASSWORDS_BLACKLIST = new Set([
+  'password', 'password123', 'password1234', '12345678', '123456789', '1234567890',
+  'qwerty123', 'qwertyuiop', 'admin123', 'admin1234', 'letmein123', 'welcome123',
+  'iloveyou', 'sunshine1', 'passphrase', 'changeme', 'writopedia', '11111111', '00000000'
+]);
+
+export function validatePasswordSecurity(password: string): { valid: boolean; error?: string; score: number } {
+  if (!password || password.length < 8) {
+    return { valid: false, error: "Password must be at least 8 characters.", score: 0 };
+  }
+  if (password.length > 128) {
+    return { valid: false, error: "Password exceeds maximum allowed length of 128 characters.", score: 1 };
+  }
+
+  const normalized = password.trim().toLowerCase();
+  if (COMMON_PASSWORDS_BLACKLIST.has(normalized) || /^([a-zA-Z0-9])\1{7,}$/.test(normalized)) {
+    return {
+      valid: false,
+      error: "This password is too common or easily guessed. Please choose a more secure password or passphrase.",
+      score: 1
+    };
+  }
+
+  // Calculate intuitive strength score (1..4) without rigid composition rules
+  let score = 1; // Basic (8+ chars)
+  if (password.length >= 10) score++;
+  if (password.length >= 14 || (/[A-Z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9]/.test(password))) score++;
+  if (password.length >= 16 || (password.includes(' ') && password.length >= 12)) score = 4;
+
+  return { valid: true, score };
+}
+
 export async function signUpWithEmail(
   email: string,
   password: string,
   fullName?: string
 ): Promise<AuthResult> {
+  const cleanEmail = email.trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+    return { error: "Please enter a valid email address." };
+  }
+
+  // 8-character minimum policy with common password screening & long passphrase support
+  const passwordCheck = validatePasswordSecurity(password);
+  if (!passwordCheck.valid) {
+    return { error: passwordCheck.error };
+  }
+
   const supabase = getSupabaseClient();
   if (!supabase) {
     return { error: "Supabase client is not configured." };
   }
 
-  const cleanEmail = email.trim().toLowerCase();
   const emailRedirectTo = getAuthCallbackUrl('signup');
 
   const { data, error } = await supabase.auth.signUp({
@@ -200,6 +246,11 @@ export async function resetPasswordForEmail(email: string): Promise<{ error?: st
 }
 
 export async function updateUserPassword(newPassword: string): Promise<{ error?: string }> {
+  const passwordCheck = validatePasswordSecurity(newPassword);
+  if (!passwordCheck.valid) {
+    return { error: passwordCheck.error };
+  }
+
   const supabase = getSupabaseClient();
   if (!supabase) {
     return { error: "Supabase client is not configured." };

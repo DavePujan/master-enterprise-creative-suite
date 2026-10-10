@@ -2454,8 +2454,253 @@ var init_videoAdProjectRepository = __esm({
   }
 });
 
+// apps/api/src/repositories/historyRepository.ts
+var HistoryRepository, historyRepository;
+var init_historyRepository = __esm({
+  "apps/api/src/repositories/historyRepository.ts"() {
+    init_supabaseClient();
+    HistoryRepository = class {
+      /**
+       * Retrieves history logs for a workspace.
+       */
+      async listHistory(workspaceId, limitCount = 30) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) {
+          throw new Error("Supabase database client is not configured.");
+        }
+        const { data, error } = await supabase.from("history_logs").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(limitCount);
+        if (error) {
+          console.error("HistoryRepository.listHistory error:", error);
+          throw new Error(`Failed to load history logs: ${error.message}`);
+        }
+        return data || [];
+      }
+      /**
+       * Adds an entry to history logs.
+       */
+      async addHistory(params) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) {
+          throw new Error("Supabase database client is not configured.");
+        }
+        const { data, error } = await supabase.from("history_logs").insert({
+          workspace_id: params.workspaceId,
+          user_id: params.userId,
+          job_id: params.jobId || null,
+          gem_id: params.gemId,
+          title: params.title || "Creative Output",
+          prompt: params.prompt,
+          result_summary: params.resultSummary || {}
+        }).select().single();
+        if (error || !data) {
+          console.error("HistoryRepository.addHistory error:", error);
+          throw new Error(`Failed to record history log: ${error?.message}`);
+        }
+        return data;
+      }
+      /**
+       * Deletes a history entry by ID.
+       */
+      async deleteHistory(workspaceId, historyId) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) {
+          throw new Error("Supabase database client is not configured.");
+        }
+        const { error } = await supabase.from("history_logs").delete().eq("id", historyId).eq("workspace_id", workspaceId);
+        if (error) {
+          console.error("HistoryRepository.deleteHistory error:", error);
+          throw new Error(`Failed to delete history log: ${error.message}`);
+        }
+        return true;
+      }
+    };
+    historyRepository = new HistoryRepository();
+  }
+});
+
+// packages/types/tierPolicy.ts
+var PRODUCT_MAX_VIDEO, PRODUCT_MAX_IMAGE, PRODUCT_MAX_AUDIO, PRODUCT_MAX_DOC, SUPABASE_FREE_MAX_FILE, CURRENT_TIER_POLICY;
+var init_tierPolicy = __esm({
+  "packages/types/tierPolicy.ts"() {
+    PRODUCT_MAX_VIDEO = 200 * 1024 * 1024;
+    PRODUCT_MAX_IMAGE = 25 * 1024 * 1024;
+    PRODUCT_MAX_AUDIO = 50 * 1024 * 1024;
+    PRODUCT_MAX_DOC = 10 * 1024 * 1024;
+    SUPABASE_FREE_MAX_FILE = 50 * 1024 * 1024;
+    CURRENT_TIER_POLICY = {
+      productMaxVideoBytes: PRODUCT_MAX_VIDEO,
+      productMaxImageBytes: PRODUCT_MAX_IMAGE,
+      productMaxAudioBytes: PRODUCT_MAX_AUDIO,
+      productMaxDocBytes: PRODUCT_MAX_DOC,
+      providerMaxFileBytes: SUPABASE_FREE_MAX_FILE,
+      providerMaxDbDiskBytes: 500 * 1024 * 1024,
+      // 500 MB DB disk
+      providerMaxStorageBytes: 1 * 1024 * 1024 * 1024,
+      // 1 GB object storage
+      providerMaxEgressBytes: 10 * 1024 * 1024 * 1024,
+      // 10 GB total (5 GB cached + 5 GB uncached)
+      providerMaxConcurrentRealtime: 200,
+      // 200 peak concurrent connections
+      // Effective runtime limit = min(product, provider)
+      effectiveMaxVideoBytes: Math.min(PRODUCT_MAX_VIDEO, SUPABASE_FREE_MAX_FILE),
+      // 50 MB
+      effectiveMaxImageBytes: Math.min(PRODUCT_MAX_IMAGE, SUPABASE_FREE_MAX_FILE),
+      // 25 MB
+      effectiveMaxAudioBytes: Math.min(PRODUCT_MAX_AUDIO, SUPABASE_FREE_MAX_FILE),
+      // 25 MB
+      effectiveMaxDocBytes: Math.min(PRODUCT_MAX_DOC, SUPABASE_FREE_MAX_FILE),
+      // 10 MB
+      maxRealtimeChannelsPerClient: 1,
+      // Conserves 200 concurrent connection budget
+      historyRetentionDays: 90,
+      // Operational protection against DB disk growth
+      quotaEscalation: {
+        warningThresholdPercent: 80,
+        highWarningThresholdPercent: 90,
+        criticalThrottlePercent: 95,
+        emergencyUpgradePercent: 100
+      }
+    };
+  }
+});
+
+// apps/api/src/services/storageService.ts
+import crypto4 from "crypto";
+var StorageService, storageService;
+var init_storageService = __esm({
+  "apps/api/src/services/storageService.ts"() {
+    init_supabaseClient();
+    init_tierPolicy();
+    StorageService = class {
+      constructor() {
+        this.bucketName = "user-assets";
+      }
+      /**
+       * Computes SHA-256 hash from Buffer or string.
+       */
+      computeSha256(data) {
+        return crypto4.createHash("sha256").update(data).digest("hex");
+      }
+      /**
+       * Server-authoritative validation against effective tier limits.
+       */
+      validateUploadSize(type, fileSizeBytes) {
+        let maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxDocBytes;
+        if (type === "video") {
+          maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxVideoBytes;
+        } else if (type === "image") {
+          maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxImageBytes;
+        } else if (type === "audio") {
+          maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxAudioBytes;
+        }
+        if (fileSizeBytes > maxAllowedBytes) {
+          const maxMb = (maxAllowedBytes / (1024 * 1024)).toFixed(0);
+          return {
+            valid: false,
+            maxAllowedBytes,
+            error: `File size exceeds current tier upload limit of ${maxMb} MB.`
+          };
+        }
+        return { valid: true, maxAllowedBytes };
+      }
+      /**
+       * Generates an ephemeral signed URL for private bucket access.
+       */
+      async getSignedUrl(storagePath, expiresIn = 3600) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) return null;
+        const { data, error } = await supabase.storage.from(this.bucketName).createSignedUrl(storagePath, expiresIn);
+        if (error || !data) {
+          console.error("StorageService.getSignedUrl error:", error);
+          return null;
+        }
+        return data.signedUrl;
+      }
+      /**
+       * Generates a signed download URL (alias for getSignedUrl).
+       */
+      async getSignedDownloadUrl(storagePath, expiresIn = 3600) {
+        const url = await this.getSignedUrl(storagePath, expiresIn);
+        if (!url) throw new Error("Failed to generate signed download URL");
+        return url;
+      }
+      /**
+       * Generates ephemeral signed URLs for multiple private bucket assets in a single batch call.
+       */
+      async getSignedUrls(storagePaths, expiresIn = 86400) {
+        const urlMap = /* @__PURE__ */ new Map();
+        if (!storagePaths || storagePaths.length === 0) return urlMap;
+        const supabase = getSupabaseAdmin();
+        if (!supabase) return urlMap;
+        try {
+          const { data, error } = await supabase.storage.from(this.bucketName).createSignedUrls(storagePaths, expiresIn);
+          if (error || !data) {
+            console.error("StorageService.getSignedUrls error:", error);
+            return urlMap;
+          }
+          for (const item of data) {
+            if (item.signedUrl && !item.error) {
+              urlMap.set(item.path, item.signedUrl);
+            }
+          }
+        } catch (e) {
+          console.error("StorageService.getSignedUrls exception:", e);
+        }
+        return urlMap;
+      }
+      /**
+       * Creates a signed upload URL for direct browser uploads.
+       */
+      async createSignedUploadUrl(storagePath, expiresIn = 3600) {
+        const supabase = getSupabaseAdmin();
+        if (!supabase) throw new Error("Supabase storage client not configured");
+        const { data, error } = await supabase.storage.from(this.bucketName).createSignedUploadUrl(storagePath);
+        if (error || !data) {
+          throw error || new Error("Failed to generate signed upload URL");
+        }
+        return { signedUrl: data.signedUrl, token: data.token };
+      }
+      /**
+       * Uploads binary buffer directly to private storage bucket.
+       */
+      async uploadFile(params) {
+        const supabase = getSupabaseAdmin();
+        const sha256 = this.computeSha256(params.fileBuffer);
+        if (!supabase) {
+          return { storagePath: params.path, sha256 };
+        }
+        const fullPath = `${params.workspaceId}/${params.path}`;
+        const { error } = await supabase.storage.from(this.bucketName).upload(fullPath, params.fileBuffer, {
+          contentType: params.contentType,
+          upsert: true
+        });
+        if (error) {
+          console.error("StorageService.uploadFile error:", error);
+          return null;
+        }
+        return { storagePath: fullPath, sha256 };
+      }
+    };
+    storageService = new StorageService();
+  }
+});
+
 // packages/types/imageGeneration.ts
-var IMAGE_MODEL_DEFINITIONS, DEFAULT_IMAGE_MODEL_KEY;
+function resolveCanonicalEngine(input) {
+  if (!input) return ENGINE_REGISTRY.quality;
+  const normalized = input.trim().toLowerCase();
+  if (normalized === "fast" || normalized.includes("schnell")) {
+    return ENGINE_REGISTRY.fast;
+  }
+  if (normalized === "premium" || normalized.includes("gpt-image-2") || normalized === "fal-studio") {
+    return ENGINE_REGISTRY.premium;
+  }
+  if (normalized === "quality" || normalized.includes("dev") || normalized.includes("pro") || normalized === "default") {
+    return ENGINE_REGISTRY.quality;
+  }
+  return ENGINE_REGISTRY.quality;
+}
+var IMAGE_MODEL_DEFINITIONS, DEFAULT_IMAGE_MODEL_KEY, ENGINE_REGISTRY, ECOMMERCE_BUNDLE_ROLES;
 var init_imageGeneration = __esm({
   "packages/types/imageGeneration.ts"() {
     IMAGE_MODEL_DEFINITIONS = [
@@ -2503,11 +2748,12 @@ var init_imageGeneration = __esm({
             implementation: "unsupported"
           },
           productReference: {
-            status: "prompt",
-            badgeLabel: "Prompt Guided",
-            source: "prompt-only",
-            reason: "Product attributes and materials are guided through structured prompt engineering",
-            implementation: "prompt-context"
+            status: "reference",
+            badgeLabel: "Reference Input",
+            source: "provider-api",
+            parameter: "image_urls",
+            reason: "Supported via Fal GPT Image 2 edit endpoint (openai/gpt-image-2/edit) with reference image_urls",
+            implementation: "provider-image-urls"
           },
           ingredients: {
             status: "prompt",
@@ -2525,20 +2771,21 @@ var init_imageGeneration = __esm({
           },
           generation: {
             textToImage: true,
-            imageToImage: false,
-            editing: false
+            imageToImage: true,
+            editing: true
           },
           references: {
-            supported: false,
-            mechanism: "none"
+            supported: true,
+            maxImages: 3,
+            mechanism: "image_urls"
           },
           // Backward-compatible accessors
           aspectRatios: ["1:1", "16:9", "9:16", "4:3"],
-          supportsReferenceImages: false,
-          supportsImageEditing: false,
+          supportsReferenceImages: true,
+          supportsImageEditing: true,
           supportsLogoOverlay: true,
           supportsFaceReference: "unsupported",
-          supportsProductReference: "inspirational",
+          supportsProductReference: "supported",
           supportsIngredientsInput: "supported",
           supportedResolutions: ["1024x1024", "1536x1024", "1024x1536", "2048x1152"]
         }
@@ -2592,6 +2839,90 @@ var init_imageGeneration = __esm({
             source: "unsupported",
             reason: "FLUX Schnell text-to-image endpoint has no reference image input for product preservation",
             implementation: "unsupported"
+          },
+          ingredients: {
+            status: "prompt",
+            badgeLabel: "Prompt Guided",
+            source: "prompt-only",
+            reason: "Ingredients described in text prompt; no native structured ingredient schema exists",
+            implementation: "prompt-context"
+          },
+          style: {
+            status: "prompt",
+            badgeLabel: "Prompt Guided",
+            source: "prompt-only",
+            reason: "Prompt controls visual treatment, atmosphere, and lighting",
+            implementation: "prompt-context"
+          },
+          generation: {
+            textToImage: true,
+            imageToImage: false,
+            editing: false
+          },
+          references: {
+            supported: false,
+            mechanism: "none"
+          },
+          // Backward-compatible accessors
+          aspectRatios: ["1:1", "16:9", "9:16", "4:3"],
+          supportsReferenceImages: false,
+          supportsImageEditing: false,
+          supportsLogoOverlay: true,
+          supportsFaceReference: "unsupported",
+          supportsProductReference: "unsupported",
+          supportsIngredientsInput: "supported",
+          supportedResolutions: ["square_hd", "landscape_16_9", "portrait_16_9", "landscape_4_3"]
+        }
+      },
+      {
+        key: "flux-dev",
+        provider: "fal",
+        modelId: "fal-ai/flux/dev",
+        label: "Fal FLUX Dev",
+        description: "High-detail commercial advertising rendering",
+        quality: "premium",
+        credits: 3,
+        humanTouch: 30,
+        status: "enabled",
+        capabilities: {
+          aspectRatio: {
+            status: "native",
+            badgeLabel: "Provider Native",
+            source: "provider-api",
+            parameter: "image_size",
+            values: ["1:1", "16:9", "9:16", "4:3"],
+            reason: "Provider exposes image_size presets (square_hd, landscape_16_9, portrait_16_9, landscape_4_3)",
+            implementation: "provider-image-size"
+          },
+          resolution: {
+            status: "native",
+            badgeLabel: "Provider Native",
+            source: "provider-api",
+            parameter: "image_size",
+            values: ["square_hd", "landscape_16_9", "portrait_16_9", "landscape_4_3"],
+            reason: "Fixed high-definition presets governed by image_size parameter",
+            implementation: "provider-image-size"
+          },
+          logoOverlay: {
+            status: "application",
+            badgeLabel: "Application Layer",
+            source: "application",
+            reason: "Real vector/PNG logo is deterministically composited onto generated clean background by application layer",
+            implementation: "canvas-deterministic-layer"
+          },
+          faceReference: {
+            status: "unsupported",
+            badgeLabel: "Unavailable",
+            source: "unsupported",
+            reason: "FLUX Dev text-to-image endpoint does not expose facial identity conditioning parameters",
+            implementation: "unsupported"
+          },
+          productReference: {
+            status: "prompt",
+            badgeLabel: "Prompt Guided",
+            source: "prompt-only",
+            reason: "Guided via descriptive prompt engineering; endpoint does not take image_urls",
+            implementation: "prompt-context"
           },
           ingredients: {
             status: "prompt",
@@ -2881,6 +3212,78 @@ var init_imageGeneration = __esm({
       }
     ];
     DEFAULT_IMAGE_MODEL_KEY = "fal-studio";
+    ENGINE_REGISTRY = {
+      fast: {
+        engine: "fast",
+        modelKey: "flux-schnell",
+        provider: "fal",
+        modelId: "fal-ai/flux/schnell",
+        label: "Fast",
+        description: "Ultra-fast photorealistic preview composition",
+        creditsPerAsset: 2,
+        supportsImageEdit: false,
+        maxReferenceImages: 0
+      },
+      quality: {
+        engine: "quality",
+        modelKey: "flux-dev",
+        provider: "fal",
+        modelId: "fal-ai/flux/dev",
+        label: "Quality",
+        description: "High-detail commercial advertising rendering",
+        creditsPerAsset: 3,
+        supportsImageEdit: false,
+        maxReferenceImages: 0
+      },
+      premium: {
+        engine: "premium",
+        modelKey: "fal-studio",
+        provider: "fal",
+        modelId: "openai/gpt-image-2",
+        label: "Premium",
+        description: "Commercial grade high-fidelity visual engine with reference editing",
+        creditsPerAsset: 4,
+        supportsImageEdit: true,
+        maxReferenceImages: 3
+      }
+    };
+    ECOMMERCE_BUNDLE_ROLES = [
+      {
+        role: "Hero",
+        title: "Hero Banner",
+        description: "Grand overarching banner displaying the key branding product, epic cinematic lighting",
+        aspectRatio: "16:9",
+        sizeDirective: "16:9"
+      },
+      {
+        role: "Closeup",
+        title: "Macro Closeup",
+        description: "Macro-focus shot highlighting rich product textures, delicate organic details, or glossy material finish",
+        aspectRatio: "1:1",
+        sizeDirective: "1:1"
+      },
+      {
+        role: "Lifestyle",
+        title: "Lifestyle Context",
+        description: "Lifestyle/ambient scene featuring the product active in a real contemporary scenario with target demographic",
+        aspectRatio: "3:4",
+        sizeDirective: "3:4"
+      },
+      {
+        role: "Offer",
+        title: "Offer / Deal Slate",
+        description: "Commercial backdrop with ample breathing room for promotional text and digital discount tags",
+        aspectRatio: "1:1",
+        sizeDirective: "1:1"
+      },
+      {
+        role: "Alternate",
+        title: "Alternate Mood",
+        description: "Creative stylistic or alternative color-mood variation sharing the unified brand aesthetic palette",
+        aspectRatio: "1:1",
+        sizeDirective: "1:1"
+      }
+    ];
   }
 });
 
@@ -3072,12 +3475,41 @@ var init_openaiGptImage2Builder = __esm({
             size = "1024x1024";
             break;
         }
-        return {
-          prompt: request.prompt,
+        const refUrls = [];
+        if (request.referenceImages && Array.isArray(request.referenceImages)) {
+          for (const url of request.referenceImages) {
+            if (url && typeof url === "string" && !refUrls.includes(url)) {
+              refUrls.push(url);
+            }
+          }
+        }
+        if (request.references && Array.isArray(request.references)) {
+          for (const ref of request.references) {
+            if (ref.source.kind === "url" && ref.source.url && !refUrls.includes(ref.source.url)) {
+              refUrls.push(ref.source.url);
+            }
+          }
+        }
+        let promptText = request.prompt;
+        if (refUrls.length > 0) {
+          const preserveDirective = "Use the uploaded product reference exactly. Preserve: - packaging - logo - proportions - label - colors.";
+          if (!promptText.includes("Preserve:")) {
+            promptText = `${preserveDirective}
+
+${promptText}`;
+          }
+        }
+        const payload = {
+          prompt: promptText,
           size,
           quality: request.quality === "premium" ? "high" : "medium",
           num_images: 1
         };
+        if (refUrls.length > 0) {
+          payload.image_urls = refUrls.slice(0, 3);
+          payload.image_url = refUrls[0];
+        }
+        return payload;
       }
     };
     openAIGptImage2Builder = new OpenAIGptImage2Builder();
@@ -3185,8 +3617,15 @@ var init_falImageProvider = __esm({
         const falKey = this.resolveApiKey();
         const startTime = Date.now();
         const payload = this.buildModelPayload(request, model);
-        const falEndpoint = `https://queue.fal.run/${model.modelId}`;
-        console.log(`[FalImageProvider] Submitting to ${falEndpoint} with payload keys:`, Object.keys(payload));
+        const hasRefs = Boolean(
+          payload.image_urls && payload.image_urls.length > 0
+        );
+        const targetModelId = model.modelId === "openai/gpt-image-2" && hasRefs ? "openai/gpt-image-2/edit" : model.modelId;
+        const falEndpoint = `https://queue.fal.run/${targetModelId}`;
+        console.log(
+          `[FalImageProvider] Submitting to ${falEndpoint} (operation: ${hasRefs ? "reference_edit" : "text_to_image"}) with payload keys:`,
+          Object.keys(payload)
+        );
         const submitRes = await fetch(falEndpoint, {
           method: "POST",
           headers: {
@@ -3328,173 +3767,6 @@ var init_googleImageProvider = __esm({
   }
 });
 
-// packages/types/tierPolicy.ts
-var PRODUCT_MAX_VIDEO, PRODUCT_MAX_IMAGE, PRODUCT_MAX_AUDIO, PRODUCT_MAX_DOC, SUPABASE_FREE_MAX_FILE, CURRENT_TIER_POLICY;
-var init_tierPolicy = __esm({
-  "packages/types/tierPolicy.ts"() {
-    PRODUCT_MAX_VIDEO = 200 * 1024 * 1024;
-    PRODUCT_MAX_IMAGE = 25 * 1024 * 1024;
-    PRODUCT_MAX_AUDIO = 50 * 1024 * 1024;
-    PRODUCT_MAX_DOC = 10 * 1024 * 1024;
-    SUPABASE_FREE_MAX_FILE = 50 * 1024 * 1024;
-    CURRENT_TIER_POLICY = {
-      productMaxVideoBytes: PRODUCT_MAX_VIDEO,
-      productMaxImageBytes: PRODUCT_MAX_IMAGE,
-      productMaxAudioBytes: PRODUCT_MAX_AUDIO,
-      productMaxDocBytes: PRODUCT_MAX_DOC,
-      providerMaxFileBytes: SUPABASE_FREE_MAX_FILE,
-      providerMaxDbDiskBytes: 500 * 1024 * 1024,
-      // 500 MB DB disk
-      providerMaxStorageBytes: 1 * 1024 * 1024 * 1024,
-      // 1 GB object storage
-      providerMaxEgressBytes: 10 * 1024 * 1024 * 1024,
-      // 10 GB total (5 GB cached + 5 GB uncached)
-      providerMaxConcurrentRealtime: 200,
-      // 200 peak concurrent connections
-      // Effective runtime limit = min(product, provider)
-      effectiveMaxVideoBytes: Math.min(PRODUCT_MAX_VIDEO, SUPABASE_FREE_MAX_FILE),
-      // 50 MB
-      effectiveMaxImageBytes: Math.min(PRODUCT_MAX_IMAGE, SUPABASE_FREE_MAX_FILE),
-      // 25 MB
-      effectiveMaxAudioBytes: Math.min(PRODUCT_MAX_AUDIO, SUPABASE_FREE_MAX_FILE),
-      // 25 MB
-      effectiveMaxDocBytes: Math.min(PRODUCT_MAX_DOC, SUPABASE_FREE_MAX_FILE),
-      // 10 MB
-      maxRealtimeChannelsPerClient: 1,
-      // Conserves 200 concurrent connection budget
-      historyRetentionDays: 90,
-      // Operational protection against DB disk growth
-      quotaEscalation: {
-        warningThresholdPercent: 80,
-        highWarningThresholdPercent: 90,
-        criticalThrottlePercent: 95,
-        emergencyUpgradePercent: 100
-      }
-    };
-  }
-});
-
-// apps/api/src/services/storageService.ts
-import crypto4 from "crypto";
-var StorageService, storageService;
-var init_storageService = __esm({
-  "apps/api/src/services/storageService.ts"() {
-    init_supabaseClient();
-    init_tierPolicy();
-    StorageService = class {
-      constructor() {
-        this.bucketName = "user-assets";
-      }
-      /**
-       * Computes SHA-256 hash from Buffer or string.
-       */
-      computeSha256(data) {
-        return crypto4.createHash("sha256").update(data).digest("hex");
-      }
-      /**
-       * Server-authoritative validation against effective tier limits.
-       */
-      validateUploadSize(type, fileSizeBytes) {
-        let maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxDocBytes;
-        if (type === "video") {
-          maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxVideoBytes;
-        } else if (type === "image") {
-          maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxImageBytes;
-        } else if (type === "audio") {
-          maxAllowedBytes = CURRENT_TIER_POLICY.effectiveMaxAudioBytes;
-        }
-        if (fileSizeBytes > maxAllowedBytes) {
-          const maxMb = (maxAllowedBytes / (1024 * 1024)).toFixed(0);
-          return {
-            valid: false,
-            maxAllowedBytes,
-            error: `File size exceeds current tier upload limit of ${maxMb} MB.`
-          };
-        }
-        return { valid: true, maxAllowedBytes };
-      }
-      /**
-       * Generates an ephemeral signed URL for private bucket access.
-       */
-      async getSignedUrl(storagePath, expiresIn = 3600) {
-        const supabase = getSupabaseAdmin();
-        if (!supabase) return null;
-        const { data, error } = await supabase.storage.from(this.bucketName).createSignedUrl(storagePath, expiresIn);
-        if (error || !data) {
-          console.error("StorageService.getSignedUrl error:", error);
-          return null;
-        }
-        return data.signedUrl;
-      }
-      /**
-       * Generates a signed download URL (alias for getSignedUrl).
-       */
-      async getSignedDownloadUrl(storagePath, expiresIn = 3600) {
-        const url = await this.getSignedUrl(storagePath, expiresIn);
-        if (!url) throw new Error("Failed to generate signed download URL");
-        return url;
-      }
-      /**
-       * Generates ephemeral signed URLs for multiple private bucket assets in a single batch call.
-       */
-      async getSignedUrls(storagePaths, expiresIn = 86400) {
-        const urlMap = /* @__PURE__ */ new Map();
-        if (!storagePaths || storagePaths.length === 0) return urlMap;
-        const supabase = getSupabaseAdmin();
-        if (!supabase) return urlMap;
-        try {
-          const { data, error } = await supabase.storage.from(this.bucketName).createSignedUrls(storagePaths, expiresIn);
-          if (error || !data) {
-            console.error("StorageService.getSignedUrls error:", error);
-            return urlMap;
-          }
-          for (const item of data) {
-            if (item.signedUrl && !item.error) {
-              urlMap.set(item.path, item.signedUrl);
-            }
-          }
-        } catch (e) {
-          console.error("StorageService.getSignedUrls exception:", e);
-        }
-        return urlMap;
-      }
-      /**
-       * Creates a signed upload URL for direct browser uploads.
-       */
-      async createSignedUploadUrl(storagePath, expiresIn = 3600) {
-        const supabase = getSupabaseAdmin();
-        if (!supabase) throw new Error("Supabase storage client not configured");
-        const { data, error } = await supabase.storage.from(this.bucketName).createSignedUploadUrl(storagePath);
-        if (error || !data) {
-          throw error || new Error("Failed to generate signed upload URL");
-        }
-        return { signedUrl: data.signedUrl, token: data.token };
-      }
-      /**
-       * Uploads binary buffer directly to private storage bucket.
-       */
-      async uploadFile(params) {
-        const supabase = getSupabaseAdmin();
-        const sha256 = this.computeSha256(params.fileBuffer);
-        if (!supabase) {
-          return { storagePath: params.path, sha256 };
-        }
-        const fullPath = `${params.workspaceId}/${params.path}`;
-        const { error } = await supabase.storage.from(this.bucketName).upload(fullPath, params.fileBuffer, {
-          contentType: params.contentType,
-          upsert: true
-        });
-        if (error) {
-          console.error("StorageService.uploadFile error:", error);
-          return null;
-        }
-        return { storagePath: fullPath, sha256 };
-      }
-    };
-    storageService = new StorageService();
-  }
-});
-
 // apps/api/src/repositories/assetRepository.ts
 var AssetRepository, assetRepository;
 var init_assetRepository = __esm({
@@ -3618,33 +3890,6 @@ var init_assetRepository = __esm({
           updatedAt: data.updated_at
         };
       }
-      async findById(id, workspaceId) {
-        const supabase = getSupabaseAdmin();
-        if (!supabase) return null;
-        let query = supabase.from("assets").select("*").eq("id", id);
-        if (workspaceId) {
-          query = query.eq("workspace_id", workspaceId);
-        }
-        const { data, error } = await query.maybeSingle();
-        if (error || !data) return null;
-        return {
-          id: data.id,
-          workspaceId: data.workspace_id,
-          uploadedBy: data.uploaded_by,
-          name: data.name,
-          storageBucket: data.storage_bucket,
-          storagePath: data.storage_path,
-          storageGeneration: data.storage_generation,
-          type: data.type,
-          prompt: data.prompt,
-          analysis: data.analysis,
-          fileSizeBytes: data.file_size_bytes,
-          mimeType: data.mime_type,
-          sha256: data.sha256,
-          createdAt: data.created_at,
-          updatedAt: data.updated_at
-        };
-      }
       async delete(id, workspaceId) {
         const supabase = getSupabaseAdmin();
         if (!supabase) return false;
@@ -3657,70 +3902,6 @@ var init_assetRepository = __esm({
       }
     };
     assetRepository = new AssetRepository();
-  }
-});
-
-// apps/api/src/repositories/historyRepository.ts
-var HistoryRepository, historyRepository;
-var init_historyRepository = __esm({
-  "apps/api/src/repositories/historyRepository.ts"() {
-    init_supabaseClient();
-    HistoryRepository = class {
-      /**
-       * Retrieves history logs for a workspace.
-       */
-      async listHistory(workspaceId, limitCount = 30) {
-        const supabase = getSupabaseAdmin();
-        if (!supabase) {
-          throw new Error("Supabase database client is not configured.");
-        }
-        const { data, error } = await supabase.from("history_logs").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(limitCount);
-        if (error) {
-          console.error("HistoryRepository.listHistory error:", error);
-          throw new Error(`Failed to load history logs: ${error.message}`);
-        }
-        return data || [];
-      }
-      /**
-       * Adds an entry to history logs.
-       */
-      async addHistory(params) {
-        const supabase = getSupabaseAdmin();
-        if (!supabase) {
-          throw new Error("Supabase database client is not configured.");
-        }
-        const { data, error } = await supabase.from("history_logs").insert({
-          workspace_id: params.workspaceId,
-          user_id: params.userId,
-          job_id: params.jobId || null,
-          gem_id: params.gemId,
-          title: params.title || "Creative Output",
-          prompt: params.prompt,
-          result_summary: params.resultSummary || {}
-        }).select().single();
-        if (error || !data) {
-          console.error("HistoryRepository.addHistory error:", error);
-          throw new Error(`Failed to record history log: ${error?.message}`);
-        }
-        return data;
-      }
-      /**
-       * Deletes a history entry by ID.
-       */
-      async deleteHistory(workspaceId, historyId) {
-        const supabase = getSupabaseAdmin();
-        if (!supabase) {
-          throw new Error("Supabase database client is not configured.");
-        }
-        const { error } = await supabase.from("history_logs").delete().eq("id", historyId).eq("workspace_id", workspaceId);
-        if (error) {
-          console.error("HistoryRepository.deleteHistory error:", error);
-          throw new Error(`Failed to delete history log: ${error.message}`);
-        }
-        return true;
-      }
-    };
-    historyRepository = new HistoryRepository();
   }
 });
 
@@ -4625,10 +4806,30 @@ init_aiJobRepository();
 // apps/api/src/repositories/workspaceRepository.ts
 init_supabaseClient();
 var WorkspaceRepository = class {
+  constructor() {
+    this.primaryWorkspaceCache = /* @__PURE__ */ new Map();
+    this.CACHE_TTL_MS = 5 * 60 * 1e3;
+  }
+  // 5 minutes TTL
+  /**
+   * Clears cached workspace record for a user or all users.
+   */
+  invalidateCache(userId) {
+    if (userId) {
+      this.primaryWorkspaceCache.delete(userId);
+    } else {
+      this.primaryWorkspaceCache.clear();
+    }
+  }
   /**
    * Retrieves the primary or personal workspace for a user.
    */
   async getPrimaryWorkspaceForUser(userId) {
+    const now = Date.now();
+    const cached = this.primaryWorkspaceCache.get(userId);
+    if (cached && cached.expiresAt > now) {
+      return cached.record;
+    }
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       return null;
@@ -4637,7 +4838,7 @@ var WorkspaceRepository = class {
     if (memError || !membership) {
       const { data: ownedWs } = await supabase.from("workspaces").select("*").eq("owner_id", userId).limit(1).single();
       if (ownedWs) {
-        return {
+        const record2 = {
           id: ownedWs.id,
           name: ownedWs.name,
           ownerId: ownedWs.owner_id,
@@ -4646,11 +4847,13 @@ var WorkspaceRepository = class {
           createdAt: ownedWs.created_at,
           updatedAt: ownedWs.updated_at
         };
+        this.primaryWorkspaceCache.set(userId, { record: record2, expiresAt: now + this.CACHE_TTL_MS });
+        return record2;
       }
       return null;
     }
     const ws = membership.workspaces;
-    return {
+    const record = {
       id: ws.id,
       name: ws.name,
       ownerId: ws.owner_id,
@@ -4659,6 +4862,8 @@ var WorkspaceRepository = class {
       createdAt: ws.created_at,
       updatedAt: ws.updated_at
     };
+    this.primaryWorkspaceCache.set(userId, { record, expiresAt: now + this.CACHE_TTL_MS });
+    return record;
   }
   /**
    * Ensures a personal workspace exists for a user and returns its ID.
@@ -4706,6 +4911,7 @@ var WorkspaceRepository = class {
       description: "Welcome signup grant of 50 credits",
       metadata: { initial_grant: true, is_personal: true }
     });
+    this.primaryWorkspaceCache.delete(userId);
     return ws.id;
   }
   /**
@@ -4927,7 +5133,7 @@ aiRouter.post("/tts", async (req, res) => {
 // apps/api/src/modules/campaigns/campaignRoutes.ts
 init_serverGeminiClient();
 import { Router as Router2 } from "express";
-import { Type } from "@google/genai";
+import { Type as Type2 } from "@google/genai";
 
 // apps/api/src/infrastructure/fal/falClient.ts
 init_env();
@@ -6081,8 +6287,34 @@ var CampaignDiscoveryEngine = class {
       {
         id: "competitive",
         label: "Competitive White Space Context",
-        status: semanticResults.competitive?.isNegated ? "missing" : controls?.competitorContext?.competitors || semanticResults.competitive?.status === "strong" ? "strong" : controls?.competitorKnowledgeSource === "live_web" || controls?.competitorKnowledgeSource === "imported_from_workspace" ? "strong" : controls?.competitorKnowledgeSource === "no_research_supplied" || semanticResults.competitive?.status === "partial" ? "partial" : "missing",
-        detail: controls?.competitorKnowledgeSource === "live_web" ? "Live web research active: Grounding search queries and source citations enabled." : semanticResults.competitive?.extractedValue || (controls?.competitorContext?.competitors ? `Competing against: ${controls.competitorContext.competitors}` : controls?.competitorKnowledgeSource === "imported_from_workspace" ? `Grounded in workspace brand guidelines and category positioning for ${brandName}.` : controls?.competitorKnowledgeSource === "no_research_supplied" ? "No client research supplied; strategist will model category baselines." : "Key competitor patterns undefined."),
+        status: (() => {
+          if (semanticResults.competitive?.isNegated) return "missing";
+          const sources = controls?.competitorKnowledgeSources && controls.competitorKnowledgeSources.length > 0 ? controls.competitorKnowledgeSources : [controls?.competitorKnowledgeSource || "no_research_supplied"];
+          if (sources.includes("live_web") || sources.includes("imported_from_workspace") || sources.includes("provided_by_client") && controls?.competitorContext?.competitors || semanticResults.competitive?.status === "strong") {
+            return "strong";
+          }
+          if (sources.includes("no_research_supplied") || semanticResults.competitive?.status === "partial") {
+            return "partial";
+          }
+          return "missing";
+        })(),
+        detail: (() => {
+          const sources = controls?.competitorKnowledgeSources && controls.competitorKnowledgeSources.length > 0 ? controls.competitorKnowledgeSources : [controls?.competitorKnowledgeSource || "no_research_supplied"];
+          const parts = [];
+          if (sources.includes("live_web")) {
+            parts.push("Live web research active: Grounding search queries and source citations enabled.");
+          }
+          if (sources.includes("provided_by_client") && controls?.competitorContext?.competitors) {
+            parts.push(`Competing against: ${controls.competitorContext.competitors}`);
+          }
+          if (sources.includes("imported_from_workspace")) {
+            parts.push(`Grounded in workspace brand guidelines and category positioning for ${brandName}.`);
+          }
+          if (parts.length > 0) return parts.join(" \u2022 ");
+          if (semanticResults.competitive?.extractedValue) return semanticResults.competitive.extractedValue;
+          if (sources.includes("no_research_supplied")) return "No client research supplied; strategist will model category baselines.";
+          return "Key competitor patterns undefined.";
+        })(),
         quickFixPrompt: "What are competitors constantly over-promising or repeating that customers are tired of hearing?"
       },
       // 5. Behavioral Barrier & Tension
@@ -7838,9 +8070,16 @@ CAMPAIGN BRIEF & CONTROLS:
 - Geographic Scale: ${controls?.geographicScale || "National"}
 - Available Proof: ${controls?.proofAvailability?.map((p) => p.type).join(", ") || "None specified"}
 - Must Include (MANDATORY): ${controls?.mandatoryInclusions?.join(", ") || "None"}
-- Must Avoid (STRICTLY FORBIDDEN): ${controls?.forbiddenTerritories?.join(", ") || "None"}
-- Competitor Knowledge Source: ${controls?.competitorKnowledgeSource || "no_research_supplied"}
-- Competitor Context: ${controls?.competitorKnowledgeSource === "imported_from_workspace" ? `Workspace brand guidelines & stored assets for ${brandName}` : controls?.competitorContext?.competitors || "Standard category players"}
+- Competitor Knowledge Sources: ${(controls?.competitorKnowledgeSources || [controls?.competitorKnowledgeSource || "no_research_supplied"]).join(", ")}
+- Competitor Context: ${(() => {
+      const sources = controls?.competitorKnowledgeSources || [controls?.competitorKnowledgeSource || "no_research_supplied"];
+      const parts = [];
+      if (sources.includes("live_web")) parts.push("Live Google Search Grounding active");
+      if (sources.includes("provided_by_client") && controls?.competitorContext?.competitors) parts.push(`Client Competitors: ${controls.competitorContext.competitors}`);
+      if (sources.includes("imported_from_workspace")) parts.push(`Workspace brand guidelines & stored assets for ${brandName}`);
+      if (controls?.competitorContext?.overusedPatterns) parts.push(`Category Clich\xE9s to Avoid: ${controls.competitorContext.overusedPatterns}`);
+      return parts.length > 0 ? parts.join(" | ") : "Standard category baselines";
+    })()}
 
 APPROVED STRATEGIC ROUTE (TERRITORY):
 - Title: ${selectedTerritory.title}
@@ -8096,6 +8335,7 @@ var CampaignRepository = class {
    */
   async createStrategy(params) {
     const supabase = getSupabaseAdmin();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
     if (!supabase) {
       const id = `mem-strat-${Date.now()}`;
       this.memoryStrategies.set(id, {
@@ -8105,7 +8345,8 @@ var CampaignRepository = class {
         title: params.title,
         framework_id: params.frameworkId,
         status: "active",
-        created_at: (/* @__PURE__ */ new Date()).toISOString()
+        created_at: now,
+        updated_at: now
       });
       return { id };
     }
@@ -8122,8 +8363,12 @@ var CampaignRepository = class {
       this.memoryStrategies.set(id, {
         id,
         workspace_id: params.workspaceId,
+        user_id: params.userId,
         title: params.title,
-        framework_id: params.frameworkId
+        framework_id: params.frameworkId,
+        status: "active",
+        created_at: now,
+        updated_at: now
       });
       return { id };
     }
@@ -8134,15 +8379,22 @@ var CampaignRepository = class {
    */
   async saveVersion(params) {
     const supabase = getSupabaseAdmin();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
     if (!supabase) {
       const versionId = `mem-ver-${Date.now()}`;
       const existing = this.memoryVersions.get(params.campaignStrategyId) || [];
       existing.push({
         id: versionId,
         ...params,
-        created_at: (/* @__PURE__ */ new Date()).toISOString()
+        selected_territory: params.selectedTerritory,
+        created_at: now
       });
       this.memoryVersions.set(params.campaignStrategyId, existing);
+      const root = this.memoryStrategies.get(params.campaignStrategyId);
+      if (root) {
+        root.updated_at = now;
+        root.current_version_id = versionId;
+      }
       return { versionId };
     }
     const { data, error } = await supabase.from("campaign_strategy_versions").insert({
@@ -8158,9 +8410,22 @@ var CampaignRepository = class {
     if (error) {
       console.warn("CampaignRepository.saveVersion DB insert failed, falling back to memory store:", error.message);
       const versionId = `mem-ver-${Date.now()}`;
+      const existing = this.memoryVersions.get(params.campaignStrategyId) || [];
+      existing.push({
+        id: versionId,
+        ...params,
+        selected_territory: params.selectedTerritory,
+        created_at: now
+      });
+      this.memoryVersions.set(params.campaignStrategyId, existing);
+      const root = this.memoryStrategies.get(params.campaignStrategyId);
+      if (root) {
+        root.updated_at = now;
+        root.current_version_id = versionId;
+      }
       return { versionId };
     }
-    await supabase.from("campaign_strategies").update({ current_version_id: data.id, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", params.campaignStrategyId);
+    await supabase.from("campaign_strategies").update({ current_version_id: data.id, updated_at: now }).eq("id", params.campaignStrategyId);
     return { versionId: data.id };
   }
   /**
@@ -8237,40 +8502,208 @@ var CampaignRepository = class {
    * Loads a strategy by ID with its current version.
    */
   async getStrategyById(strategyId, workspaceId) {
+    const normalizeStrategy = (row) => {
+      if (!row) return null;
+      const vers = (row.campaign_strategy_versions || row.versions || []).map((v) => ({
+        ...v,
+        selected_territory: v.selected_territory || v.selectedTerritory,
+        selectedTerritory: v.selected_territory || v.selectedTerritory,
+        master_strategy: v.master_strategy || v.masterStrategy,
+        masterStrategy: v.master_strategy || v.masterStrategy,
+        downstream_briefs: v.downstream_briefs || v.downstreamBriefs,
+        downstreamBriefs: v.downstream_briefs || v.downstreamBriefs
+      }));
+      return {
+        ...row,
+        campaign_strategy_versions: vers,
+        versions: vers
+      };
+    };
     const supabase = getSupabaseAdmin();
-    if (!supabase) {
-      const strat = this.memoryStrategies.get(strategyId);
-      const vers = this.memoryVersions.get(strategyId) || [];
-      return strat ? { ...strat, versions: vers } : null;
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from("campaign_strategies").select(`
+            *,
+            campaign_strategy_versions!campaign_strategy_versions_campaign_strategy_id_fkey(*)
+          `).eq("id", strategyId).single();
+        if (data && !error) {
+          return normalizeStrategy(data);
+        }
+      } catch (err) {
+      }
     }
-    const { data, error } = await supabase.from("campaign_strategies").select(`
-        *,
-        campaign_strategy_versions(*)
-      `).eq("id", strategyId).eq("workspace_id", workspaceId).single();
-    if (error) return null;
-    return data;
+    const strat = this.memoryStrategies.get(strategyId);
+    if (strat) {
+      const vers = this.memoryVersions.get(strategyId) || [];
+      return normalizeStrategy({ ...strat, versions: vers });
+    }
+    return null;
   }
   /**
-   * Lists active strategies for a workspace.
+   * Lists active strategies for a workspace, enriched with version numbers, stage progress (out of 5), and territory details.
    */
-  async listWorkspaceStrategies(workspaceId, limit = 20) {
+  async listWorkspaceStrategies(workspaceId, limit = 50) {
+    const mapRow = (s) => {
+      const vers = s.campaign_strategy_versions || s.versions || [];
+      const latestVer = vers.length > 0 ? [...vers].sort((a, b) => (b.version_number || 0) - (a.version_number || 0))[0] : null;
+      const territory = latestVer?.selected_territory || latestVer?.selectedTerritory;
+      const territoryName = territory?.name || territory?.title || territory?.angle || null;
+      const territoryPremise = territory?.premise || territory?.description || null;
+      const hasDownstream = Boolean(
+        latestVer?.downstream_briefs?.canonicalAdSpec || latestVer?.downstreamBriefs?.canonicalAdSpec || latestVer?.downstream_briefs?.channelBriefs?.length || latestVer?.downstreamBriefs?.channelBriefs?.length
+      );
+      const hasMaster = Boolean(latestVer?.master_strategy || latestVer?.masterStrategy);
+      const stageNumber = hasDownstream ? 5 : hasMaster ? 4 : territory ? 3 : 1;
+      const stageLabel = stageNumber === 5 ? "Stage 5/5 \xB7 Activation Ready" : stageNumber === 4 ? "Stage 4/5 \xB7 Master Strategy" : stageNumber === 3 ? "Stage 3/5 \xB7 Strategic Routes" : "Stage 1/5 \xB7 Brief & Scope";
+      let resolvedDate = s.updated_at || s.created_at;
+      if (!resolvedDate || isNaN(new Date(resolvedDate).getTime())) {
+        const match = String(s.id).match(/\d{12,14}/);
+        if (match) {
+          resolvedDate = new Date(Number(match[0])).toISOString();
+        } else {
+          resolvedDate = (/* @__PURE__ */ new Date()).toISOString();
+        }
+      }
+      return {
+        id: s.id,
+        workspace_id: s.workspace_id,
+        title: s.title || "Untitled Strategy",
+        status: s.status || "active",
+        stage_number: stageNumber,
+        stage_total: 5,
+        stage_label: stageLabel,
+        framework_id: s.framework_id || null,
+        created_at: s.created_at || resolvedDate,
+        updated_at: resolvedDate,
+        current_version_id: s.current_version_id || latestVer?.id || null,
+        version_number: latestVer?.version_number || 1,
+        version_count: Math.max(1, vers.length),
+        territory_name: territoryName,
+        territory_premise: territoryPremise,
+        versions: vers
+      };
+    };
+    const getMemoryStrategies = () => {
+      return Array.from(this.memoryStrategies.values()).filter((s) => s.workspace_id === workspaceId).map((s) => {
+        const versions = this.memoryVersions.get(s.id) || [];
+        return mapRow({ ...s, versions });
+      }).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, limit);
+    };
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return Array.from(this.memoryStrategies.values()).filter((s) => s.workspace_id === workspaceId).slice(0, limit);
+      return getMemoryStrategies();
     }
-    const { data, error } = await supabase.from("campaign_strategies").select("id, title, status, framework_id, created_at, updated_at").eq("workspace_id", workspaceId).order("updated_at", { ascending: false }).limit(limit);
-    if (error || !data || data.length === 0) {
-      const mem = Array.from(this.memoryStrategies.values()).filter((s) => s.workspace_id === workspaceId).slice(0, limit);
-      if (mem.length > 0) return mem;
-      return [];
+    try {
+      const { data, error } = await supabase.from("campaign_strategies").select(`
+          id,
+          workspace_id,
+          title,
+          status,
+          framework_id,
+          created_at,
+          updated_at,
+          current_version_id,
+          campaign_strategy_versions!campaign_strategy_versions_campaign_strategy_id_fkey (
+            id,
+            version_number,
+            selected_territory,
+            master_strategy,
+            downstream_briefs,
+            created_at
+          )
+        `).eq("workspace_id", workspaceId).order("updated_at", { ascending: false }).limit(limit);
+      if (error || !data || data.length === 0) {
+        const mem = getMemoryStrategies();
+        if (mem.length > 0) return mem;
+        return [];
+      }
+      return data.map(mapRow);
+    } catch {
+      return getMemoryStrategies();
     }
-    return data || [];
   }
   /**
    * Alias for listWorkspaceStrategies for API parity.
    */
-  async getWorkspaceStrategies(workspaceId, limit = 20) {
+  async getWorkspaceStrategies(workspaceId, limit = 50) {
     return this.listWorkspaceStrategies(workspaceId, limit);
+  }
+  /**
+   * Updates strategy metadata such as title or status.
+   */
+  async updateStrategy(strategyId, workspaceId, updates) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const memStrat = this.memoryStrategies.get(strategyId);
+    if (memStrat && memStrat.workspace_id === workspaceId) {
+      if (updates.title !== void 0) memStrat.title = updates.title;
+      if (updates.status !== void 0) memStrat.status = updates.status;
+      memStrat.updated_at = now;
+    }
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return !!memStrat;
+    try {
+      const { error } = await supabase.from("campaign_strategies").update({
+        ...updates.title !== void 0 ? { title: updates.title } : {},
+        ...updates.status !== void 0 ? { status: updates.status } : {},
+        updated_at: now
+      }).eq("id", strategyId).eq("workspace_id", workspaceId);
+      if (error) {
+        return !!memStrat;
+      }
+      return true;
+    } catch {
+      return !!memStrat;
+    }
+  }
+  /**
+   * Clones a strategy and its latest version.
+   */
+  async duplicateStrategy(strategyId, workspaceId, userId) {
+    const original = await this.getStrategyById(strategyId, workspaceId);
+    if (!original) return null;
+    const newTitle = `${original.title || "Untitled Strategy"} (Copy)`;
+    const newStrategy = await this.createStrategy({
+      workspaceId,
+      userId,
+      title: newTitle,
+      frameworkId: original.framework_id || "GENERAL"
+    });
+    const versions = original.campaign_strategy_versions || original.versions || [];
+    if (versions.length > 0) {
+      const latest = versions[versions.length - 1];
+      await this.saveVersion({
+        campaignStrategyId: newStrategy.id,
+        versionNumber: 1,
+        selectedTerritory: latest.selected_territory || latest.selectedTerritory,
+        masterStrategy: latest.master_strategy || latest.masterStrategy,
+        downstreamBriefs: latest.downstream_briefs || latest.downstreamBriefs,
+        epistemicLedger: latest.epistemic_ledger || latest.epistemicLedger || [],
+        criticReport: latest.critic_report || latest.criticReport || {},
+        createdBy: userId
+      });
+    }
+    return await this.getStrategyById(newStrategy.id, workspaceId);
+  }
+  /**
+   * Deletes a strategy and cascades to its versions and memory entries.
+   */
+  async deleteStrategy(strategyId, workspaceId) {
+    const hadMem = this.memoryStrategies.has(strategyId);
+    this.memoryStrategies.delete(strategyId);
+    this.memoryVersions.delete(strategyId);
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return hadMem;
+    try {
+      await supabase.from("campaign_strategy_versions").delete().eq("campaign_strategy_id", strategyId);
+      const { error } = await supabase.from("campaign_strategies").delete().eq("id", strategyId).eq("workspace_id", workspaceId);
+      if (error) {
+        return hadMem;
+      }
+      return true;
+    } catch (err) {
+      console.warn("CampaignRepository.deleteStrategy error:", err);
+      return hadMem;
+    }
   }
   /**
    * Saves an idempotent generation request result (in-memory + Supabase fallback).
@@ -8312,6 +8745,8 @@ var CampaignRepository = class {
 var campaignRepository = new CampaignRepository();
 
 // apps/api/src/modules/campaigns/campaignStrategyService.ts
+init_videoAdProjectRepository();
+init_historyRepository();
 var CampaignStrategyService = class {
   constructor() {
     this.sessionTerritoryCounts = /* @__PURE__ */ new Map();
@@ -8499,6 +8934,35 @@ var CampaignStrategyService = class {
         versionId: versionRecord.versionId,
         fingerprint
       });
+      let projectId;
+      const canonicalAdSpec = downstreamBriefs.canonicalAdSpec;
+      if (canonicalAdSpec) {
+        try {
+          const projectTitle = campaignTitle || selectedTerritory.title || "Campaign Video Project";
+          const projectResult = await videoAdProjectRepository.createProject(workspaceId, projectTitle, userId, canonicalAdSpec);
+          projectId = projectResult?.project?.id;
+        } catch (persistErr) {
+          console.warn("[CampaignStrategyService] Video project persistence fallback:", persistErr);
+        }
+      }
+      await historyRepository.addHistory({
+        workspaceId,
+        userId,
+        jobId: rootStrategyId,
+        gemId: "campaign-strategist-y",
+        title: `Campaign Strategy: ${campaignTitle}`,
+        prompt: briefDescription || campaignTitle,
+        resultSummary: {
+          type: "campaign-strategy",
+          strategyId: rootStrategyId,
+          versionId: versionRecord.versionId,
+          campaignTitle,
+          frameworkId: selectedTerritory.frameworkId,
+          bigIdea: masterStrategy.coreBigIdea,
+          territory: selectedTerritory.title,
+          status: "ready"
+        }
+      }).catch((hErr) => console.warn("[CampaignStrategyService] Failed writing to history_logs:", hErr));
       if (!holdId.startsWith("mock_hold_")) {
         await creditService.captureCredits(holdId, `strat_${generationId}`);
       }
@@ -8508,7 +8972,9 @@ var CampaignStrategyService = class {
         versionNumber: parentVersionId ? 2 : 1,
         masterStrategy,
         downstreamBriefs,
-        criticReport
+        criticReport,
+        adSpec: canonicalAdSpec,
+        projectId
       };
     } catch (err) {
       console.error("[CampaignStrategyService] Synthesis failed, releasing credit hold:", err?.message || err);
@@ -8751,6 +9217,486 @@ var campaignStrategyService = new CampaignStrategyService();
 // apps/api/src/modules/campaigns/campaignRoutes.ts
 init_videoAdProjectRepository();
 init_billingErrorUtils();
+import JSZip from "jszip";
+
+// apps/api/src/modules/campaigns/bundleOrchestratorService.ts
+init_serverGeminiClient();
+init_creditService();
+init_storageService();
+init_historyRepository();
+init_imageGenerationService();
+init_billingErrorUtils();
+init_imageGeneration();
+import crypto5 from "crypto";
+import { Type } from "@google/genai";
+var idempotentBundleCache = /* @__PURE__ */ new Map();
+var BundleOrchestratorService = class {
+  /**
+   * Helper to run an array of async functions with bounded concurrency (concurrency = 2).
+   */
+  async runWithConcurrency(tasks, concurrency = 2) {
+    const results = new Array(tasks.length);
+    let nextIndex = 0;
+    const worker = async () => {
+      while (nextIndex < tasks.length) {
+        const currentIndex = nextIndex++;
+        results[currentIndex] = await tasks[currentIndex]();
+      }
+    };
+    const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker());
+    await Promise.all(workers);
+    return results;
+  }
+  /**
+   * Normalizes reference images: uploads data URIs to private Supabase storage
+   * and converts them to stable, accessible signed URLs so provider adapters receive HTTP URLs.
+   */
+  async normalizeReferences(references, workspaceId, userId, bundleId) {
+    if (!references || references.length === 0) return [];
+    const normalized = [];
+    for (let i = 0; i < references.length; i++) {
+      const ref = references[i];
+      if (ref.source.kind === "url") {
+        normalized.push(ref);
+        continue;
+      }
+      if (ref.source.kind === "data_uri" && ref.source.dataUri) {
+        try {
+          const dataUri = ref.source.dataUri;
+          const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+          if (!match) {
+            console.warn(`[BundleOrchestrator] Malformed dataUri in reference ${ref.id}, skipping upload.`);
+            normalized.push(ref);
+            continue;
+          }
+          const mimeType = match[1] || "image/png";
+          const buffer = Buffer.from(match[2], "base64");
+          const storagePath = `campaign-references/${userId}/${bundleId}_${ref.id || i}.png`;
+          await storageService.uploadFile({
+            workspaceId,
+            path: storagePath,
+            fileBuffer: buffer,
+            contentType: mimeType
+          });
+          const signedUrl = await storageService.getSignedUrl(
+            `${workspaceId}/${storagePath}`,
+            86400
+          );
+          if (signedUrl) {
+            normalized.push({
+              ...ref,
+              source: {
+                kind: "url",
+                url: signedUrl
+              }
+            });
+            continue;
+          }
+        } catch (uploadErr) {
+          console.error(`[BundleOrchestrator] Failed uploading reference ${ref.id} to storage:`, uploadErr);
+        }
+      }
+      normalized.push(ref);
+    }
+    return normalized;
+  }
+  /**
+   * Generates cohesive visual prompts for all 5 bundle assets using Google Gemini.
+   */
+  async generateCohesivePrompts(params) {
+    const { concept, commerceMode, guidelines, references } = params;
+    const guidelinesContext = guidelines ? `
+Brand Guidelines Context:
+- Brand Name: ${guidelines.name || "Not Specified"}
+- Industry: ${guidelines.industry || "Not Specified"}
+- Pillars: ${(guidelines.pillars || []).join(", ")}
+- Tone: ${guidelines.tone || "Not Specified"}
+- Prime Colors: ${(guidelines.colors || []).join(", ")}
+- Location/Target: ${guidelines.location || "India"}
+- Target Voicestyle: ${guidelines.voiceAccentStyle || "Indian English"}
+- Ethnic Demographics: ${guidelines.visualEthnicityStyle || "Indian"}
+` : "";
+    const referenceContext = references && references.length > 0 ? `
+Reference Contexts Attached:
+${references.map((r) => `- Type: ${r.type}, Role: ${r.role}, Instructions: ${r.instructions || "Preserve exactly"}`).join("\n")}
+` : "No direct reference photos attached (use guidelines/description as primary guide)";
+    const promptText = `
+You are an award-winning Creative Director. Solve the following task:
+Generate 5 cohesive, high-fashion, complementary image prompts suitable for a premium visual digital marketing campaign centered on the product: "${concept}".
+
+Commerce Mode: ${commerceMode === "quick-commerce" ? "Quick-Commerce (High visual impact, clear delivery details, vibrant pop framing, fast visual readability)" : "E-commerce (Editorial storytelling, natural setting, studio premium soft lighting)"}
+
+${guidelinesContext}
+${referenceContext}
+
+CULTURAL/REGIONAL GUIDELINE:
+Any human model, face, or characters described in the prompts MUST look like they belong to the '${guidelines?.visualEthnicityStyle || "Indian"}' ethnic demographic in ${guidelines?.location || "India"}.
+
+DELIVERABLES REQUIRED (Exact 5 roles):
+1. 'Hero': Grand overarching banner displaying key branding product, epic lighting, 16:9 framing.
+2. 'Closeup': Macro-focus shot highlighting rich product textures, glossy finish, 1:1 framing.
+3. 'Lifestyle': Ambient scene with product in contemporary usage with target demographic, 3:4 framing.
+4. 'Offer': Commercial promotional backdrop with generous negative space for discount text overlays, 1:1 framing.
+5. 'Alternate': Alternative artistic mood sharing the unified palette, 1:1 framing.
+
+COHESION LAW: All 5 prompts must share a singular aesthetic, color temperature, and lighting philosophy.
+State this unified style in the "aesthetic" field.
+`;
+    const gClient = getServerAI();
+    const geminiRes = await gClient.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: promptText,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            campaign_title: { type: Type.STRING },
+            aesthetic: { type: Type.STRING },
+            assets: {
+              type: Type.OBJECT,
+              properties: {
+                Hero: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    prompt: { type: Type.STRING }
+                  },
+                  required: ["title", "description", "prompt"]
+                },
+                Closeup: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    prompt: { type: Type.STRING }
+                  },
+                  required: ["title", "description", "prompt"]
+                },
+                Lifestyle: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    prompt: { type: Type.STRING }
+                  },
+                  required: ["title", "description", "prompt"]
+                },
+                Offer: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    prompt: { type: Type.STRING }
+                  },
+                  required: ["title", "description", "prompt"]
+                },
+                Alternate: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    prompt: { type: Type.STRING }
+                  },
+                  required: ["title", "description", "prompt"]
+                }
+              },
+              required: ["Hero", "Closeup", "Lifestyle", "Offer", "Alternate"]
+            }
+          },
+          required: ["campaign_title", "aesthetic", "assets"]
+        }
+      }
+    });
+    if (!geminiRes.text) {
+      throw new Error("No response string from Gemini during cohesive prompt generation");
+    }
+    const parsed = JSON.parse(geminiRes.text.trim());
+    return {
+      campaign_title: parsed.campaign_title,
+      aesthetic: parsed.aesthetic,
+      prompts: parsed.assets
+    };
+  }
+  /**
+   * Main orchestrator: generates the complete 5-asset ecommerce campaign bundle.
+   */
+  async generateBundle(params) {
+    const {
+      concept,
+      commerceMode = "e-commerce",
+      engine: engineInput,
+      guidelines,
+      references: rawReferences,
+      workspaceId,
+      userId,
+      idempotencyKey
+    } = params;
+    const cacheKey = `bundle_${workspaceId}_${idempotencyKey}`;
+    const cached = idempotentBundleCache.get(cacheKey);
+    if (cached) {
+      console.log(`[BundleOrchestrator] Idempotency hit for key ${idempotencyKey}. Returning cached result.`);
+      return { ...cached, isReplay: true };
+    }
+    const engineEntry = resolveCanonicalEngine(engineInput);
+    const bundleId = `bundle_${Date.now()}_${crypto5.randomBytes(4).toString("hex")}`;
+    const roleSpecs = ECOMMERCE_BUNDLE_ROLES;
+    const creditsPerAsset = engineEntry.creditsPerAsset;
+    const totalRequired = roleSpecs.length * creditsPerAsset;
+    console.log(
+      `[BundleOrchestrator] Initiating bundle ${bundleId} (${roleSpecs.length} assets, ${creditsPerAsset} cr/asset = ${totalRequired} total) on engine '${engineEntry.engine}'`
+    );
+    const currentBalance = await creditService.getAvailableBalance(workspaceId).catch(() => 0);
+    if (currentBalance < totalRequired) {
+      throw new InsufficientCreditsError({
+        service: "Ecommerce Bundle Orchestrator",
+        requiredCredits: totalRequired,
+        availableCredits: currentBalance,
+        customMessage: `Insufficient credits to initiate Ecommerce Bundle. Required: ${totalRequired}, Available: ${currentBalance}.`
+      });
+    }
+    const reservedHolds = [];
+    try {
+      for (const spec of roleSpecs) {
+        const holdRes = await creditService.reserveCredits({
+          workspaceId,
+          userId,
+          amount: creditsPerAsset,
+          referenceId: `${bundleId}_${spec.role}`,
+          description: `Ecommerce Bundle ${spec.role} (${engineEntry.label})`,
+          idempotencyKey: `hold_${bundleId}_${spec.role}_${idempotencyKey}`
+        });
+        if (!holdRes.success || !holdRes.holdId) {
+          throw new InsufficientCreditsError({
+            service: "Ecommerce Bundle Orchestrator",
+            requiredCredits: totalRequired,
+            availableCredits: holdRes.available ?? currentBalance,
+            customMessage: "Credit reservation failed during bundle hold setup."
+          });
+        }
+        reservedHolds.push({ role: spec.role, holdId: holdRes.holdId });
+      }
+    } catch (holdErr) {
+      console.error("[BundleOrchestrator] Batch reservation failed. Rolling back partial holds:", holdErr);
+      for (const item of reservedHolds) {
+        await creditService.releaseCredits(item.holdId, "Bundle reservation initialization rollback").catch(() => {
+        });
+      }
+      throw holdErr;
+    }
+    const normalizedReferences = await this.normalizeReferences(
+      rawReferences,
+      workspaceId,
+      userId,
+      bundleId
+    );
+    const referenceUrls = normalizedReferences.filter((r) => r.source.kind === "url" && Boolean(r.source.url)).map((r) => r.source.url);
+    let campaignBrief;
+    try {
+      campaignBrief = await this.generateCohesivePrompts({
+        concept,
+        commerceMode,
+        guidelines,
+        references: normalizedReferences
+      });
+    } catch (promptErr) {
+      console.error("[BundleOrchestrator] Prompt planning failed. Releasing all holds:", promptErr);
+      for (const item of reservedHolds) {
+        await creditService.releaseCredits(item.holdId, "Prompt planning error").catch(() => {
+        });
+      }
+      throw promptErr;
+    }
+    const assetResults = {};
+    let successfulCount = 0;
+    let failedCount = 0;
+    const assetTasks = roleSpecs.map((spec) => {
+      const holdItem = reservedHolds.find((h) => h.role === spec.role);
+      const holdId = holdItem?.holdId;
+      const plannedPrompt = campaignBrief.prompts[spec.role] || {
+        title: `${spec.role} Deliverable`,
+        description: spec.description,
+        prompt: `${concept}, ${spec.title}`
+      };
+      return async () => {
+        try {
+          console.log(`[BundleOrchestrator] Generating ${spec.role} (${spec.aspectRatio}) on ${engineEntry.modelKey}...`);
+          const genResult = await imageGenerationService.generateImage({
+            request: {
+              prompt: plannedPrompt.prompt,
+              aspectRatio: spec.aspectRatio,
+              modelKey: engineEntry.modelKey,
+              quality: engineEntry.engine === "premium" ? "premium" : "standard",
+              guidelines,
+              references: normalizedReferences,
+              referenceImages: referenceUrls.length > 0 ? referenceUrls : void 0
+            },
+            workspaceId,
+            userId,
+            idempotencyKey: `${idempotencyKey}_${spec.role}`
+          });
+          if (holdId) {
+            await creditService.captureCredits(holdId, `capture_${holdId}`).catch((err) => {
+              console.warn(`[BundleOrchestrator] Failed settling hold ${holdId} (may already be captured):`, err.message);
+            });
+          }
+          successfulCount++;
+          return {
+            role: spec.role,
+            title: plannedPrompt.title,
+            description: plannedPrompt.description,
+            prompt: plannedPrompt.prompt,
+            imageUrl: genResult.images[0]?.url || "",
+            status: "success",
+            assetId: genResult.images[0]?.assetId
+          };
+        } catch (assetErr) {
+          console.error(`[BundleOrchestrator] Asset ${spec.role} failed:`, assetErr.message);
+          if (holdId) {
+            await creditService.releaseCredits(
+              holdId,
+              `Asset ${spec.role} generation failed: ${assetErr.message || "Provider Error"}`
+            ).catch(() => {
+            });
+          }
+          failedCount++;
+          return {
+            role: spec.role,
+            title: plannedPrompt.title,
+            description: plannedPrompt.description,
+            prompt: plannedPrompt.prompt,
+            status: "failed",
+            error: assetErr.message || "Failed to render asset"
+          };
+        }
+      };
+    });
+    const completedDetails = await this.runWithConcurrency(assetTasks, 2);
+    for (const detail of completedDetails) {
+      assetResults[detail.role] = detail;
+    }
+    const totalConsumed = successfulCount * creditsPerAsset;
+    const totalReleased = failedCount * creditsPerAsset;
+    const newAvailable = await creditService.getAvailableBalance(workspaceId).catch(() => 0);
+    const billingLedger = {
+      bundleId,
+      totalReserved: totalRequired,
+      successfulCount,
+      failedCount,
+      totalConsumed,
+      totalReleased,
+      availableBalance: newAvailable
+    };
+    console.log(
+      `[BundleOrchestrator] Bundle ${bundleId} finished. Success: ${successfulCount}, Failed: ${failedCount}, Consumed: ${totalConsumed} cr, Released: ${totalReleased} cr.`
+    );
+    const finalResult = {
+      bundleId,
+      campaign_title: campaignBrief.campaign_title,
+      aesthetic: campaignBrief.aesthetic,
+      engine: engineEntry,
+      assets: assetResults,
+      billingLedger,
+      exportReady: successfulCount > 0,
+      isReplay: false
+    };
+    await historyRepository.addHistory({
+      workspaceId,
+      userId,
+      jobId: bundleId,
+      gemId: "bundles-campaigns",
+      title: `Campaign: ${campaignBrief.campaign_title}`,
+      prompt: concept,
+      resultSummary: {
+        campaign_title: campaignBrief.campaign_title,
+        aesthetic: campaignBrief.aesthetic,
+        engine: engineEntry.label,
+        successfulAssets: successfulCount,
+        creditsConsumed: totalConsumed
+      }
+    }).catch((hErr) => console.warn("[BundleOrchestrator] Failed writing history record:", hErr));
+    idempotentBundleCache.set(cacheKey, finalResult);
+    return finalResult;
+  }
+};
+var bundleOrchestratorService = new BundleOrchestratorService();
+
+// apps/api/src/modules/campaigns/services/ssrfValidator.ts
+import { URL as URL2 } from "url";
+var PRIVATE_IP_PREFIXES = [
+  "127.",
+  "10.",
+  "192.168.",
+  "169.254.",
+  // AWS/GCP/Azure link-local metadata service
+  "0.0.0.0",
+  "::1",
+  "fc00:",
+  "fe80:"
+];
+function isPrivateIpOrHost(hostname) {
+  const lower = hostname.toLowerCase();
+  if (lower === "localhost" || lower === "127.0.0.1" || lower === "::1") {
+    return true;
+  }
+  for (const prefix of PRIVATE_IP_PREFIXES) {
+    if (lower.startsWith(prefix)) {
+      return true;
+    }
+  }
+  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(lower)) {
+    return true;
+  }
+  if (lower.includes("metadata.google.internal") || lower.includes("metadata.azure.com")) {
+    return true;
+  }
+  return false;
+}
+var ALLOWED_DOMAIN_PATTERNS = [
+  /\.supabase\.co$/,
+  /\.fal\.media$/,
+  /\.fal\.run$/,
+  /\.writopedia\.com$/,
+  /^writopedia\.com$/,
+  /pollinations\.ai$/
+];
+function validateSafeAssetUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") {
+    return { valid: false, error: "Empty or invalid URL provided" };
+  }
+  let parsed;
+  try {
+    parsed = new URL2(rawUrl);
+  } catch {
+    return { valid: false, error: `Malformed URL: ${rawUrl}` };
+  }
+  if (parsed.protocol !== "https:") {
+    return {
+      valid: false,
+      error: `Insecure URL protocol '${parsed.protocol}'. Only 'https:' is permitted for server fetch.`
+    };
+  }
+  if (isPrivateIpOrHost(parsed.hostname)) {
+    return {
+      valid: false,
+      error: `Blocked unsafe host '${parsed.hostname}'. Loopback, private IP ranges, and internal services are forbidden.`
+    };
+  }
+  const matchesAllowedDomain = ALLOWED_DOMAIN_PATTERNS.some(
+    (pattern) => pattern.test(parsed.hostname.toLowerCase())
+  );
+  if (!matchesAllowedDomain) {
+    return {
+      valid: false,
+      error: `Host '${parsed.hostname}' is not in the approved CDN/storage allowlist.`
+    };
+  }
+  return { valid: true };
+}
+
+// apps/api/src/modules/campaigns/campaignRoutes.ts
+init_imageGeneration();
 var creditService2 = new CreditService();
 var campaignRouter = Router2();
 campaignRouter.post(["/strategy/discovery-questions", "/strategy/discovery"], async (req, res) => {
@@ -9025,6 +9971,61 @@ campaignRouter.get("/strategy/:id", async (req, res) => {
     return res.status(500).json({ error: err?.message || "Failed to load strategy" });
   }
 });
+campaignRouter.patch("/strategy/:id", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+    const { title, status } = req.body;
+    if (!title && !status) {
+      return res.status(400).json({ error: "At least title or status must be provided" });
+    }
+    const userId = req.user.uid;
+    const workspaceId = req.user.workspaceId || await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || "");
+    const updated = await campaignRepository.updateStrategy(req.params.id, workspaceId, { title, status });
+    if (!updated) {
+      return res.status(404).json({ error: "Strategy not found or update failed" });
+    }
+    return res.json({ success: true, id: req.params.id, title, status });
+  } catch (err) {
+    console.error("Error in PATCH /strategy/:id:", err);
+    return res.status(500).json({ error: err?.message || "Failed to update strategy" });
+  }
+});
+campaignRouter.post("/strategy/:id/duplicate", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+    const userId = req.user.uid;
+    const workspaceId = req.user.workspaceId || await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || "");
+    const duplicated = await campaignRepository.duplicateStrategy(req.params.id, workspaceId, userId);
+    if (!duplicated) {
+      return res.status(404).json({ error: "Original strategy not found to duplicate" });
+    }
+    return res.status(201).json({ success: true, strategy: duplicated });
+  } catch (err) {
+    console.error("Error in POST /strategy/:id/duplicate:", err);
+    return res.status(500).json({ error: err?.message || "Failed to duplicate strategy" });
+  }
+});
+campaignRouter.delete("/strategy/:id", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+    const userId = req.user.uid;
+    const workspaceId = req.user.workspaceId || await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || "");
+    const deleted = await campaignRepository.deleteStrategy(req.params.id, workspaceId);
+    if (!deleted) {
+      return res.status(404).json({ error: "Strategy not found or delete failed" });
+    }
+    return res.json({ success: true, id: req.params.id });
+  } catch (err) {
+    console.error("Error in DELETE /strategy/:id:", err);
+    return res.status(500).json({ error: err?.message || "Failed to delete strategy" });
+  }
+});
 campaignRouter.post("/prompts", async (req, res) => {
   try {
     const { concept, commerceMode, guidelines, referenceContexts } = req.body;
@@ -9079,60 +10080,60 @@ Construct a gorgeous JSON response matching the precise structure schema request
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: Type2.OBJECT,
           properties: {
-            campaign_title: { type: Type.STRING, description: "A catchy high-end title for this visual campaign" },
-            aesthetic: { type: Type.STRING, description: "A high-level description of the unified visual aesthetic direction" },
+            campaign_title: { type: Type2.STRING, description: "A catchy high-end title for this visual campaign" },
+            aesthetic: { type: Type2.STRING, description: "A high-level description of the unified visual aesthetic direction" },
             assets: {
-              type: Type.OBJECT,
+              type: Type2.OBJECT,
               properties: {
                 Hero: {
-                  type: Type.OBJECT,
+                  type: Type2.OBJECT,
                   properties: {
-                    title: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    prompt: { type: Type.STRING, description: "Highly detailed visual description prompt for the image engine" }
+                    title: { type: Type2.STRING },
+                    role: { type: Type2.STRING },
+                    description: { type: Type2.STRING },
+                    prompt: { type: Type2.STRING, description: "Highly detailed visual description prompt for the image engine" }
                   },
                   required: ["title", "role", "description", "prompt"]
                 },
                 Closeup: {
-                  type: Type.OBJECT,
+                  type: Type2.OBJECT,
                   properties: {
-                    title: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    prompt: { type: Type.STRING, description: "Highly detailed visual description prompt for the image engine" }
+                    title: { type: Type2.STRING },
+                    role: { type: Type2.STRING },
+                    description: { type: Type2.STRING },
+                    prompt: { type: Type2.STRING, description: "Highly detailed visual description prompt for the image engine" }
                   },
                   required: ["title", "role", "description", "prompt"]
                 },
                 Lifestyle: {
-                  type: Type.OBJECT,
+                  type: Type2.OBJECT,
                   properties: {
-                    title: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    prompt: { type: Type.STRING, description: "Highly detailed visual description prompt for the image engine" }
+                    title: { type: Type2.STRING },
+                    role: { type: Type2.STRING },
+                    description: { type: Type2.STRING },
+                    prompt: { type: Type2.STRING, description: "Highly detailed visual description prompt for the image engine" }
                   },
                   required: ["title", "role", "description", "prompt"]
                 },
                 Offer: {
-                  type: Type.OBJECT,
+                  type: Type2.OBJECT,
                   properties: {
-                    title: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    prompt: { type: Type.STRING, description: "Highly detailed visual description prompt for the image engine" }
+                    title: { type: Type2.STRING },
+                    role: { type: Type2.STRING },
+                    description: { type: Type2.STRING },
+                    prompt: { type: Type2.STRING, description: "Highly detailed visual description prompt for the image engine" }
                   },
                   required: ["title", "role", "description", "prompt"]
                 },
                 Alternate: {
-                  type: Type.OBJECT,
+                  type: Type2.OBJECT,
                   properties: {
-                    title: { type: Type.STRING },
-                    role: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    prompt: { type: Type.STRING, description: "Highly detailed visual description prompt for the image engine" }
+                    title: { type: Type2.STRING },
+                    role: { type: Type2.STRING },
+                    description: { type: Type2.STRING },
+                    prompt: { type: Type2.STRING, description: "Highly detailed visual description prompt for the image engine" }
                   },
                   required: ["title", "role", "description", "prompt"]
                 }
@@ -9154,9 +10155,209 @@ Construct a gorgeous JSON response matching the precise structure schema request
     return res.status(500).json({ error: e.message || "Failed to generate cohesive campaign prompts" });
   }
 });
+campaignRouter.post("/bundle/generate", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated user session required.", code: "AUTH_REQUIRED" });
+    }
+    const { concept, commerceMode, engine, guidelines, references } = req.body;
+    if (!concept || typeof concept !== "string" || !concept.trim()) {
+      return res.status(400).json({ error: "Missing required product concept description." });
+    }
+    const userId = req.user.uid;
+    const workspaceId = req.user.workspaceId || await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || "");
+    const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"] || `bundle_idemp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const bundleResult = await bundleOrchestratorService.generateBundle({
+      concept: concept.trim(),
+      commerceMode,
+      engine,
+      guidelines,
+      references,
+      workspaceId,
+      userId,
+      idempotencyKey
+    });
+    return res.json(bundleResult);
+  } catch (err) {
+    console.error("Error in /bundle/generate:", err);
+    if (err instanceof InsufficientCreditsError || err?.code === "INSUFFICIENT_CREDITS" || err?.status === 402 || err?.message?.includes("Insufficient credits")) {
+      return sendInsufficientCreditsResponse(res, {
+        service: "Ecommerce Bundle Orchestrator",
+        action: "bundle_generate",
+        required: err.requiredCredits || err.required || 15,
+        available: err.availableCredits || err.available || 0
+      });
+    }
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Failed to generate ecommerce campaign bundle",
+      code: err.code || "BUNDLE_FAILED"
+    });
+  }
+});
+campaignRouter.post("/bundle/export-zip", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated user session required.", code: "AUTH_REQUIRED" });
+    }
+    const {
+      bundleTitle = "Campaign Bundle",
+      aesthetic = "Unified Visual Spec",
+      commerceMode = "e-commerce",
+      engine = "Quality",
+      brandName = "Brand",
+      assets = [],
+      allowPartial = false
+    } = req.body;
+    if (!assets || !Array.isArray(assets) || assets.length === 0) {
+      return res.status(400).json({ error: "No asset specifications supplied for ZIP export." });
+    }
+    const downloadResults = [];
+    for (const item of assets) {
+      const role = item.role || "Deliverable";
+      const filename = `${role.toLowerCase()}-deliverable.jpg`;
+      if (!item.imageUrl) {
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "failed",
+          error: "Asset has no rendered image URL"
+        });
+        continue;
+      }
+      const ssrfCheck = validateSafeAssetUrl(item.imageUrl);
+      if (!ssrfCheck.valid) {
+        console.warn(`[ZIP Export] SSRF rejected asset URL for ${role}: ${ssrfCheck.error}`);
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "failed",
+          error: ssrfCheck.error
+        });
+        continue;
+      }
+      try {
+        const fetchRes = await fetch(item.imageUrl, {
+          signal: AbortSignal.timeout(15e3)
+          // 15s download budget per asset
+        });
+        if (!fetchRes.ok) {
+          throw new Error(`Remote storage returned HTTP ${fetchRes.status}: ${fetchRes.statusText}`);
+        }
+        const arrayBuf = await fetchRes.arrayBuffer();
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "downloaded",
+          buffer: Buffer.from(arrayBuf)
+        });
+      } catch (dlErr) {
+        console.warn(`[ZIP Export] Download failed for ${role}:`, dlErr.message);
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "failed",
+          error: dlErr.message || "Failed downloading remote image"
+        });
+      }
+    }
+    const failedDownloads = downloadResults.filter((d) => d.status === "failed");
+    const successfulDownloads = downloadResults.filter((d) => d.status === "downloaded");
+    if (failedDownloads.length > 0 && !allowPartial) {
+      return res.status(400).json({
+        success: false,
+        partial: true,
+        failedRoles: failedDownloads.map((d) => d.role),
+        availableRoles: successfulDownloads.map((d) => d.role),
+        message: `${failedDownloads.length} of ${assets.length} visual deliverables could not be downloaded from remote storage.`
+      });
+    }
+    const zip = new JSZip();
+    const folderSlug = bundleTitle.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    const rootFolder = zip.folder(`${folderSlug}-bundle`);
+    const assetsFolder = rootFolder?.folder("assets");
+    let markdownContent = `# ${bundleTitle}
+
+`;
+    markdownContent += `### Unified Campaign Aesthetic Spec
+> *${aesthetic}*
+
+`;
+    markdownContent += `**Commerce Alignment Mode**: ${commerceMode}
+`;
+    markdownContent += `**Engine Pipeline**: ${engine}
+`;
+    markdownContent += `**Associated Corporate Profile**: ${brandName}
+
+`;
+    markdownContent += `---
+
+## Multi-Asset Campaign Specs
+
+`;
+    for (const item of assets) {
+      const dl = downloadResults.find((d) => d.role === item.role);
+      const isDownloaded = dl && dl.status === "downloaded" && dl.buffer;
+      markdownContent += `### ${item.role} Deliverable
+`;
+      markdownContent += `- **Creative Title**: ${item.title || item.role}
+`;
+      markdownContent += `- **Deliverable Role**: ${item.role}
+`;
+      markdownContent += `- **Target Purpose**: ${item.description || "Marketing Visual"}
+`;
+      markdownContent += `- **Visual Prompt Written**: \`\`\`${item.prompt || ""}\`\`\`
+`;
+      if (isDownloaded) {
+        assetsFolder?.file(dl.filename, dl.buffer);
+        markdownContent += `- **Asset Binary**: Located inside \`assets/${dl.filename}\`
+`;
+      } else {
+        markdownContent += `- **Asset Binary**: (Download Incomplete / Remote Fallback: ${item.imageUrl || "None"})
+`;
+      }
+      markdownContent += `
+---
+
+`;
+    }
+    rootFolder?.file("campaign-spec.md", markdownContent);
+    rootFolder?.file(
+      "manifest.json",
+      JSON.stringify(
+        {
+          bundleTitle,
+          exportTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          assetsExpected: assets.length,
+          assetsIncluded: successfulDownloads.length,
+          assetsMissing: failedDownloads.map((f) => ({ role: f.role, error: f.error })),
+          status: failedDownloads.length === 0 ? "complete" : "partial"
+        },
+        null,
+        2
+      )
+    );
+    const zipBuffer = await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 }
+    });
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${folderSlug}-marketing-pack.zip"`);
+    res.setHeader("Content-Length", zipBuffer.length);
+    return res.end(zipBuffer);
+  } catch (exportErr) {
+    console.error("Error generating bundle ZIP package:", exportErr);
+    return res.status(500).json({ error: exportErr.message || "Failed to generate ZIP export package" });
+  }
+});
 campaignRouter.post("/render", async (req, res) => {
   try {
-    const { prompt, size, engine, guidelines, referenceImages } = req.body;
+    const { prompt, size, engine, guidelines, referenceImages, references } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: "Missing render prompt text" });
     }
@@ -9169,17 +10370,8 @@ campaignRouter.post("/render", async (req, res) => {
     if (size === "16:9" || size === "9:16" || size === "4:3") {
       aspectRatio = size;
     }
-    let modelKey = "fal-studio";
-    const eng = (engine || "").toLowerCase();
-    if (eng.includes("schnell")) {
-      modelKey = "flux-schnell";
-    } else if (eng.includes("dev") || eng.includes("pro")) {
-      modelKey = "flux-pro";
-    } else if (eng.includes("banana")) {
-      modelKey = "nano-banana-2";
-    } else if (eng.includes("gemini")) {
-      modelKey = "gemini-preview";
-    }
+    const engineEntry = resolveCanonicalEngine(engine);
+    const modelKey = engineEntry.modelKey;
     const { imageGenerationService: imageGenerationService2 } = await Promise.resolve().then(() => (init_imageGenerationService(), imageGenerationService_exports));
     const result = await imageGenerationService2.generateImage({
       request: {
@@ -9187,7 +10379,8 @@ campaignRouter.post("/render", async (req, res) => {
         aspectRatio,
         modelKey,
         guidelines,
-        referenceImages
+        referenceImages,
+        references
       },
       workspaceId,
       userId,
@@ -9432,7 +10625,7 @@ init_creditService();
 
 // apps/api/src/infrastructure/payment/razorpayClient.ts
 init_env();
-import crypto5 from "crypto";
+import crypto6 from "crypto";
 async function createRazorpayOrder(amount, currency = "USD") {
   const keyId = serverConfig.razorpayKeyId;
   const keySecret = serverConfig.razorpayKeySecret;
@@ -9495,7 +10688,7 @@ function verifyRazorpaySignature(orderId, paymentId, signature) {
     return { verified: false };
   }
   try {
-    const hmac = crypto5.createHmac("sha256", keySecret.trim());
+    const hmac = crypto6.createHmac("sha256", keySecret.trim());
     hmac.update(`${orderId}|${paymentId}`);
     const generatedSignature = hmac.digest("hex");
     const sigBuffer = Buffer.from(signature, "hex");
@@ -9503,7 +10696,7 @@ function verifyRazorpaySignature(orderId, paymentId, signature) {
     if (sigBuffer.length !== genBuffer.length) {
       return { verified: false };
     }
-    const isMatch = crypto5.timingSafeEqual(sigBuffer, genBuffer);
+    const isMatch = crypto6.timingSafeEqual(sigBuffer, genBuffer);
     return { verified: isMatch };
   } catch (err) {
     console.error("Error during Razorpay signature verification:", err);
@@ -9516,7 +10709,7 @@ function verifyWebhookSignature(rawBody, signature, secretOverride) {
     return false;
   }
   try {
-    const hmac = crypto5.createHmac("sha256", secret.trim());
+    const hmac = crypto6.createHmac("sha256", secret.trim());
     hmac.update(rawBody);
     const generatedSignature = hmac.digest("hex");
     const sigBuffer = Buffer.from(signature, "hex");
@@ -9524,7 +10717,7 @@ function verifyWebhookSignature(rawBody, signature, secretOverride) {
     if (sigBuffer.length !== genBuffer.length) {
       return false;
     }
-    return crypto5.timingSafeEqual(sigBuffer, genBuffer);
+    return crypto6.timingSafeEqual(sigBuffer, genBuffer);
   } catch (err) {
     console.error("Error during Webhook signature verification:", err);
     return false;
@@ -12752,7 +13945,7 @@ var textGenerationService = new TextGenerationService();
 init_serverGeminiClient();
 init_creditService();
 init_aiJobRepository();
-import { Type as Type2 } from "@google/genai";
+import { Type as Type3 } from "@google/genai";
 var DEFAULT_PLATFORMS = ["Instagram", "LinkedIn", "X", "Threads"];
 var EMOTION_DIRECTIVES = {
   Neutral: "Tone is balanced, clear, informative, and objective. State facts and benefits directly with composure.",
@@ -12944,16 +14137,16 @@ Generate a strategic creative concept and platform-adapted captions for: ${platf
 `.trim();
       const ai = getServerAI();
       const responseSchema = {
-        type: Type2.OBJECT,
+        type: Type3.OBJECT,
         properties: {
           concept: {
-            type: Type2.OBJECT,
+            type: Type3.OBJECT,
             properties: {
-              angle: { type: Type2.STRING },
-              coreMessage: { type: Type2.STRING },
-              emotionalTone: { type: Type2.STRING },
-              targetAudience: { type: Type2.STRING },
-              keyBenefit: { type: Type2.STRING }
+              angle: { type: Type3.STRING },
+              coreMessage: { type: Type3.STRING },
+              emotionalTone: { type: Type3.STRING },
+              targetAudience: { type: Type3.STRING },
+              keyBenefit: { type: Type3.STRING }
             },
             required: [
               "angle",
@@ -12964,17 +14157,17 @@ Generate a strategic creative concept and platform-adapted captions for: ${platf
             ]
           },
           captions: {
-            type: Type2.ARRAY,
+            type: Type3.ARRAY,
             items: {
-              type: Type2.OBJECT,
+              type: Type3.OBJECT,
               properties: {
-                platform: { type: Type2.STRING },
-                hook: { type: Type2.STRING },
-                body: { type: Type2.STRING },
-                cta: { type: Type2.STRING },
+                platform: { type: Type3.STRING },
+                hook: { type: Type3.STRING },
+                body: { type: Type3.STRING },
+                cta: { type: Type3.STRING },
                 hashtags: {
-                  type: Type2.ARRAY,
-                  items: { type: Type2.STRING }
+                  type: Type3.ARRAY,
+                  items: { type: Type3.STRING }
                 }
               },
               required: ["platform", "hook", "body"]
@@ -16128,7 +17321,7 @@ var PresentationRepository = class {
 var presentationRepository = new PresentationRepository();
 
 // apps/api/src/modules/presentation/presentationPlanner.ts
-import { Type as Type3 } from "@google/genai";
+import { Type as Type4 } from "@google/genai";
 
 // apps/api/src/modules/presentation/presentationGeminiClient.ts
 init_serverGeminiClient();
@@ -16681,30 +17874,30 @@ function validateCompilerOutput_v1(data, expectedCount) {
 
 // apps/api/src/modules/presentation/presentationPlanner.ts
 var stage1ResponseSchema = {
-  type: Type3.OBJECT,
+  type: Type4.OBJECT,
   properties: {
-    schemaVersion: { type: Type3.STRING, description: "Must be 1.0.0" },
-    title: { type: Type3.STRING, description: "Executive presentation deck title under 10 words" },
-    objective: { type: Type3.STRING, description: "Core strategic business objective" },
-    targetAudience: { type: Type3.STRING, description: "Target stakeholder audience" },
-    narrativeArc: { type: Type3.STRING, description: "Summary narrative arc" },
-    brandName: { type: Type3.STRING, description: "Brand name" },
-    industry: { type: Type3.STRING, description: "Industry or sector" },
-    targetSlideCount: { type: Type3.INTEGER, description: "Number of formulated slides" },
+    schemaVersion: { type: Type4.STRING, description: "Must be 1.0.0" },
+    title: { type: Type4.STRING, description: "Executive presentation deck title under 10 words" },
+    objective: { type: Type4.STRING, description: "Core strategic business objective" },
+    targetAudience: { type: Type4.STRING, description: "Target stakeholder audience" },
+    narrativeArc: { type: Type4.STRING, description: "Summary narrative arc" },
+    brandName: { type: Type4.STRING, description: "Brand name" },
+    industry: { type: Type4.STRING, description: "Industry or sector" },
+    targetSlideCount: { type: Type4.INTEGER, description: "Number of formulated slides" },
     slides: {
-      type: Type3.ARRAY,
+      type: Type4.ARRAY,
       items: {
-        type: Type3.OBJECT,
+        type: Type4.OBJECT,
         properties: {
-          index: { type: Type3.INTEGER },
+          index: { type: Type4.INTEGER },
           purpose: {
-            type: Type3.STRING,
+            type: Type4.STRING,
             description: "Allowed purposes: cover, agenda, problem, opportunity, strategy, solution, process, timeline, comparison, metrics, market, team, financials, case-study, closing"
           },
-          coreIdea: { type: Type3.STRING, description: "Core strategic message for this slide" },
-          suggestedLayout: { type: Type3.STRING },
-          requiresChart: { type: Type3.BOOLEAN },
-          requiresMetric: { type: Type3.BOOLEAN }
+          coreIdea: { type: Type4.STRING, description: "Core strategic message for this slide" },
+          suggestedLayout: { type: Type4.STRING },
+          requiresChart: { type: Type4.BOOLEAN },
+          requiresMetric: { type: Type4.BOOLEAN }
         },
         required: ["index", "purpose", "coreIdea"]
       }
@@ -16741,37 +17934,37 @@ async function planPresentationStrategy(request) {
 }
 
 // apps/api/src/modules/presentation/presentationContentCompiler.ts
-import { Type as Type4 } from "@google/genai";
+import { Type as Type5 } from "@google/genai";
 var stage2ResponseSchema = {
-  type: Type4.OBJECT,
+  type: Type5.OBJECT,
   properties: {
-    schemaVersion: { type: Type4.STRING, description: "Must be 1.0.0" },
+    schemaVersion: { type: Type5.STRING, description: "Must be 1.0.0" },
     slides: {
-      type: Type4.ARRAY,
+      type: Type5.ARRAY,
       items: {
-        type: Type4.OBJECT,
+        type: Type5.OBJECT,
         properties: {
-          index: { type: Type4.INTEGER },
-          purpose: { type: Type4.STRING },
-          title: { type: Type4.STRING, description: "Authoritative slide title under 8 words" },
-          subtitle: { type: Type4.STRING, description: "Strategic subtitle framing under 15 words" },
+          index: { type: Type5.INTEGER },
+          purpose: { type: Type5.STRING },
+          title: { type: Type5.STRING, description: "Authoritative slide title under 8 words" },
+          subtitle: { type: Type5.STRING, description: "Strategic subtitle framing under 15 words" },
           bulletPoints: {
-            type: Type4.ARRAY,
-            items: { type: Type4.STRING },
+            type: Type5.ARRAY,
+            items: { type: Type5.STRING },
             description: "2 to 4 crisp bullet points"
           },
-          visualPrompt: { type: Type4.STRING, description: "Description for visual imagery background" },
-          speakerNotes: { type: Type4.STRING, description: "Talking points for the presenter" },
+          visualPrompt: { type: Type5.STRING, description: "Description for visual imagery background" },
+          speakerNotes: { type: Type5.STRING, description: "Talking points for the presenter" },
           metric: {
-            type: Type4.OBJECT,
+            type: Type5.OBJECT,
             properties: {
-              value: { type: Type4.STRING, description: "Metric number or placeholder like [Insert verified %]" },
-              label: { type: Type4.STRING, description: "KPI label" },
+              value: { type: Type5.STRING, description: "Metric number or placeholder like [Insert verified %]" },
+              label: { type: Type5.STRING, description: "KPI label" },
               provenance: {
-                type: Type4.STRING,
+                type: Type5.STRING,
                 description: "user_provided | brand_context | verified_source | placeholder"
               },
-              source: { type: Type4.STRING }
+              source: { type: Type5.STRING }
             }
           }
         },
@@ -19110,6 +20303,10 @@ init_creditService();
 init_billingErrorUtils();
 init_supabaseClient();
 var VideoGenerationService = class {
+  constructor() {
+    this.completedJobCache = /* @__PURE__ */ new Map();
+    this.JOB_CACHE_TTL_MS = 60 * 1e3;
+  }
   /**
    * Dispatches an asynchronous video generation request.
    */
@@ -19256,6 +20453,7 @@ var VideoGenerationService = class {
     };
     return this.generate(extendRequest, authContext);
   }
+  // 60s cache for completed immutable jobs
   async getJobHistory(workspaceId, limit = 20) {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
@@ -19265,14 +20463,20 @@ var VideoGenerationService = class {
     if (error || !data) {
       return videoJobService.getActiveJobs().filter((j) => j.workspaceId === workspaceId).slice(0, limit);
     }
-    const jobs = [];
-    for (const row of data) {
-      const job = await videoJobService.getJobWithFallback(row.id, workspaceId);
-      if (job) {
-        jobs.push(job);
+    const now = Date.now();
+    const jobPromises = data.map(async (row) => {
+      const cached = this.completedJobCache.get(row.id);
+      if (cached && now - cached.cachedAt < this.JOB_CACHE_TTL_MS) {
+        return cached.job;
       }
-    }
-    return jobs;
+      const job = await videoJobService.getJobWithFallback(row.id, workspaceId);
+      if (job && job.status === "completed") {
+        this.completedJobCache.set(row.id, { job, cachedAt: now });
+      }
+      return job;
+    });
+    const resolvedJobs = await Promise.all(jobPromises);
+    return resolvedJobs.filter((j) => Boolean(j));
   }
   getCapabilities() {
     return VIDEO_CAPABILITIES;
@@ -27782,14 +28986,14 @@ var VisualQAEvaluator = class {
 var visualQaEvaluator = new VisualQAEvaluator();
 
 // packages/ad-director/qa/repairPlanner.ts
-import crypto6 from "node:crypto";
+import crypto7 from "node:crypto";
 var RepairPlanner = class {
   /**
    * Plans a surgical repair for a failed shot QA result.
    */
   planRepair(params) {
     const { snapshotId, shotId, qaResultId, failures, frozenAdSpec, currentAttempt = 1 } = params;
-    const repairId = crypto6.randomUUID();
+    const repairId = crypto7.randomUUID();
     if (currentAttempt >= 3) {
       return {
         id: repairId,
@@ -28007,7 +29211,7 @@ var RepairPlanner = class {
 var repairPlanner = new RepairPlanner();
 
 // packages/ad-director/assembly/assemblySpecBuilder.ts
-import crypto7 from "node:crypto";
+import crypto8 from "node:crypto";
 var AssemblySpecBuilder = class {
   /**
    * Constructs an immutable AssemblySpec and computes its deterministic content hash.
@@ -28185,7 +29389,7 @@ var AssemblySpecBuilder = class {
     const hasVo = Boolean(adSpec.audioPlan?.voiceoverAssetId || adSpec.brief?.cta?.spokenText);
     const hasMusic = Boolean(adSpec.audioPlan?.musicAssetId || adSpec.brand?.audioStyle);
     const spec = {
-      id: crypto7.randomUUID(),
+      id: crypto8.randomUUID(),
       projectId,
       executionId,
       sourceExecutionSnapshotId: snapshotId,
@@ -28312,7 +29516,7 @@ var AssemblySpecBuilder = class {
         targetDurationSeconds: spec.output.targetDurationSeconds
       }
     };
-    return crypto7.createHash("sha256").update(JSON.stringify(canonicalPayload)).digest("hex");
+    return crypto8.createHash("sha256").update(JSON.stringify(canonicalPayload)).digest("hex");
   }
 };
 var assemblySpecBuilder = new AssemblySpecBuilder();
@@ -29973,11 +31177,11 @@ var ProviderAdapterRegistry = class {
 var providerAdapterRegistry = new ProviderAdapterRegistry();
 
 // apps/api/src/modules/adDirector/services/executionOrchestratorService.ts
-import crypto9 from "node:crypto";
+import crypto10 from "node:crypto";
 
 // apps/api/src/modules/adDirector/services/executionSnapshotService.ts
 init_videoAdProjectRepository();
-import crypto8 from "node:crypto";
+import crypto9 from "node:crypto";
 
 // apps/api/src/modules/adDirector/adDirectorRepository.ts
 init_supabaseClient();
@@ -31286,7 +32490,7 @@ var ExecutionSnapshotService = class {
     const specHash = calculateAdSpecHash(adSpec);
     const adapter = providerAdapterRegistry.getAdapterForModel(modelId);
     const provider = adapter.provider;
-    const snapshotId = crypto8.randomUUID();
+    const snapshotId = crypto9.randomUUID();
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const snapshot = {
       snapshotId,
@@ -31404,7 +32608,7 @@ var ExecutionOrchestratorService = class {
     const createdJobs = [];
     const shotCreditPortion = Math.ceil(totalCredits / Math.max(shots.length, 1));
     for (const shot of shots) {
-      const jobId = crypto9.randomUUID();
+      const jobId = crypto10.randomUUID();
       const idempotencyKey = `ad_shot_${snapshotId}_${shot.shotId}_v${snapshot.specVersion}`;
       if (shotCreditPortion > 0) {
         await creditService.reserveCredits({
@@ -32012,7 +33216,7 @@ var VideoQAService = class {
 var videoQaService = new VideoQAService();
 
 // apps/api/src/modules/adDirector/services/videoAssemblyService.ts
-import crypto10 from "node:crypto";
+import crypto11 from "node:crypto";
 init_assetRepository();
 init_aiJobRepository();
 init_storageService();
@@ -32127,7 +33331,7 @@ var VideoAssemblyService = class {
       version = existingAssembly.version + 1;
     }
     const assemblyRecord = {
-      id: crypto10.randomUUID(),
+      id: crypto11.randomUUID(),
       projectId: snapshot.adId,
       executionId,
       sourceExecutionSnapshotId: snapshot.snapshotId,
@@ -32205,8 +33409,8 @@ var VideoAssemblyService = class {
         return Object.assign(updated || existingRender, { job: updated || existingRender });
       }
     }
-    const renderId = crypto10.randomUUID();
-    const jobId = crypto10.randomUUID();
+    const renderId = crypto11.randomUUID();
+    const jobId = crypto11.randomUUID();
     await aiJobRepository.createJob({
       id: jobId,
       workspaceId,
@@ -32354,7 +33558,7 @@ var VideoAssemblyService = class {
       ratio = "16:9";
     }
     const variantRecord = {
-      id: crypto10.randomUUID(),
+      id: crypto11.randomUUID(),
       renderId: masterRender.id,
       workspaceId: workspaceId || assembly.workspaceId,
       presetName: preset,

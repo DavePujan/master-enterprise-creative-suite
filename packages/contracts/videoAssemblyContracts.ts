@@ -268,8 +268,6 @@ export interface AssemblyStatusResponse {
   };
 }
 
-export type ExportPreset = ExportPresetName;
-
 export interface CreateAssemblyResponse {
   assembly: AssemblyRecord;
   validation: AssemblyValidationReport;

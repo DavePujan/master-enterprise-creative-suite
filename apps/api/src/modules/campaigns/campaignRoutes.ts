@@ -15,6 +15,10 @@ import { campaignRepository } from "./campaignRepository.js";
 import { campaignDownstreamOrchestrator } from "./campaignDownstreamOrchestrator.js";
 import { videoAdProjectRepository } from "../adDirector/repositories/videoAdProjectRepository.js";
 import { sendInsufficientCreditsResponse, InsufficientCreditsError } from "../billing/billingErrorUtils.js";
+import JSZip from "jszip";
+import { bundleOrchestratorService } from "./bundleOrchestratorService.js";
+import { validateSafeAssetUrl } from "./services/ssrfValidator.js";
+import { resolveCanonicalEngine, AssetReference } from "@shared-types/imageGeneration.js";
 
 const creditService = new CreditService();
 
@@ -362,6 +366,83 @@ campaignRouter.get("/strategy/:id", async (req, res) => {
   }
 });
 
+// 6. Update / Rename Strategy
+campaignRouter.patch("/strategy/:id", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+
+    const { title, status } = req.body;
+    if (!title && !status) {
+      return res.status(400).json({ error: "At least title or status must be provided" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const updated = await campaignRepository.updateStrategy(req.params.id, workspaceId, { title, status });
+    if (!updated) {
+      return res.status(404).json({ error: "Strategy not found or update failed" });
+    }
+
+    return res.json({ success: true, id: req.params.id, title, status });
+  } catch (err: any) {
+    console.error("Error in PATCH /strategy/:id:", err);
+    return res.status(500).json({ error: err?.message || "Failed to update strategy" });
+  }
+});
+
+// 7. Duplicate Strategy
+campaignRouter.post("/strategy/:id/duplicate", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const duplicated = await campaignRepository.duplicateStrategy(req.params.id, workspaceId, userId);
+    if (!duplicated) {
+      return res.status(404).json({ error: "Original strategy not found to duplicate" });
+    }
+
+    return res.status(201).json({ success: true, strategy: duplicated });
+  } catch (err: any) {
+    console.error("Error in POST /strategy/:id/duplicate:", err);
+    return res.status(500).json({ error: err?.message || "Failed to duplicate strategy" });
+  }
+});
+
+// 8. Delete Strategy
+campaignRouter.delete("/strategy/:id", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED" });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const deleted = await campaignRepository.deleteStrategy(req.params.id, workspaceId);
+    if (!deleted) {
+      return res.status(404).json({ error: "Strategy not found or delete failed" });
+    }
+
+    return res.json({ success: true, id: req.params.id });
+  } catch (err: any) {
+    console.error("Error in DELETE /strategy/:id:", err);
+    return res.status(500).json({ error: err?.message || "Failed to delete strategy" });
+  }
+});
+
 // Cohesive campaign prompt generation endpoint using Google GenAI
 campaignRouter.post("/prompts", async (req, res) => {
   try {
@@ -512,10 +593,238 @@ Construct a gorgeous JSON response matching the precise structure schema request
   }
 });
 
-// Secure Image Generation endpoint (delegates to ImageGenerationService)
+// ============================================================================
+// Ecommerce Bundle Orchestrator & Export Endpoints
+// ============================================================================
+
+// 1. Backend-Governed Bundle Generation Endpoint with Atomic Holds & Concurrency Control
+campaignRouter.post("/bundle/generate", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated user session required.", code: "AUTH_REQUIRED" });
+    }
+
+    const { concept, commerceMode, engine, guidelines, references } = req.body;
+    if (!concept || typeof concept !== "string" || !concept.trim()) {
+      return res.status(400).json({ error: "Missing required product concept description." });
+    }
+
+    const userId = req.user.uid;
+    const workspaceId =
+      req.user.workspaceId ||
+      (await workspaceRepository.ensurePersonalWorkspace(userId, req.user.email || ""));
+
+    const idempotencyKey =
+      (req.headers["idempotency-key"] as string) ||
+      (req.headers["x-idempotency-key"] as string) ||
+      `bundle_idemp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    const bundleResult = await bundleOrchestratorService.generateBundle({
+      concept: concept.trim(),
+      commerceMode,
+      engine,
+      guidelines,
+      references,
+      workspaceId,
+      userId,
+      idempotencyKey,
+    });
+
+    return res.json(bundleResult);
+  } catch (err: any) {
+    console.error("Error in /bundle/generate:", err);
+
+    if (err instanceof InsufficientCreditsError || err?.code === "INSUFFICIENT_CREDITS" || err?.status === 402 || err?.message?.includes("Insufficient credits")) {
+      return sendInsufficientCreditsResponse(res, {
+        service: "Ecommerce Bundle Orchestrator",
+        action: "bundle_generate",
+        required: err.requiredCredits || err.required || 15,
+        available: err.availableCredits || err.available || 0,
+      });
+    }
+
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Failed to generate ecommerce campaign bundle",
+      code: err.code || "BUNDLE_FAILED",
+    });
+  }
+});
+
+// 2. SSRF-Safe Server-Side Bundle ZIP Exporter with Download Status Verification
+campaignRouter.post("/bundle/export-zip", async (req, res) => {
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized: Authenticated user session required.", code: "AUTH_REQUIRED" });
+    }
+
+    const {
+      bundleTitle = "Campaign Bundle",
+      aesthetic = "Unified Visual Spec",
+      commerceMode = "e-commerce",
+      engine = "Quality",
+      brandName = "Brand",
+      assets = [],
+      allowPartial = false,
+    } = req.body;
+
+    if (!assets || !Array.isArray(assets) || assets.length === 0) {
+      return res.status(400).json({ error: "No asset specifications supplied for ZIP export." });
+    }
+
+    const downloadResults: Array<{
+      role: string;
+      title: string;
+      filename: string;
+      status: "downloaded" | "failed";
+      buffer?: Buffer;
+      error?: string;
+    }> = [];
+
+    // Safely download each remote asset with SSRF protection
+    for (const item of assets) {
+      const role = item.role || "Deliverable";
+      const filename = `${role.toLowerCase()}-deliverable.jpg`;
+
+      if (!item.imageUrl) {
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "failed",
+          error: "Asset has no rendered image URL",
+        });
+        continue;
+      }
+
+      // Enforce SSRF validation on target URL
+      const ssrfCheck = validateSafeAssetUrl(item.imageUrl);
+      if (!ssrfCheck.valid) {
+        console.warn(`[ZIP Export] SSRF rejected asset URL for ${role}: ${ssrfCheck.error}`);
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "failed",
+          error: ssrfCheck.error,
+        });
+        continue;
+      }
+
+      try {
+        const fetchRes = await fetch(item.imageUrl, {
+          signal: AbortSignal.timeout(15000), // 15s download budget per asset
+        });
+
+        if (!fetchRes.ok) {
+          throw new Error(`Remote storage returned HTTP ${fetchRes.status}: ${fetchRes.statusText}`);
+        }
+
+        const arrayBuf = await fetchRes.arrayBuffer();
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "downloaded",
+          buffer: Buffer.from(arrayBuf),
+        });
+      } catch (dlErr: any) {
+        console.warn(`[ZIP Export] Download failed for ${role}:`, dlErr.message);
+        downloadResults.push({
+          role,
+          title: item.title || role,
+          filename,
+          status: "failed",
+          error: dlErr.message || "Failed downloading remote image",
+        });
+      }
+    }
+
+    const failedDownloads = downloadResults.filter((d) => d.status === "failed");
+    const successfulDownloads = downloadResults.filter((d) => d.status === "downloaded");
+
+    // Fail loudly if any assets failed and client has not explicitly authorized partial bundle
+    if (failedDownloads.length > 0 && !allowPartial) {
+      return res.status(400).json({
+        success: false,
+        partial: true,
+        failedRoles: failedDownloads.map((d) => d.role),
+        availableRoles: successfulDownloads.map((d) => d.role),
+        message: `${failedDownloads.length} of ${assets.length} visual deliverables could not be downloaded from remote storage.`,
+      });
+    }
+
+    // Assemble robust ZIP package using JSZip
+    const zip = new JSZip();
+    const folderSlug = bundleTitle.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    const rootFolder = zip.folder(`${folderSlug}-bundle`);
+    const assetsFolder = rootFolder?.folder("assets");
+
+    let markdownContent = `# ${bundleTitle}\n\n`;
+    markdownContent += `### Unified Campaign Aesthetic Spec\n> *${aesthetic}*\n\n`;
+    markdownContent += `**Commerce Alignment Mode**: ${commerceMode}\n`;
+    markdownContent += `**Engine Pipeline**: ${engine}\n`;
+    markdownContent += `**Associated Corporate Profile**: ${brandName}\n\n`;
+    markdownContent += `---\n\n## Multi-Asset Campaign Specs\n\n`;
+
+    for (const item of assets) {
+      const dl = downloadResults.find((d) => d.role === item.role);
+      const isDownloaded = dl && dl.status === "downloaded" && dl.buffer;
+
+      markdownContent += `### ${item.role} Deliverable\n`;
+      markdownContent += `- **Creative Title**: ${item.title || item.role}\n`;
+      markdownContent += `- **Deliverable Role**: ${item.role}\n`;
+      markdownContent += `- **Target Purpose**: ${item.description || "Marketing Visual"}\n`;
+      markdownContent += `- **Visual Prompt Written**: \`\`\`${item.prompt || ""}\`\`\`\n`;
+
+      if (isDownloaded) {
+        assetsFolder?.file(dl.filename, dl.buffer!);
+        markdownContent += `- **Asset Binary**: Located inside \`assets/${dl.filename}\`\n`;
+      } else {
+        markdownContent += `- **Asset Binary**: (Download Incomplete / Remote Fallback: ${item.imageUrl || "None"})\n`;
+      }
+      markdownContent += `\n---\n\n`;
+    }
+
+    rootFolder?.file("campaign-spec.md", markdownContent);
+
+    // Add machine-verifiable manifest.json
+    rootFolder?.file(
+      "manifest.json",
+      JSON.stringify(
+        {
+          bundleTitle,
+          exportTimestamp: new Date().toISOString(),
+          assetsExpected: assets.length,
+          assetsIncluded: successfulDownloads.length,
+          assetsMissing: failedDownloads.map((f) => ({ role: f.role, error: f.error })),
+          status: failedDownloads.length === 0 ? "complete" : "partial",
+        },
+        null,
+        2
+      )
+    );
+
+    const zipBuffer = await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 },
+    });
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${folderSlug}-marketing-pack.zip"`);
+    res.setHeader("Content-Length", zipBuffer.length);
+    return res.end(zipBuffer);
+  } catch (exportErr: any) {
+    console.error("Error generating bundle ZIP package:", exportErr);
+    return res.status(500).json({ error: exportErr.message || "Failed to generate ZIP export package" });
+  }
+});
+
+// 3. Modernized Secure Single Image Generation Endpoint (with Canonical Engine Mapping & References)
 campaignRouter.post("/render", async (req, res) => {
   try {
-    const { prompt, size, engine, guidelines, referenceImages } = req.body;
+    const { prompt, size, engine, guidelines, referenceImages, references } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: "Missing render prompt text" });
     }
@@ -534,17 +843,9 @@ campaignRouter.post("/render", async (req, res) => {
       aspectRatio = size;
     }
 
-    let modelKey = "fal-studio";
-    const eng = (engine || "").toLowerCase();
-    if (eng.includes("schnell")) {
-      modelKey = "flux-schnell";
-    } else if (eng.includes("dev") || eng.includes("pro")) {
-      modelKey = "flux-pro";
-    } else if (eng.includes("banana")) {
-      modelKey = "nano-banana-2";
-    } else if (eng.includes("gemini")) {
-      modelKey = "gemini-preview";
-    }
+    // Resolve canonical engine cleanly via central registry
+    const engineEntry = resolveCanonicalEngine(engine);
+    const modelKey = engineEntry.modelKey;
 
     const { imageGenerationService } = await import("../imageGeneration/imageGenerationService.js");
 
@@ -555,6 +856,7 @@ campaignRouter.post("/render", async (req, res) => {
         modelKey,
         guidelines,
         referenceImages,
+        references,
       },
       workspaceId,
       userId,

@@ -194,6 +194,7 @@ export interface CampaignBriefControls {
   mandatoryInclusions: string[]; // Must Include
   forbiddenTerritories: string[]; // Must Avoid
   competitorKnowledgeSource: CompetitorKnowledgeSource;
+  competitorKnowledgeSources?: CompetitorKnowledgeSource[];
   competitorContext?: {
     competitors?: string;
     overusedPatterns?: string;
@@ -491,13 +492,13 @@ export interface MasterCampaignStrategy {
 
   // Executive Overview ("In 30 Seconds")
   executiveSummary?: {
-    theProblem: string;
-    theOpportunity: string;
-    theBigIdea: string;
-    whyUs: string;
-    whatWeWillDo: string;
-    whatWeNeedToProve: string;
-  };
+    theProblem?: string;
+    theOpportunity?: string;
+    theBigIdea?: string;
+    whyUs?: string;
+    whatWeWillDo?: string;
+    whatWeNeedToProve?: string;
+  } | string;
 
   // Transformation Story ("What Changed From My Brief")
   whatChangedFromBrief?: {
@@ -547,6 +548,20 @@ export interface MasterCampaignStrategy {
   rolloutPhases: RolloutPhase[];
   performanceKPIs: PerformanceKPIs;
   epistemicLedger: EpistemicClaim[];
+  customerJourneyPhases?: Array<{
+    stage: string;
+    objective: string;
+    keyHook: string;
+    primaryChannels?: string[];
+  }>;
+  epistemicClassificationAudit?: {
+    claims?: Array<{
+      text: string;
+      status: string;
+      citation?: { sourceUrl: string; sourceTitle?: string };
+      sourceOrRationale?: string;
+    }>;
+  };
 }
 
 // ---------------------------------------------------------------------------

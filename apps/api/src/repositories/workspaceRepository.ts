@@ -16,10 +16,30 @@ export interface WorkspaceRecord {
 }
 
 export class WorkspaceRepository {
+  private primaryWorkspaceCache = new Map<string, { record: WorkspaceRecord | null; expiresAt: number }>();
+  private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
+
+  /**
+   * Clears cached workspace record for a user or all users.
+   */
+  invalidateCache(userId?: string): void {
+    if (userId) {
+      this.primaryWorkspaceCache.delete(userId);
+    } else {
+      this.primaryWorkspaceCache.clear();
+    }
+  }
+
   /**
    * Retrieves the primary or personal workspace for a user.
    */
   async getPrimaryWorkspaceForUser(userId: string): Promise<WorkspaceRecord | null> {
+    const now = Date.now();
+    const cached = this.primaryWorkspaceCache.get(userId);
+    if (cached && cached.expiresAt > now) {
+      return cached.record;
+    }
+
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       return null;
@@ -43,7 +63,7 @@ export class WorkspaceRepository {
         .single();
 
       if (ownedWs) {
-        return {
+        const record: WorkspaceRecord = {
           id: ownedWs.id,
           name: ownedWs.name,
           ownerId: ownedWs.owner_id,
@@ -52,12 +72,14 @@ export class WorkspaceRepository {
           createdAt: ownedWs.created_at,
           updatedAt: ownedWs.updated_at,
         };
+        this.primaryWorkspaceCache.set(userId, { record, expiresAt: now + this.CACHE_TTL_MS });
+        return record;
       }
       return null;
     }
 
     const ws = (membership as any).workspaces;
-    return {
+    const record: WorkspaceRecord = {
       id: ws.id,
       name: ws.name,
       ownerId: ws.owner_id,
@@ -66,6 +88,8 @@ export class WorkspaceRepository {
       createdAt: ws.created_at,
       updatedAt: ws.updated_at,
     };
+    this.primaryWorkspaceCache.set(userId, { record, expiresAt: now + this.CACHE_TTL_MS });
+    return record;
   }
 
   /**
@@ -130,6 +154,9 @@ export class WorkspaceRepository {
       description: "Welcome signup grant of 50 credits",
       metadata: { initial_grant: true, is_personal: true }
     });
+
+    // Invalidate user cache to ensure fresh record is retrieved
+    this.primaryWorkspaceCache.delete(userId);
 
     return ws.id;
   }

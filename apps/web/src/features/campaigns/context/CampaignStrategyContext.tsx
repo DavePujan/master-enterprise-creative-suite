@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import type {
   AdaptiveQuestion,
   DiscoveryConfidence,
@@ -56,6 +56,7 @@ export interface CampaignStrategyState {
       mandatoryInclusions: string[];
       forbiddenTerritories: string[];
       competitorKnowledgeSource: CompetitorKnowledgeSource;
+      competitorKnowledgeSources?: CompetitorKnowledgeSource[];
       competitorContext: {
         competitors: string;
         overusedPatterns: string;
@@ -138,7 +139,79 @@ export type CampaignStrategyAction =
   | { type: 'SET_DOWNSTREAM_BRIEFS'; payload: DownstreamBriefs }
   | { type: 'SET_PRODUCTION_PLAN'; payload: CampaignProductionPlan }
   | { type: 'SET_ACTIVE_BRIEF_TAB'; payload: CampaignStrategyState['activation']['activeBriefTab'] }
-  | { type: 'SET_STAGING_STATUS'; payload: { isStaging: boolean; stagedSuccess?: boolean } };
+  | { type: 'SET_STAGING_STATUS'; payload: { isStaging: boolean; stagedSuccess?: boolean } }
+  | { type: 'REHYDRATE_STATE'; payload: Partial<CampaignStrategyState> }
+  | { type: 'RESET_CAMPAIGN' };
+
+export const CAMPAIGN_DRAFT_STORAGE_KEY = 'writopedia_campaign_strategy_draft_v1';
+
+export function loadDraftFromStorage(): CampaignStrategyState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(CAMPAIGN_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.brief || !parsed.journeyStep) return null;
+    return {
+      ...initialCampaignStrategyState,
+      ...parsed,
+      loading: false,
+      error: null,
+      strategy: {
+        ...initialCampaignStrategyState.strategy,
+        ...(parsed.strategy || {}),
+        isStressTesting: false,
+        isPatching: false,
+        showPatchModal: false
+      },
+      discovery: {
+        ...initialCampaignStrategyState.discovery,
+        ...(parsed.discovery || {}),
+        isEvaluating: false
+      },
+      territories: {
+        ...initialCampaignStrategyState.territories,
+        ...(parsed.territories || {}),
+        isGenerating: false
+      },
+      activation: {
+        ...initialCampaignStrategyState.activation,
+        ...(parsed.activation || {}),
+        isStaging: false
+      }
+    };
+  } catch (e) {
+    console.warn('[CampaignStrategyContext] Failed to load draft from localStorage:', e);
+    return null;
+  }
+}
+
+export function saveDraftToStorage(state: CampaignStrategyState): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload = {
+      journeyStep: state.journeyStep,
+      brief: state.brief,
+      discovery: state.discovery,
+      territories: state.territories,
+      strategy: state.strategy,
+      activation: state.activation,
+      sessionId: state.sessionId,
+      generationId: state.generationId,
+      savedAt: Date.now()
+    };
+    localStorage.setItem(CAMPAIGN_DRAFT_STORAGE_KEY, JSON.stringify(payload));
+  } catch (e) {
+    console.warn('[CampaignStrategyContext] Failed to save draft to localStorage:', e);
+  }
+}
+
+export function clearDraftFromStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(CAMPAIGN_DRAFT_STORAGE_KEY);
+  } catch {}
+}
 
 export const initialCampaignStrategyState: CampaignStrategyState = {
   journeyStep: '01_brief',
@@ -170,6 +243,7 @@ export const initialCampaignStrategyState: CampaignStrategyState = {
       mandatoryInclusions: ['Price transparency', 'Founder credibility'],
       forbiddenTerritories: ['No celebrity endorsements', 'No race-to-the-bottom discounts'],
       competitorKnowledgeSource: 'provided_by_client',
+      competitorKnowledgeSources: ['provided_by_client'],
       competitorContext: {
         competitors: '',
         overusedPatterns: '',
@@ -352,6 +426,25 @@ function campaignStrategyReducer(
           stagedSuccess: action.payload.stagedSuccess ?? state.activation.stagedSuccess
         }
       };
+    case 'REHYDRATE_STATE':
+      return {
+        ...state,
+        ...action.payload,
+        brief: { ...state.brief, ...(action.payload.brief || {}) },
+        discovery: { ...state.discovery, ...(action.payload.discovery || {}) },
+        territories: { ...state.territories, ...(action.payload.territories || {}) },
+        strategy: { ...state.strategy, ...(action.payload.strategy || {}) },
+        activation: { ...state.activation, ...(action.payload.activation || {}) },
+        loading: false,
+        error: null
+      };
+    case 'RESET_CAMPAIGN':
+      clearDraftFromStorage();
+      return {
+        ...initialCampaignStrategyState,
+        sessionId: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        generationId: `gen_${Date.now()}`
+      };
     default:
       return state;
   }
@@ -361,7 +454,30 @@ const CampaignStrategyStateContext = createContext<CampaignStrategyState | undef
 const CampaignStrategyDispatchContext = createContext<React.Dispatch<CampaignStrategyAction> | undefined>(undefined);
 
 export const CampaignStrategyProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(campaignStrategyReducer, initialCampaignStrategyState);
+  const [state, dispatch] = useReducer(campaignStrategyReducer, initialCampaignStrategyState, (init) => {
+    const draft = loadDraftFromStorage();
+    return draft ? draft : init;
+  });
+
+  // Auto-save draft on meaningful changes with 500ms debounce
+  useEffect(() => {
+    const hasMeaningfulContent = Boolean(
+      state.brief.briefDescription ||
+      state.brief.campaignTitle !== 'Festive & Growth Campaign' ||
+      state.discovery.adaptiveQuestions.length > 0 ||
+      state.territories.items.length > 0 ||
+      state.strategy.masterStrategy ||
+      state.journeyStep !== '01_brief'
+    );
+
+    if (!hasMeaningfulContent) return;
+
+    const timer = setTimeout(() => {
+      saveDraftToStorage(state);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [state.brief, state.discovery, state.territories, state.strategy, state.activation, state.journeyStep]);
 
   return (
     <CampaignStrategyStateContext.Provider value={state}>
